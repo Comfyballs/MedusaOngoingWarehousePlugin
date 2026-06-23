@@ -1,7 +1,7 @@
 # Ongoing Warehouse Fulfillment Plugin — Design
 
 **Date:** 2026-06-23
-**Status:** Approved design, ready for implementation planning
+**Status:** Approved design (revised after Medusa-v2 technical review + Ongoing API research), ready for implementation planning
 **Target:** Medusa v2 (2.16.0) plugin
 
 ## 1. Purpose
@@ -13,7 +13,8 @@ location.
 
 Scope:
 
-- Send new orders to Ongoing (`ProcessOrder`) when a fulfillment is created in Medusa.
+- Send new orders to Ongoing (`ProcessOrder` / `PUT /api/v1/orders`) when a fulfillment is
+  created in Medusa.
 - Receive tracking + shipment confirmation back from Ongoing (polling **and** webhook).
 - Send order updates (full edit re-sync) to Ongoing, gated by Ongoing order status codes.
 - Cancel orders in Ongoing when cancelled in Medusa.
@@ -22,47 +23,72 @@ Scope:
 
 Out of scope for now (documented extension points):
 
-- Pushing articles to Ongoing (`ProcessArticle`) — SKU matching used instead; the
-  article mapping is structured so this can be added without rework.
+- Pushing articles to Ongoing (`ProcessArticle`) — SKU matching used instead; article
+  mapping is structured so this can be added without rework.
 - Returns / label retrieval — provider methods stubbed as extension points.
 - Storing Ongoing credentials in the DB (encrypted) — credentials live in environment
   variables for now.
 - Hard-blocking Medusa order edits when Ongoing status disallows them — flagged stretch
   goal; baseline is skip-with-warning.
 
-## 2. Ongoing API reference
+## 2. Ongoing API reference (researched)
 
-REST v1 (OpenAPI `https://developer.ongoingwarehouse.com/REST/v1/openapi.json?version=57`).
-Auth: HTTP Basic (username/password) + `goodsOwnerId` in payloads. Key operations:
+REST v1 base: `https://<host>/api/v1`. Auth: HTTP Basic (username/password) + `goodsOwnerId`
+in payloads. OpenAPI: `.../REST/v1/openapi.json?version=57`.
 
-- `ProcessOrder` — create/upsert an order in Ongoing.
-- `GetOrdersByQuery` — poll order status (3-digit status codes) + tracking.
-- `GetInventoryByQuery` — read stock levels per article.
-- `ProcessArticle` — create/update articles (deferred).
+Key operations and **verified** semantics:
+
+- **`PUT /api/v1/orders`** (`ProcessOrder`, body `PostOrderModel`) — **idempotent upsert keyed
+  by `orderNumber`** (+ `goodsOwnerId`): if no order with that `orderNumber` exists it is
+  created, otherwise updated. This is what makes order push and edit re-sync safe to retry.
+- **`GET /api/v1/orders` / GetOrdersByQuery** — poll order status + tracking. Status filtering
+  uses numeric ranges (`orderStatusFrom` / `orderStatusTo`). Tracking is returned as
+  `orderTracking` plus **`parcels[]` with per-parcel `parcelTracking`** → an order can have
+  **multiple tracking numbers** (multi-parcel shipments).
+- **`GET /api/v1/orders/statuses`** — returns the installation's order statuses. **Status codes
+  are installation-specific, not a fixed global enum** — fetch them at runtime; the admin rules
+  editor is populated from this endpoint rather than hardcoding codes.
+- **`GetInventoryByQuery`** — returns multiple distinct quantity fields per article (not one
+  "available"):
+  - `NumberOfItemsDecimal` — total physical stock in the warehouse (on-hand).
+  - `AllocatedNumberOfItems` — allocated to orders, unpicked.
+  - `SellableNumberOfItems` — items that can still be sold.
+  - `ToReceiveNumberOfItems` — expected on inbound purchase orders (future stock).
+  - (others: `NumberOfBookedItemsDecimal`, `NumberOfLockedItems`, `LockedForSaleNumberOfItems`,
+    `PickedToBeCollectedNumberOfItems`, `ReceivedToBeFinishedNumberOfItems`.)
+  - `GetInventoryPerWarehouse` summarizes per article **and warehouse** for multi-warehouse setups.
+- **`ProcessArticle`** — create/update articles (deferred).
 
 Ongoing rate-limits concurrent requests; batch syncs must be throttled/serialized per
-integration (see `https://developer.ongoingwarehouse.com/parallel-requests`).
+integration (`https://developer.ongoingwarehouse.com/parallel-requests`). The client must also
+honor `429` + `Retry-After`.
 
 ## 3. Architecture overview
 
-A **single** Ongoing fulfillment provider is registered in `medusa-config` (Medusa
-requires static provider registration). All provider methods, jobs, and workflows
-resolve *which* warehouse to talk to via the order's **stock location**, then load that
+A **single** Ongoing fulfillment provider is registered in `medusa-config` (Medusa requires
+static provider registration). All provider methods, jobs, and workflows resolve *which*
+warehouse to talk to via the order's/fulfillment's **stock location**, then load that
 integration's settings from the `ongoing` module and its credentials from plugin options.
-This yields N warehouses with one provider registration plus runtime-managed bindings.
+One registration + runtime-managed bindings = N warehouses.
 
 Two bindings coexist per location:
 
-- **Medusa-native:** stock location → fulfillment set → service zone → shipping option →
-  Ongoing provider (lets operators create fulfillments at that location).
-- **Plugin:** an `OngoingIntegration` record whose `stock_location_id` is **unique**
-  (enforces one integration ⇄ one location), supplying non-secret settings and a
-  reference to a credential set.
+- **Medusa-native:** stock location → fulfillment set → service zone → shipping option
+  (`provider_id`) → fulfillment. A provider is usable at a location only because a shipping
+  option referencing it lives in a service zone of a fulfillment set attached to that location.
+- **Plugin:** an `OngoingIntegration` record whose `stock_location_id` is **unique** (enforces
+  one integration ⇄ one location), supplying non-secret settings + a credential-set reference.
+
+**Setup workflow (new, required):** creating an `OngoingIntegration` must also provision the
+native binding — a fulfillment set + service zone + at least one shipping option pointing at the
+Ongoing provider for that location. Without it the provider is never invoked. The admin
+"create integration" action runs a `setupOngoingLocationWorkflow` that creates/links these (or
+links to an existing fulfillment set), and surfaces what it created.
 
 ### Credential handling
 
-Credentials are **not** stored in the DB. They are supplied via plugin options sourced
-from environment variables in the consuming app's `medusa-config`:
+Credentials are **not** stored in the DB. They are supplied via plugin options sourced from
+environment variables in the consuming app's `medusa-config`:
 
 ```ts
 options: {
@@ -72,17 +98,17 @@ options: {
     username: process.env.ONGOING_A_USER,
     password: process.env.ONGOING_A_PASS,
     goodsOwnerId: process.env.ONGOING_A_GOODS_OWNER,
-    webhookApiKey: process.env.ONGOING_A_WEBHOOK_KEY,
+    webhookSecret: process.env.ONGOING_A_WEBHOOK_SECRET, // HMAC secret (preferred) or API key
   }],
-  // optional global defaults:
   defaultStockSyncInterval?: string,
   defaultStatusPollInterval?: string,
   rateLimitConcurrency?: number,     // per-integration cap for batch calls
 }
 ```
 
-The DB holds only non-secret operational config. (Future extension: optionally store
-encrypted credentials in the DB so warehouses can be added without a redeploy.)
+Boot-time validation (new): on module load, validate that every `integrations[]` entry has all
+required fields and that URLs/creds are present; fail loudly. At runtime, fail with a clear error
+if an `OngoingIntegration.credential_key` references a key not present in options.
 
 ## 4. Module: `ongoing` (`src/modules/ongoing`)
 
@@ -90,137 +116,215 @@ encrypted credentials in the DB so warehouses can be added without a redeploy.)
 
 **`OngoingIntegration`** (no secrets):
 
-- `credential_key` (unique) — references a plugin-options credential set.
+- `credential_key` (**unique**, `.unique()` at DB level) — references a plugin-options set.
 - `enabled`
-- `stock_location_id` (unique) — one integration ⇄ one location.
+- `stock_location_id` (**unique**) — one integration ⇄ one location.
 - `stock_sync_enabled`, `stock_sync_interval`
 - `status_poll_interval`
-- `edit_sync_rules` (JSON) — per edit-type (`address_contact`, `line_items`) → allowed or
-  blocked 3-digit Ongoing status codes.
+- `stock_source_field` — which Ongoing quantity feeds Medusa `stocked_quantity`; default
+  `NumberOfItemsDecimal` (physical on-hand). See §9.
+- `edit_sync_rules` (JSON) — per edit-type (`address_contact`, `line_items`) → allowed status
+  codes (configured against the live `GET /orders/statuses` list).
+- `shipped_status_codes` (JSON) — which status codes mean "dispatched" (drives shipment sync).
+- `cancellable_status_codes` (JSON) — which codes still permit cancellation.
+- `last_stock_sync_at`, `last_status_poll_at` — for the dispatcher.
+- `sync_lock_until` (nullable) — per-integration in-progress lock (multi-instance safety).
 
 **`OngoingOrderSync`**:
 
 - `integration_id`
 - `medusa_order_id`, `medusa_fulfillment_id`
-- `ongoing_order_id`, `ongoing_order_number`
+- `ongoing_order_number` (the upsert key we generate), `ongoing_order_id`
 - `latest_status_code`, `latest_status_text`
 - `sync_state` — `pending | sent | shipped | cancelled | error`
+- `error_class` — `retryable | terminal` (drives retry; see §11)
 - `last_synced_at`, `last_error`, `retry_count`
+- `shipped_at` (idempotency guard for shipment apply)
 
 **`OngoingArticleMap`** — *future extension point* (SKU matching used for now).
 
 ### Service
 
-Extends `MedusaService` with the two models, plus helpers:
-
-- `getIntegrationByLocation(stockLocationId)` — resolves the integration + its credential
-  set from plugin options.
-- `getCredentials(credentialKey)` — reads the matching plugin-options entry.
-- `recordSync(...)` — upsert `OngoingOrderSync` state/errors.
+Extends `MedusaService` (auto CRUD for both models) plus helpers:
+`getIntegrationByLocation(locationId)`, `getCredentials(credentialKey)`,
+`acquireSyncLock(integrationId, ttl)` / `releaseSyncLock`, `recordSync(...)`.
 
 ### Links (`src/links`)
 
 - `OngoingOrderSync` ⇄ `order`
 - `OngoingOrderSync` ⇄ `fulfillment`
-- `OngoingIntegration` ⇄ `stock_location` (graph queries)
+- `OngoingIntegration` ⇄ `stock_location` (graph traversal; the unique `stock_location_id`
+  column is kept for the constraint and for direct service-level filtering, set in the same
+  workflow that creates the link). **Note:** `query.graph` cannot filter by linked-module
+  fields — all lookups filter on the stored id columns (`medusa_order_id`, `stock_location_id`),
+  not across links.
 
 ## 5. Fulfillment provider (`src/providers/ongoing-fulfillment`)
 
-Extends `AbstractFulfillmentProviderService`:
+Extends `AbstractFulfillmentProviderService`. **Verified signatures drive the design:**
 
-- `getFulfillmentOptions` / `validateFulfillmentData` — basic shipping-option support.
-- `createFulfillment` → runs `pushOrderToOngoing` workflow (`ProcessOrder`). SKU ⇄ Ongoing
-  article-number matched; a missing article fails with a clear error and sets
-  `sync_state=error`.
-- `cancelFulfillment` → runs `cancelOngoingOrder` workflow (only if Ongoing status still
-  permits cancellation).
-- Returns / labels (`createReturnFulfillment`, `getFulfillmentDocuments`) — stubbed
-  extension points.
-
-The provider resolves the integration via the fulfillment's stock location.
+- `getFulfillmentOptions(): Promise<FulfillmentOption[]>` — returns stable option ids. (A single
+  provider returns one option list regardless of location; if Ongoing carriers differ per
+  warehouse this is a known limitation — see §13.)
+- `validateOption(data): Promise<boolean>` — **must override** (base throws); without it admins
+  can't create shipping options for the provider.
+- `validateFulfillmentData(optionData, data, context)` — `context` carries `from_location`,
+  `shipping_address`, `items`, `currency_code`; use for early validation.
+- `createFulfillment(data, items, order, fulfillment)` → `{ data, labels? }`. **`order` may be
+  `undefined` and `items` are thin**, so this method only: (a) reads `fulfillment.id` +
+  `fulfillment.location_id`, (b) runs `pushOrderToOngoing` (which **re-queries the full order**
+  via `query.graph` by the linked order id to build the Ongoing payload), (c) returns
+  `data: { ongoing_order_number, ongoing_order_id, location_id, credential_key }`. **Confirm at
+  implementation time that `fulfillment.location_id` is hydrated** in the partial DTO (log during
+  a dev fulfillment); handle missing/undefined.
+- `cancelFulfillment(data)` — **receives only `data`** (no fulfillment/location arg). Resolves the
+  warehouse from the `{ ongoing_order_number, location_id, credential_key }` stashed in `data` on
+  create, then runs `cancelOngoingOrder`. Must be idempotent.
+- `createReturnFulfillment`, `getFulfillmentDocuments` — stubbed extension points.
+- `canCalculate` → `false` (flat Ongoing rates; revisit if calculated rates are needed).
 
 ## 6. Workflows (`src/workflows`)
 
-- `pushOrderToOngoing` — `ProcessOrder` create; records `OngoingOrderSync`.
-- `syncOrderEditToOngoing` — status-gated `ProcessOrder` upsert.
-- `cancelOngoingOrder` — cancel in Ongoing if permitted.
-- `syncOngoingShipment` — apply tracking + mark Medusa fulfillment shipped. **Shared by
-  both the poll job and the webhook route.**
-- `syncOngoingInventory` — per-integration stock pull.
-- `retryFailedSyncs` — re-attempt `error`-state syncs with exponential backoff.
+- `setupOngoingLocationWorkflow` — provisions/links the native fulfillment-set/service-zone/
+  shipping-option binding for a location.
+- `pushOrderToOngoing` — re-queries the order, maps to `PostOrderModel`, `PUT /api/v1/orders`
+  (upsert by generated `orderNumber`), records `OngoingOrderSync`.
+- `syncOrderEditToOngoing` — status-gated `PUT /api/v1/orders` upsert (same idempotent endpoint).
+- `cancelOngoingOrder` — cancel in Ongoing if `latest_status_code ∈ cancellable_status_codes`;
+  idempotent.
+- `syncOngoingShipment` — apply tracking + mark Medusa fulfillment shipped via Medusa's
+  **`createOrderShipmentWorkflow`** (so reservations finalize and `order.shipment_created`
+  fires). Handles **multiple parcel tracking numbers**. **Idempotent**: no-op if
+  `OngoingOrderSync.shipped_at` already set. **Shared by both the poll job and the webhook route.**
+- `syncOngoingInventory` — per-integration stock pull (see §9).
+- `retryFailedSyncs` — re-attempt `sync_state=error AND error_class=retryable` with exponential
+  backoff.
 
-Every Ongoing call has compensation / error capture that writes to `OngoingOrderSync`.
+Every Ongoing call has compensation / error capture writing `OngoingOrderSync`
+(`sync_state`, `error_class`, `last_error`).
+
+### Order-number (upsert key) scheme
+
+`ongoing_order_number` is generated **per Medusa fulfillment** (a Medusa order can have multiple
+fulfillments, possibly across locations → one Ongoing order each), e.g.
+`<order.display_id>-<fulfillment short id>`. Stable across retries (idempotent upsert) and unique
+per Ongoing order.
 
 ## 7. Inbound: tracking + status
 
-- **Poll job** — per integration on its `status_poll_interval`: `GetOrdersByQuery`
-  updates `latest_status_code` (used for edit-gating) and, when shipped, calls
+- **Poll job** — per integration on its `status_poll_interval`: `GetOrdersByQuery` updates
+  `latest_status_code` (used for edit-gating) and, when the code ∈ `shipped_status_codes`, calls
   `syncOngoingShipment`.
 - **Webhook route** — public `POST /ongoing/webhooks/:credentialKey`, authenticated by an
-  **API-key header** compared against that integration's `webhookApiKey`. Calls the same
-  `syncOngoingShipment`.
+  **HMAC signature** over the body using the integration's `webhookSecret` (preferred; falls back
+  to API-key header if Ongoing can't sign). **`crypto.timingSafeEqual`** comparison; **uniform
+  `401`** for unknown key and bad signature (no warehouse enumeration); basic replay protection.
+  Calls the same `syncOngoingShipment`.
 
-Webhook = low latency; poll = reliable backfill.
+**Poll/webhook concurrency:** both paths converge on the idempotent `syncOngoingShipment`, guarded
+by `OngoingOrderSync.shipped_at` + a row-level lock, so shipment/tracking is applied exactly once.
+**Webhook payload shape needs verification** against Ongoing before coding the parser.
 
 ## 8. Order updates — full edit re-sync, gated
 
-Subscriber on order-edit / order-update events:
+Subscriber on **`order-edit.confirmed`** (payload `{ order_id, actions[] }`) — **not**
+`order.updated`:
 
-1. Resolve the `OngoingOrderSync` + `latest_status_code` (refresh from Ongoing if stale).
-2. Consult `edit_sync_rules` for the edit type (`address_contact` vs `line_items`):
-   - **Allowed** for the current status code → run `syncOrderEditToOngoing`
-     (`ProcessOrder` upsert).
-   - **Blocked** → skip and emit a warning event; surface it in the admin order widget.
-3. (Stretch goal) optionally hard-block the Medusa edit when disallowed.
+1. Resolve `OngoingOrderSync` + `latest_status_code` (read cached; refresh from Ongoing only if
+   older than a bound, with timeout — don't block the event path).
+2. Classify the edit from `actions[]` (address/contact vs line-items) and consult
+   `edit_sync_rules` for the current status code:
+   - **Allowed** → run `syncOrderEditToOngoing` (idempotent `PUT /orders` upsert).
+   - **Blocked** → skip + emit a warning event; surface in the admin order widget.
+3. (Stretch) optionally hard-block the Medusa edit when disallowed.
 
-Cancellation is handled via `cancelOngoingOrder` (provider `cancelFulfillment` /
-order-cancel subscriber).
+**Cancellation** is event-`order.canceled` (single-L) and provider `cancelFulfillment` — two
+triggers that both route to the idempotent `cancelOngoingOrder`, which converges safely.
+
+Subscribers never throw (log + record error), are idempotent, and re-query full data from the
+`{ id }`-style event payload.
 
 ## 9. Stock sync
 
-A dispatcher job runs frequently and, for each enabled integration whose
-`stock_sync_interval` has elapsed, runs `syncOngoingInventory`:
+A dispatcher job runs frequently; for each enabled integration whose `stock_sync_interval` has
+elapsed (`now − last_stock_sync_at`) and that is not locked, it acquires `sync_lock_until` and runs
+`syncOngoingInventory`:
 
-- `GetInventoryByQuery` (paginated), throttled by a per-integration concurrency limiter
-  per Ongoing's parallel-request limits.
+- `GetInventoryByQuery` (paginated), throttled by a per-integration concurrency limiter +
+  `429`/`Retry-After` handling.
 - Match Ongoing article ⇄ Medusa variant SKU.
-- Set Medusa **`stocked_quantity = Ongoing available + Medusa reserved`** at the bound
-  location. Ongoing's reported *available* is treated as the source of truth, and adding
-  back Medusa's reserved avoids double-counting allocations.
+- Set Medusa **`stocked_quantity` = `stock_source_field`** at the bound location via a workflow
+  inventory step. **Default `NumberOfItemsDecimal` (physical on-hand)** and let Medusa own
+  reservations (Medusa nets `available = stocked − reserved`). This avoids the dual-counting/race
+  problems of adding Medusa-reserved back in. Configurable to `SellableNumberOfItems` for setups
+  where orders also originate inside Ongoing (outside Medusa).
+- Map `ToReceiveNumberOfItems` → Medusa `incoming_quantity`.
+- Writes are absolute; do the read+write inside one workflow step to minimize the clobber window
+  against concurrent reservations. The location-level write only touches `stocked_quantity`, not
+  reservations.
+
+Update `last_stock_sync_at`; release the lock.
 
 ## 10. Admin UI (`src/admin`)
 
-- **Settings page** — list integrations; create/edit form that picks an available
-  `credential_key` (from configured options), assigns the stock location, sets stock +
-  poll intervals and the `edit_sync_rules` editor, shows the webhook URL, and offers a
-  **Test connection** action (uses env-sourced creds).
-- **Order widget** — Ongoing order id, current status code/text, tracking, last
-  sync/error, and a **re-push / retry** button.
+- **Settings page** — list integrations; create/edit form picks an available `credential_key`,
+  assigns the stock location (runs `setupOngoingLocationWorkflow`), sets stock + poll intervals,
+  `stock_source_field`, and the `edit_sync_rules` / `shipped_status_codes` / `cancellable_status_codes`
+  editors **populated from `GET /orders/statuses`** via a **Test connection** action.
+- **Order widget** — Ongoing order number/id, current status code/text, tracking (parcels), last
+  sync/error, **re-push / retry** button.
 - **Dashboard page** — failed/pending syncs across all orders with **bulk retry**, plus
   per-integration connection health.
 
 ## 11. Cross-cutting
 
-- **Ongoing REST client** (`src/.../lib`): Basic auth + `goodsOwnerId`, pagination,
-  rate-limit throttling, typed wrappers for the four operations.
-- **Plugin options:** `integrations[]` (with credentials from env), optional default
-  intervals, `rateLimitConcurrency`. Per-warehouse operational settings live in the DB.
-- **Failure handling:** every sync attempt recorded; `retryFailedSyncs` job with
-  exponential backoff; dashboard + order widget surface state.
-- **Dispatcher pattern:** Medusa jobs have a single fixed schedule each, so per-integration
-  intervals are realized by a frequently-running dispatcher that checks each integration's
-  interval and last-run timestamp.
+- **Ongoing REST client** (`src/.../lib`): Basic auth + `goodsOwnerId`, pagination, per-integration
+  concurrency limiter, `429`/`Retry-After` backoff, typed wrappers, and an **error taxonomy** that
+  classifies failures as `retryable` (network, 429, 5xx) vs `terminal` (validation, missing article,
+  4xx). Only `retryable` is retried by `retryFailedSyncs`.
+- **Idempotency** — order push/edit via `orderNumber` upsert; shipment apply guarded by
+  `shipped_at`; cancel is idempotent. All workflows safe under retry / duplicate events.
+- **Field mapping** (new requirement) — an explicit Medusa→`PostOrderModel` mapping: shipping
+  address (ISO-2 country code, postal, phone), consignee/contact, line items (SKU→article number,
+  quantity), weights/units, currency. Prices sent **as-is** (Medusa is not minor-units). A
+  validation step fails fast with an operator-readable error (`sync_state=error`,
+  `error_class=terminal`) on missing/invalid fields.
+- **SKU collisions** — SKU is not guaranteed unique across Medusa variants. If a SKU resolves to
+  >1 variant (stock sync) or can't be uniquely resolved (order push), record a `terminal` error
+  surfaced in the dashboard rather than guessing. (Configurable "require unique SKU" assumption.)
+- **Partial / multi-shipment orders** — one Ongoing order per Medusa fulfillment; shipment sync
+  handles N parcel tracking numbers per fulfillment.
+- **Dispatcher** — Medusa job schedules are static, so per-integration intervals use a frequent
+  dispatcher comparing `now − last_*_at`, with persisted timestamps + a `sync_lock_until` lock for
+  multi-instance/overlap safety. (Alternative considered: fixed interval tiers — simpler, less
+  flexible; chosen against because per-integration intervals were a stated requirement.)
+- **Soft-delete** — links to `stock_location`/`order`/`fulfillment` cascade appropriately; stale
+  sync rows are not resurrected.
+- **Observability** — structured logs with correlation ids (medusa order ⇄ ongoing order number),
+  success/failure counters, and `ongoing.sync.*` events feeding the dashboard.
 
 ## 12. Testing
 
-- **Integration tests** via `@medusajs/test-utils` against a **mocked Ongoing REST
-  client** — fulfillment push, shipment sync (poll + webhook), edit gating, cancellation,
-  stock sync.
-- **Unit tests** for: status-code gating logic, the `available + reserved` stock
-  reconciliation, webhook API-key auth, and the pagination/throttle client behavior.
+- **Integration tests** (`@medusajs/test-utils`) against a **mocked Ongoing REST client** —
+  fulfillment push (upsert), edit gating, cancellation, shipment sync via `createOrderShipmentWorkflow`
+  (poll + webhook, including the double-apply guard), stock sync.
+- **Unit tests** — status-code gating, stock field mapping, the upsert `orderNumber` scheme,
+  webhook HMAC + timing-safe compare, error-taxonomy classification, SKU-collision handling,
+  pagination/throttle/429 client behavior.
 - Add a `test` script to `package.json` (none exists yet).
 
-## 13. Packaging notes
+## 13. Open items to verify during implementation
+
+1. **`fulfillment.location_id` hydration** in the `createFulfillment` partial DTO (2.16.0).
+2. **Ongoing webhook payload shape + auth** (does Ongoing sign? per-warehouse URL support?).
+3. **Exact order-edit events / action types** for address vs contact vs line-item changes in 2.16.0
+   (map to the `edit_sync_rules` categories).
+4. **Per-warehouse carrier options** — whether `getFulfillmentOptions` (no args) can express
+   warehouse-specific carriers; flagged limitation if not.
+5. Confirm `createOrderShipmentWorkflow` is the correct entry point for applying tracking +
+   releasing reservations.
+
+## 14. Packaging notes
 
 Per the repo's `package.json` `exports` map and build output in `.medusa/server`:
 
@@ -229,5 +333,6 @@ Per the repo's `package.json` `exports` map and build output in `.medusa/server`
 - Workflows → `src/workflows/index.ts`
 - Admin → bundled separately (excluded from the server `tsconfig`)
 
-Run `npx medusa plugin:db:generate` after defining the module models; the consuming app
-applies migrations/links with `npx medusa db:migrate`.
+Models use `.unique()` for `credential_key` and `stock_location_id`. Run
+`npx medusa plugin:db:generate` after defining models; the consuming app applies migrations +
+links with `npx medusa db:migrate`.
