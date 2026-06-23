@@ -27,3 +27,6 @@ build
 
 # graphify knowledge graph output
 /graphify-out
+
+# local-only Claude Code settings (e.g. graphify hook)
+.claude/settings.local.json
