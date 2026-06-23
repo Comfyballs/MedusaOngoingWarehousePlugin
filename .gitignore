@@ -24,3 +24,6 @@ build
 !.yarn/versions
 
 .medusa
+
+# graphify knowledge graph output
+/graphify-out

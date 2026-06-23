@@ -70,3 +70,12 @@ When implementing, consult these for the exact order/article/inventory payloads 
 - Plugin authoring: `https://docs.medusajs.com/learn/fundamentals/plugins/create`
 
 The `medusa-dev` skills (`building-with-medusa`, `building-admin-dashboard-customizations`) and the MedusaDocs MCP are available — load them when planning or implementing backend modules/providers or admin UI.
+
+## graphify
+
+This project has a graphify knowledge graph at graphify-out/.
+
+Rules:
+- Before answering architecture or codebase questions, read graphify-out/GRAPH_REPORT.md for god nodes and community structure
+- If graphify-out/wiki/index.md exists, navigate it instead of reading raw files
+- After modifying code files in this session, run `graphify update .` to keep the graph current (AST-only, no API cost)
