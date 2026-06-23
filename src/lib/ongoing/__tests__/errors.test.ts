@@ -1,0 +1,26 @@
+import { OngoingApiError, classifyHttpStatus } from "../errors"
+
+describe("classifyHttpStatus", () => {
+  it("treats 429 and 5xx as retryable", () => {
+    expect(classifyHttpStatus(429)).toBe("retryable")
+    expect(classifyHttpStatus(500)).toBe("retryable")
+    expect(classifyHttpStatus(503)).toBe("retryable")
+  })
+
+  it("treats 4xx (except 429) as terminal", () => {
+    expect(classifyHttpStatus(400)).toBe("terminal")
+    expect(classifyHttpStatus(401)).toBe("terminal")
+    expect(classifyHttpStatus(404)).toBe("terminal")
+    expect(classifyHttpStatus(422)).toBe("terminal")
+  })
+})
+
+describe("OngoingApiError", () => {
+  it("carries status, kind, and body", () => {
+    const err = new OngoingApiError("boom", { status: 500, kind: "retryable", body: { e: 1 } })
+    expect(err).toBeInstanceOf(Error)
+    expect(err.status).toBe(500)
+    expect(err.kind).toBe("retryable")
+    expect(err.body).toEqual({ e: 1 })
+  })
+})
