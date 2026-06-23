@@ -1,6 +1,12 @@
 import { OngoingApiError, classifyHttpStatus } from "./errors"
 import { Throttle } from "./throttle"
 import type { OngoingCredentials } from "./types"
+import type {
+  OngoingInventoryRow,
+  OngoingOrderStatus,
+  OngoingTrackedOrder,
+  PostOrderModel,
+} from "./types"
 
 type ClientOpts = {
   concurrency?: number
@@ -71,6 +77,88 @@ export class OngoingClient {
     }
 
     return parsed as T
+  }
+
+  // --- public operations ---
+
+  async getOrderStatuses(): Promise<OngoingOrderStatus[]> {
+    const raw = await this.request<any[]>("GET", `/orders/statuses?goodsOwnerId=${this.creds.goodsOwnerId}`)
+    return (raw ?? []).map(mapStatus)
+  }
+
+  async getInventory(articleNumbers?: string[]): Promise<OngoingInventoryRow[]> {
+    const filter = articleNumbers?.length ? `&articleNumber=${articleNumbers.map(encodeURIComponent).join(",")}` : ""
+    return this.paginate((page) =>
+      this.request<any[]>("GET", `/articles/inventory?goodsOwnerId=${this.creds.goodsOwnerId}&page=${page}${filter}`)
+    ).then((rows) => rows.map(mapInventoryRow))
+  }
+
+  async getOrdersByStatus(from: number, to: number): Promise<OngoingTrackedOrder[]> {
+    const rows = await this.paginate((page) =>
+      this.request<any[]>(
+        "GET",
+        `/orders?goodsOwnerId=${this.creds.goodsOwnerId}&orderStatusFrom=${from}&orderStatusTo=${to}&page=${page}`
+      )
+    )
+    return rows.map(mapTrackedOrder)
+  }
+
+  async putOrder(order: PostOrderModel): Promise<{ ongoingOrderId: number; orderNumber: string }> {
+    const res = await this.request<any>("PUT", "/orders", order)
+    return {
+      ongoingOrderId: res?.orderInfo?.orderId,
+      orderNumber: res?.orderInfo?.orderNumber,
+    }
+  }
+
+  async testConnection(): Promise<boolean> {
+    await this.getOrderStatuses()
+    return true
+  }
+
+  private async paginate<T>(fetchPage: (page: number) => Promise<T[]>): Promise<T[]> {
+    const all: T[] = []
+    let page = 1
+    for (;;) {
+      const batch = (await fetchPage(page)) ?? []
+      all.push(...batch)
+      if (batch.length < ONGOING_PAGE_SIZE) {
+        return all
+      }
+      page++
+    }
+  }
+}
+
+const ONGOING_PAGE_SIZE = 50
+
+function mapStatus(raw: any): OngoingOrderStatus {
+  return { number: raw.Number, text: raw.Text }
+}
+
+function mapInventoryRow(raw: any): OngoingInventoryRow {
+  const t = raw.totalItems ?? {}
+  return {
+    articleNumber: raw.article?.articleNumber,
+    articleSystemId: raw.article?.articleSystemId,
+    numberOfItems: t.NumberOfItemsDecimal ?? 0,
+    allocatedNumberOfItems: t.AllocatedNumberOfItems ?? 0,
+    sellableNumberOfItems: t.SellableNumberOfItems ?? 0,
+    toReceiveNumberOfItems: t.ToReceiveNumberOfItems ?? 0,
+  }
+}
+
+function mapTrackedOrder(raw: any): OngoingTrackedOrder {
+  const parcels: any[] = raw.parcels ?? []
+  const trackingNumbers = parcels
+    .map((p) => p.parcelTracking?.code ?? p.trackingNumber)
+    .filter((c: unknown): c is string => typeof c === "string" && c.length > 0)
+  return {
+    ongoingOrderId: raw.orderInfo?.orderId,
+    orderNumber: raw.orderInfo?.orderNumber,
+    statusNumber: raw.orderInfo?.orderStatus?.number,
+    statusText: raw.orderInfo?.orderStatus?.text,
+    trackingNumbers,
   }
 }
 
