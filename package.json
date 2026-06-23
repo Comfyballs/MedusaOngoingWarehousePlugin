@@ -31,6 +31,7 @@
     "build": "medusa plugin:build",
     "dev": "medusa plugin:develop",
     "lint": "medusa lint",
+    "test": "jest",
     "prepublishOnly": "medusa plugin:build"
   },
   "devDependencies": {
@@ -43,10 +44,13 @@
     "@medusajs/test-utils": "2.16.0",
     "@medusajs/ui": "4.1.16",
     "@swc/core": "^1.7.28",
+    "@swc/jest": "^0.2",
+    "@types/jest": "^29",
     "@types/node": "^20.0.0",
     "@types/react": "^18.3.2",
     "@types/react-dom": "^18.2.25",
     "eslint": "^9.0.0",
+    "jest": "^29",
     "jiti": "^2.0.0",
     "prop-types": "^15.8.1",
     "react": "^18.2.0",
