@@ -122,7 +122,8 @@ if an `OngoingIntegration.credential_key` references a key not present in option
 - `stock_sync_enabled`, `stock_sync_interval`
 - `status_poll_interval`
 - `stock_reconcile_mode` — how Medusa `stocked_quantity` is computed from Ongoing + Medusa
-  reservations; default `sellable_plus_reserved` (Approach A). See §9.
+  reservations; one of `sellable_plus_reserved` (A, **default**) | `precise` (B) | `onhand` (raw).
+  All three ship. See §9.
 - `edit_sync_rules` (JSON) — per edit-type (`address_contact`, `line_items`) → allowed status
   codes (configured against the live `GET /orders/statuses` list).
 - `shipped_status_codes` (JSON) — which status codes mean "dispatched" (drives shipment sync).
@@ -267,7 +268,8 @@ elapsed (`now − last_stock_sync_at`) and that is not locked, it acquires `sync
     reservations still reduce availability. **Known bounded inaccuracy:** when a SKU has *both*
     manual Medusa reservations *and* direct-in-Ongoing orders, `min` overestimates the overlap and
     slightly overstates availability (minor oversell risk).
-  - **`precise` (Approach B, optional/heavier):** correlate Medusa reservations to synced Ongoing
+  - **`precise` (Approach B, shipped as a selectable per-integration mode):** correlate Medusa
+    reservations to synced Ongoing
     orders via `OngoingOrderSync` to get `M_res_synced` (reservations already represented as
     Ongoing allocations); `stocked_quantity = sellable + M_res_synced`. Exact, but a per-SKU
     reservation↔order correlation cost.
