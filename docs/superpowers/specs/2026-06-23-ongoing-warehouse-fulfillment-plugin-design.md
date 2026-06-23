@@ -121,8 +121,8 @@ if an `OngoingIntegration.credential_key` references a key not present in option
 - `stock_location_id` (**unique**) — one integration ⇄ one location.
 - `stock_sync_enabled`, `stock_sync_interval`
 - `status_poll_interval`
-- `stock_source_field` — which Ongoing quantity feeds Medusa `stocked_quantity`; default
-  `NumberOfItemsDecimal` (physical on-hand). See §9.
+- `stock_reconcile_mode` — how Medusa `stocked_quantity` is computed from Ongoing + Medusa
+  reservations; default `sellable_plus_reserved` (Approach A). See §9.
 - `edit_sync_rules` (JSON) — per edit-type (`address_contact`, `line_items`) → allowed status
   codes (configured against the live `GET /orders/statuses` list).
 - `shipped_status_codes` (JSON) — which status codes mean "dispatched" (drives shipment sync).
@@ -251,17 +251,34 @@ elapsed (`now − last_stock_sync_at`) and that is not locked, it acquires `sync
 `syncOngoingInventory`:
 
 - `GetInventoryByQuery` (paginated), throttled by a per-integration concurrency limiter +
-  `429`/`Retry-After` handling.
+  `429`/`Retry-After` handling. Fields used: `SellableNumberOfItems` (`sellable`),
+  `AllocatedNumberOfItems` (`alloc`), `ToReceiveNumberOfItems`.
 - Match Ongoing article ⇄ Medusa variant SKU.
-- Set Medusa **`stocked_quantity` = `stock_source_field`** at the bound location via a workflow
-  inventory step. **Default `NumberOfItemsDecimal` (physical on-hand)** and let Medusa own
-  reservations (Medusa nets `available = stocked − reserved`). This avoids the dual-counting/race
-  problems of adding Medusa-reserved back in. Configurable to `SellableNumberOfItems` for setups
-  where orders also originate inside Ongoing (outside Medusa).
+- **Reconcile `stocked_quantity` so Medusa's derived `available` reflects both systems'
+  reservations without double-counting.** `sellable` already nets out Ongoing-side allocations/
+  locks (so it's the base); Medusa reservations that Ongoing does **not** already know about must
+  additionally reduce availability. Let `M_res` = Medusa `reserved_quantity` at the location:
+
+  - **`sellable_plus_reserved` (Approach A, default):**
+    `stocked_quantity = sellable + min(M_res, alloc)`
+    ⇒ `available = sellable − max(0, M_res − alloc)`.
+    Adds reserved back but caps the add-back at Ongoing's `alloc`, so a Medusa reservation that is
+    already an Ongoing allocation isn't subtracted twice, while manual/un-synced Medusa
+    reservations still reduce availability. **Known bounded inaccuracy:** when a SKU has *both*
+    manual Medusa reservations *and* direct-in-Ongoing orders, `min` overestimates the overlap and
+    slightly overstates availability (minor oversell risk).
+  - **`precise` (Approach B, optional/heavier):** correlate Medusa reservations to synced Ongoing
+    orders via `OngoingOrderSync` to get `M_res_synced` (reservations already represented as
+    Ongoing allocations); `stocked_quantity = sellable + M_res_synced`. Exact, but a per-SKU
+    reservation↔order correlation cost.
+  - **`onhand` (raw):** `stocked_quantity = NumberOfItemsDecimal`, Medusa owns reservations
+    entirely (ignores Ongoing allocations) — for stores with no direct-Ongoing orders.
+
+  Clamp `stocked_quantity` to `≥ 0`.
 - Map `ToReceiveNumberOfItems` → Medusa `incoming_quantity`.
-- Writes are absolute; do the read+write inside one workflow step to minimize the clobber window
-  against concurrent reservations. The location-level write only touches `stocked_quantity`, not
-  reservations.
+- Writes are absolute; read `M_res` and write `stocked_quantity` inside **one workflow step**
+  (re-read `M_res` immediately before writing) to minimize the clobber window against concurrent
+  reservations. The write only touches `stocked_quantity`, never reservations.
 
 Update `last_stock_sync_at`; release the lock.
 
@@ -308,7 +325,8 @@ Update `last_stock_sync_at`; release the lock.
 - **Integration tests** (`@medusajs/test-utils`) against a **mocked Ongoing REST client** —
   fulfillment push (upsert), edit gating, cancellation, shipment sync via `createOrderShipmentWorkflow`
   (poll + webhook, including the double-apply guard), stock sync.
-- **Unit tests** — status-code gating, stock field mapping, the upsert `orderNumber` scheme,
+- **Unit tests** — status-code gating, the stock reconciliation formulas (Approach A `min` cap,
+  the bounded-inaccuracy mixed scenario, clamp-to-zero), the upsert `orderNumber` scheme,
   webhook HMAC + timing-safe compare, error-taxonomy classification, SKU-collision handling,
   pagination/throttle/429 client behavior.
 - Add a `test` script to `package.json` (none exists yet).
