@@ -1,5 +1,6 @@
 import { createStep, StepResponse } from "@medusajs/framework/workflows-sdk"
 import { ONGOING_MODULE } from "../../../modules/ongoing"
+import type OngoingModuleService from "../../../modules/ongoing/service"
 
 type Input = {
   integration_id: string
@@ -9,7 +10,7 @@ type Input = {
 export const upsertIntegrationLocationStep = createStep(
   "ongoing-upsert-integration-location",
   async (input: Input, { container }) => {
-    const ongoing = container.resolve(ONGOING_MODULE)
+    const ongoing = container.resolve<OngoingModuleService>(ONGOING_MODULE)
 
     const existing = await ongoing.retrieveOngoingIntegration(input.integration_id)
     const previousLocationId = existing.stock_location_id
@@ -28,7 +29,7 @@ export const upsertIntegrationLocationStep = createStep(
     if (!compensation) {
       return
     }
-    const ongoing = container.resolve(ONGOING_MODULE)
+    const ongoing = container.resolve<OngoingModuleService>(ONGOING_MODULE)
     await ongoing.updateOngoingIntegrations({
       id: compensation.integration_id,
       stock_location_id: compensation.previousLocationId,
