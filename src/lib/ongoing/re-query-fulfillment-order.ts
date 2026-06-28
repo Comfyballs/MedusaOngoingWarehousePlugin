@@ -1,0 +1,90 @@
+import { MedusaError } from "@medusajs/framework/utils"
+
+export type QueriedFulfillmentOrder = {
+  fulfillment_id: string
+  location_id: string
+  items: Array<{
+    quantity: number
+    sku: string | null
+    barcode: string | null
+    title: string | null
+    line_item_id: string | null
+  }>
+  order: {
+    id: string
+    display_id: number
+    currency_code: string
+    email: string | null
+    shipping_address: {
+      first_name: string | null
+      last_name: string | null
+      address_1: string | null
+      address_2: string | null
+      city: string | null
+      postal_code: string | null
+      country_code: string | null
+      phone: string | null
+      company: string | null
+    } | null
+  }
+}
+
+// Shared helper OWNED by #26 and imported by #27. Plain async fn (not a step) so both can reuse it.
+export async function reQueryFulfillmentOrder(
+  query: any,
+  fulfillmentId: string
+): Promise<QueriedFulfillmentOrder> {
+  const { data } = await query.graph({
+    entity: "fulfillment",
+    fields: [
+      "id",
+      "location_id",
+      "items.quantity",
+      "items.sku",
+      "items.barcode",
+      "items.title",
+      "items.line_item_id",
+      "order.id",
+      "order.display_id",
+      "order.currency_code",
+      "order.email",
+      "order.shipping_address.first_name",
+      "order.shipping_address.last_name",
+      "order.shipping_address.address_1",
+      "order.shipping_address.address_2",
+      "order.shipping_address.city",
+      "order.shipping_address.postal_code",
+      "order.shipping_address.country_code",
+      "order.shipping_address.phone",
+      "order.shipping_address.company",
+    ],
+    filters: { id: fulfillmentId },
+  })
+
+  const fulfillment = data[0]
+  if (!fulfillment) {
+    throw new MedusaError(
+      MedusaError.Types.NOT_FOUND,
+      `[ongoing] fulfillment "${fulfillmentId}" not found when pushing to Ongoing`
+    )
+  }
+
+  return {
+    fulfillment_id: fulfillment.id,
+    location_id: fulfillment.location_id,
+    items: (fulfillment.items ?? []).map((i: any) => ({
+      quantity: i.quantity,
+      sku: i.sku ?? null,
+      barcode: i.barcode ?? null,
+      title: i.title ?? null,
+      line_item_id: i.line_item_id ?? null,
+    })),
+    order: {
+      id: fulfillment.order?.id,
+      display_id: fulfillment.order?.display_id,
+      currency_code: fulfillment.order?.currency_code,
+      email: fulfillment.order?.email ?? null,
+      shipping_address: fulfillment.order?.shipping_address ?? null,
+    },
+  }
+}
