@@ -68,11 +68,12 @@ class OngoingModuleService extends MedusaService({
     const data = { ...input, last_synced_at: new Date() }
 
     if (existing) {
-      const [updated] = await this.updateOngoingOrderSyncs({ id: existing.id, ...data })
+      // Single-object input -> auto-CRUD returns a single entity (not an array).
+      const updated = await this.updateOngoingOrderSyncs({ id: existing.id, ...data })
       return { id: updated.id }
     }
 
-    const [created] = await this.createOngoingOrderSyncs(data)
+    const created = await this.createOngoingOrderSyncs(data)
     return { id: created.id }
   }
 }

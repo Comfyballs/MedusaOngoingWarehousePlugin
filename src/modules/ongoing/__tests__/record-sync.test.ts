@@ -19,7 +19,7 @@ describe("OngoingModuleService.recordSync", () => {
   it("creates a new row when none exists for the order number", async () => {
     const svc = makeService()
     ;(svc as any).listOngoingOrderSyncs.mockResolvedValue([])
-    ;(svc as any).createOngoingOrderSyncs.mockResolvedValue([{ id: "oos_1" }])
+    ;(svc as any).createOngoingOrderSyncs.mockResolvedValue({ id: "oos_1" })
 
     const result = await svc.recordSync({
       ongoing_order_number: "1001-abc",
@@ -46,7 +46,7 @@ describe("OngoingModuleService.recordSync", () => {
   it("updates the existing row (by id) when one already exists", async () => {
     const svc = makeService()
     ;(svc as any).listOngoingOrderSyncs.mockResolvedValue([{ id: "oos_9" }])
-    ;(svc as any).updateOngoingOrderSyncs.mockResolvedValue([{ id: "oos_9" }])
+    ;(svc as any).updateOngoingOrderSyncs.mockResolvedValue({ id: "oos_9" })
 
     const result = await svc.recordSync({
       ongoing_order_number: "1001-abc",
@@ -66,7 +66,7 @@ describe("OngoingModuleService.recordSync", () => {
   it("records a classified error on failure", async () => {
     const svc = makeService()
     ;(svc as any).listOngoingOrderSyncs.mockResolvedValue([{ id: "oos_3" }])
-    ;(svc as any).updateOngoingOrderSyncs.mockResolvedValue([{ id: "oos_3" }])
+    ;(svc as any).updateOngoingOrderSyncs.mockResolvedValue({ id: "oos_3" })
 
     await svc.recordSync({
       ongoing_order_number: "1001-abc",
