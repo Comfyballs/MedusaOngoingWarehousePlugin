@@ -1,4 +1,4 @@
-import { OngoingApiError, classifyHttpStatus } from "./errors"
+import { OngoingApiError, classifyHttpStatus, classifyError } from "./errors"
 import { Throttle } from "./throttle"
 import type { OngoingCredentials } from "./types"
 import type {
@@ -40,11 +40,16 @@ export class OngoingClient {
       try {
         return await this.throttle.run(() => this.doFetch<T>(method, path, body))
       } catch (err) {
-        const retryable = err instanceof OngoingApiError && err.kind === "retryable"
+        // #67: classifyError treats a raw network error (ECONNRESET / timeout / DNS /
+        // a fetch TypeError) as retryable, so a brief outage is retried (bounded by
+        // maxRetries) rather than surfacing on the first attempt.
+        const retryable = classifyError(err) === "retryable"
         if (!retryable || attempt >= this.maxRetries) {
           throw err
         }
-        const backoff = (err as OngoingApiError).retryAfterMs ?? 250 * 2 ** attempt
+        // retryAfterMs only exists on an OngoingApiError; a network error has none.
+        const retryAfterMs = err instanceof OngoingApiError ? err.retryAfterMs : undefined
+        const backoff = retryAfterMs ?? 250 * 2 ** attempt
         await this.sleep(backoff)
         attempt++
       }

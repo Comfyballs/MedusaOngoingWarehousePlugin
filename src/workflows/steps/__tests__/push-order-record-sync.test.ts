@@ -75,14 +75,29 @@ describe("pushOrderRecordSyncStep", () => {
     )
   })
 
-  it("defaults to terminal for a non-classified error, then rethrows", async () => {
-    const putOrder = jest.fn().mockRejectedValue(new Error("mapping blew up"))
+  it("classifies a non-OngoingApiError (network/unknown) failure as retryable, then rethrows", async () => {
+    // #67: a raw network error (ECONNRESET / timeout / DNS / fetch TypeError) must be
+    // retryable, not dead-lettered as terminal.
+    const putOrder = jest.fn().mockRejectedValue(new TypeError("fetch failed"))
     const { container, recordSync } = makeContainer({ putOrder })
 
-    await expect(invoke(baseInput, { container })).rejects.toThrow("mapping blew up")
+    await expect(invoke(baseInput, { container })).rejects.toThrow("fetch failed")
 
     expect(recordSync).toHaveBeenCalledWith(
-      expect.objectContaining({ sync_state: "error", error_class: "terminal", last_error: "mapping blew up" })
+      expect.objectContaining({ sync_state: "error", error_class: "retryable", last_error: "fetch failed" })
+    )
+  })
+
+  it("keeps a terminal OngoingApiError (e.g. validation) terminal, then rethrows", async () => {
+    const putOrder = jest
+      .fn()
+      .mockRejectedValue(new OngoingApiError("bad request", { kind: "terminal", status: 400 }))
+    const { container, recordSync } = makeContainer({ putOrder })
+
+    await expect(invoke(baseInput, { container })).rejects.toMatchObject({ kind: "terminal" })
+
+    expect(recordSync).toHaveBeenCalledWith(
+      expect.objectContaining({ sync_state: "error", error_class: "terminal", last_error: "bad request" })
     )
   })
 
@@ -98,10 +113,12 @@ describe("pushOrderRecordSyncStep", () => {
 
     await expect(invoke(baseInput, { container })).rejects.toThrow("no credentials configured")
 
-    // pending was written first, then the failure is recorded as a terminal error.
+    // pending was written first, then the failure is recorded. A misconfigured
+    // credential_key is a plain Error (#67) → classified retryable so a later
+    // reconfigure + retry can succeed.
     expect(recordSync.mock.calls[0][0]).toMatchObject({ sync_state: "pending" })
     expect(recordSync).toHaveBeenCalledWith(
-      expect.objectContaining({ sync_state: "error", error_class: "terminal" })
+      expect.objectContaining({ sync_state: "error", error_class: "retryable" })
     )
   })
 })
