@@ -64,7 +64,12 @@ describe("OngoingClient operations", () => {
   it("upserts an order and returns the ongoing id + orderNumber", async () => {
     const fetchImpl = jest.fn().mockResolvedValue(json({ orderInfo: { orderId: 999, orderNumber: "1001-abc" } }))
     const client = new OngoingClient(creds, { fetchImpl })
-    const result = await client.putOrder({ orderNumber: "1001-abc", goodsOwnerId: 7 })
+    const result = await client.putOrder({
+      orderNumber: "1001-abc",
+      goodsOwnerId: 7,
+      deliveryDate: "2026-07-01T10:00:00.000Z",
+      consignee: { name: "Ada Lovelace", postCode: "0155", countryCode: "no" },
+    })
     expect(result).toEqual({ ongoingOrderId: 999, orderNumber: "1001-abc" })
     const [url, init] = fetchImpl.mock.calls[0]
     expect(url).toBe("https://api.example.test/api/v1/orders")
