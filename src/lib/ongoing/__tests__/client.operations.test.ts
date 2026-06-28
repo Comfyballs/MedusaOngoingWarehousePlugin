@@ -61,8 +61,8 @@ describe("OngoingClient operations", () => {
     expect(statuses).toEqual([{ number: 200, text: "Open" }, { number: 400, text: "Sent" }])
   })
 
-  it("upserts an order and returns the ongoing id + orderNumber", async () => {
-    const fetchImpl = jest.fn().mockResolvedValue(json({ orderInfo: { orderId: 999, orderNumber: "1001-abc" } }))
+  it("upserts an order and returns the ongoing id from the flat response", async () => {
+    const fetchImpl = jest.fn().mockResolvedValue(json({ orderId: 999, message: "Order created" }))
     const client = new OngoingClient(creds, { fetchImpl })
     const result = await client.putOrder({
       orderNumber: "1001-abc",
@@ -70,7 +70,7 @@ describe("OngoingClient operations", () => {
       deliveryDate: "2026-07-01T10:00:00.000Z",
       consignee: { name: "Ada Lovelace", postCode: "0155", countryCode: "no" },
     })
-    expect(result).toEqual({ ongoingOrderId: 999, orderNumber: "1001-abc" })
+    expect(result).toEqual({ ongoingOrderId: 999 })
     const [url, init] = fetchImpl.mock.calls[0]
     expect(url).toBe("https://api.example.test/api/v1/orders")
     expect(init.method).toBe("PUT")
