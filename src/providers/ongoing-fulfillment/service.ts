@@ -38,9 +38,12 @@ class OngoingFulfillmentProviderService extends AbstractFulfillmentProviderServi
   protected readonly options_: Record<string, unknown>
 
   constructor(container: MedusaContainer, options?: Record<string, unknown>) {
-    super(container, options)
+    // AbstractFulfillmentProviderService's constructor takes no arguments in 2.16.0.
+    super()
     this.container_ = container
-    this.logger_ = container.logger
+    // `logger` is registered on the module's container (awilix cradle) and is
+    // resolvable as a property at runtime; MedusaContainer doesn't type it, so cast.
+    this.logger_ = (container as unknown as { logger: Logger }).logger
     this.options_ = options ?? {}
   }
 
