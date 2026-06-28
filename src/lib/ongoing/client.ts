@@ -103,12 +103,9 @@ export class OngoingClient {
     return rows.map(mapTrackedOrder)
   }
 
-  async putOrder(order: PostOrderModel): Promise<{ ongoingOrderId: number; orderNumber: string }> {
-    const res = await this.request<any>("PUT", "/orders", order)
-    return {
-      ongoingOrderId: res?.orderInfo?.orderId,
-      orderNumber: res?.orderInfo?.orderNumber,
-    }
+  async putOrder(order: PostOrderModel): Promise<{ ongoingOrderId: number }> {
+    const res = await this.request<{ orderId: number; message?: string }>("PUT", "/orders", order)
+    return { ongoingOrderId: res.orderId }
   }
 
   async cancelOrder(ongoingOrderId: number): Promise<{ ongoingOrderId: number; message?: string }> {

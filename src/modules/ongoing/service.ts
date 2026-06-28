@@ -5,6 +5,17 @@ import { validateOngoingOptions } from "./options"
 import { OngoingClient } from "../../lib/ongoing/client"
 import type { OngoingCredentials, OngoingPluginOptions } from "../../lib/ongoing/types"
 
+export type RecordSyncInput = {
+  ongoing_order_number: string
+  integration_id: string
+  medusa_order_id: string
+  medusa_fulfillment_id?: string | null
+  sync_state: "pending" | "sent" | "shipped" | "cancelled" | "error"
+  ongoing_order_id?: number | null
+  error_class?: "retryable" | "terminal" | null
+  last_error?: string | null
+}
+
 class OngoingModuleService extends MedusaService({
   OngoingIntegration,
   OngoingOrderSync,
@@ -47,6 +58,23 @@ class OngoingModuleService extends MedusaService({
       enabled: true,
     })
     return integration
+  }
+
+  async recordSync(input: RecordSyncInput): Promise<{ id: string }> {
+    const [existing] = await this.listOngoingOrderSyncs({
+      ongoing_order_number: input.ongoing_order_number,
+    })
+
+    const data = { ...input, last_synced_at: new Date() }
+
+    if (existing) {
+      // Single-object input -> auto-CRUD returns a single entity (not an array).
+      const updated = await this.updateOngoingOrderSyncs({ id: existing.id, ...data })
+      return { id: updated.id }
+    }
+
+    const created = await this.createOngoingOrderSyncs(data)
+    return { id: created.id }
   }
 }
 
