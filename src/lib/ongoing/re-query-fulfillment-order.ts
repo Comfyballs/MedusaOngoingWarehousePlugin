@@ -69,6 +69,14 @@ export async function reQueryFulfillmentOrder(
     )
   }
 
+  const order = fulfillment.order
+  if (!order) {
+    throw new MedusaError(
+      MedusaError.Types.NOT_FOUND,
+      `[ongoing] fulfillment "${fulfillmentId}" has no linked order when pushing to Ongoing`
+    )
+  }
+
   return {
     fulfillment_id: fulfillment.id,
     location_id: fulfillment.location_id,
@@ -80,11 +88,11 @@ export async function reQueryFulfillmentOrder(
       line_item_id: i.line_item_id ?? null,
     })),
     order: {
-      id: fulfillment.order?.id,
-      display_id: fulfillment.order?.display_id,
-      currency_code: fulfillment.order?.currency_code,
-      email: fulfillment.order?.email ?? null,
-      shipping_address: fulfillment.order?.shipping_address ?? null,
+      id: order.id,
+      display_id: order.display_id,
+      currency_code: order.currency_code,
+      email: order.email ?? null,
+      shipping_address: order.shipping_address ?? null,
     },
   }
 }

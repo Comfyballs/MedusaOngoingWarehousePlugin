@@ -36,14 +36,19 @@ describe("pushOrderRecordSyncStep", () => {
 
     // First recordSync = pending (before PUT), second = sent (after PUT).
     expect(recordSync).toHaveBeenCalledTimes(2)
+    // pending + sent both clear any error columns left by a prior failed attempt.
     expect(recordSync.mock.calls[0][0]).toMatchObject({
       ongoing_order_number: "1001-ful1",
       sync_state: "pending",
+      error_class: null,
+      last_error: null,
     })
     expect(recordSync.mock.calls[1][0]).toMatchObject({
       ongoing_order_number: "1001-ful1",
       sync_state: "sent",
       ongoing_order_id: 999,
+      error_class: null,
+      last_error: null,
     })
 
     // putOrder must be called AFTER the pending record (idempotent retry).
@@ -78,6 +83,25 @@ describe("pushOrderRecordSyncStep", () => {
 
     expect(recordSync).toHaveBeenCalledWith(
       expect.objectContaining({ sync_state: "error", error_class: "terminal", last_error: "mapping blew up" })
+    )
+  })
+
+  it("records an error (not stuck pending) when getClient throws", async () => {
+    const recordSync = jest.fn().mockResolvedValue({ id: "oos_1" })
+    const service = {
+      getClient: jest.fn(() => {
+        throw new Error("no credentials configured for credential_key \"wh-a\"")
+      }),
+      recordSync,
+    }
+    const container = { resolve: jest.fn().mockReturnValue(service) }
+
+    await expect(invoke(baseInput, { container })).rejects.toThrow("no credentials configured")
+
+    // pending was written first, then the failure is recorded as a terminal error.
+    expect(recordSync.mock.calls[0][0]).toMatchObject({ sync_state: "pending" })
+    expect(recordSync).toHaveBeenCalledWith(
+      expect.objectContaining({ sync_state: "error", error_class: "terminal" })
     )
   })
 })

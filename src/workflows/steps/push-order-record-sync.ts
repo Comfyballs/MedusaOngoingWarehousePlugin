@@ -30,18 +30,22 @@ export async function pushOrderRecordSyncHandler(
   const service: any = container.resolve(ONGOING_MODULE)
 
   // Persist the order number BEFORE the PUT so a retry upserts the same Ongoing order.
+  // Clear any error columns from a prior failed attempt so a retry starts clean.
   await service.recordSync({
     ongoing_order_number: input.ongoing_order_number,
     integration_id: input.integration_id,
     medusa_order_id: input.medusa_order_id,
     medusa_fulfillment_id: input.medusa_fulfillment_id,
     sync_state: "pending",
+    error_class: null,
+    last_error: null,
   })
-
-  const client = service.getClient(input.credential_key)
 
   let ongoingOrderId: number
   try {
+    // getClient() is inside the try so a misconfigured credential_key is also
+    // recorded as an error row (it never leaves the sync stuck in "pending").
+    const client = service.getClient(input.credential_key)
     const res = await client.putOrder(input.model)
     ongoingOrderId = res.ongoingOrderId
   } catch (err) {
@@ -66,6 +70,8 @@ export async function pushOrderRecordSyncHandler(
     medusa_fulfillment_id: input.medusa_fulfillment_id,
     sync_state: "sent",
     ongoing_order_id: ongoingOrderId,
+    error_class: null,
+    last_error: null,
   })
 
   return { ongoingOrderId, orderNumber: input.ongoing_order_number }
