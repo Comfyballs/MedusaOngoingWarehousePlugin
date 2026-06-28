@@ -33,7 +33,7 @@ export class OngoingClient {
     this.sleep = opts.sleep ?? defaultSleep
   }
 
-  protected async request<T>(method: "GET" | "PUT", path: string, body?: unknown): Promise<T> {
+  protected async request<T>(method: "GET" | "PUT" | "DELETE", path: string, body?: unknown): Promise<T> {
     let attempt = 0
     // attempts = initial try + up to maxRetries retries
     for (;;) {
@@ -51,7 +51,7 @@ export class OngoingClient {
     }
   }
 
-  private async doFetch<T>(method: "GET" | "PUT", path: string, body?: unknown): Promise<T> {
+  private async doFetch<T>(method: "GET" | "PUT" | "DELETE", path: string, body?: unknown): Promise<T> {
     const res = await this.fetchImpl(`${this.creds.baseUrl}${path}`, {
       method,
       headers: {
@@ -108,6 +108,14 @@ export class OngoingClient {
     return {
       ongoingOrderId: res?.orderInfo?.orderId,
       orderNumber: res?.orderInfo?.orderNumber,
+    }
+  }
+
+  async cancelOrder(ongoingOrderId: number): Promise<{ ongoingOrderId: number; message?: string }> {
+    const res = await this.request<any>("DELETE", `/orders/${ongoingOrderId}`)
+    return {
+      ongoingOrderId: res?.orderId ?? ongoingOrderId,
+      message: res?.message,
     }
   }
 
