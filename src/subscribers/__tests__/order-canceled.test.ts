@@ -8,9 +8,6 @@ jest.mock("../../workflows/cancel-ongoing-order", () => ({
 }))
 
 import orderCanceledHandler, { config } from "../order-canceled"
-import { cancelOngoingOrderWorkflow } from "../../workflows/cancel-ongoing-order"
-
-const cancelFactory = cancelOngoingOrderWorkflow as unknown as jest.Mock
 
 type Row = {
   id: string

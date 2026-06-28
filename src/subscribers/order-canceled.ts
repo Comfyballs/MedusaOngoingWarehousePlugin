@@ -61,9 +61,14 @@ export default async function orderCanceledHandler({
   // status-gated and idempotent, so a per-row no-op is safe and expected.
   for (const row of rows) {
     try {
-      await cancelOngoingOrderWorkflow(container).run({
+      const { result } = await cancelOngoingOrderWorkflow(container).run({
         input: mapRowToInput(orderId, row),
       })
+      logger.info(
+        `[ongoing] order.canceled: ${row.ongoing_order_number} (order ${orderId}) -> ${
+          result?.reason ?? "done"
+        }`
+      )
     } catch (error) {
       logger.error(
         `[ongoing] order.canceled: cancelOngoingOrderWorkflow failed for ${row.ongoing_order_number} (order ${orderId}): ${
