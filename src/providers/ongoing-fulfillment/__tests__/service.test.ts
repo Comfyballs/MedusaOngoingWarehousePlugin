@@ -21,6 +21,7 @@ describe("ongoing fulfillment constants", () => {
 })
 
 import OngoingFulfillmentProviderService from "../service"
+import { AbstractFulfillmentProviderService } from "@medusajs/framework/utils"
 import type { Logger } from "@medusajs/framework/types"
 
 const loggerStub = {
@@ -81,10 +82,10 @@ describe("OngoingFulfillmentProviderService", () => {
     await expect(service.canCalculate({} as any)).resolves.toBe(false)
   })
 
-  it("leaves createFulfillment on the throwing base (filled by #21)", async () => {
-    const service = makeService()
-    await expect(
-      service.createFulfillment({}, [], undefined as any, {} as any)
-    ).rejects.toThrow(/must be overridden/)
+  it("overrides createFulfillment (no longer the throwing base) — behavior covered in create-fulfillment.test.ts", () => {
+    // #21 implements createFulfillment; it must not be the base 'must be overridden' stub.
+    expect(OngoingFulfillmentProviderService.prototype.createFulfillment).not.toBe(
+      AbstractFulfillmentProviderService.prototype.createFulfillment
+    )
   })
 })
