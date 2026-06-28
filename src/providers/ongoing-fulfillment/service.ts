@@ -12,6 +12,21 @@ import {
   ONGOING_RETURN_OPTION_ID,
   ONGOING_STANDARD_OPTION_ID,
 } from "./constants"
+import { cancelOngoingOrderWorkflow } from "../../workflows"
+
+/**
+ * Shape `createFulfillment` (#21) stashes as the fulfillment `data`. Medusa hands
+ * this object (and nothing else) back to `cancelFulfillment`, so every identifier
+ * cancellation needs must be read out of it.
+ */
+export type OngoingFulfillmentData = {
+  ongoing_order_number?: string
+  ongoing_order_id?: number
+  location_id?: string
+  credential_key?: string
+  medusa_order_id?: string
+  medusa_fulfillment_id?: string
+}
 
 const KNOWN_OPTION_IDS = new Set<string>([
   ONGOING_STANDARD_OPTION_ID,
@@ -112,6 +127,79 @@ class OngoingFulfillmentProviderService extends AbstractFulfillmentProviderServi
     _data: Record<string, unknown>
   ): Promise<never[]> {
     return []
+  }
+
+  /**
+   * Cancel the Ongoing order behind a fulfillment.
+   *
+   * Medusa's fulfillment module-service calls
+   * `provider.cancelFulfillment(provider_id, fulfillment.data ?? {})`, so this
+   * method receives ONLY the stashed `data` — no fulfillment row, items, or
+   * location argument. It reads the order identifiers out of `data` and runs the
+   * idempotent `cancelOngoingOrderWorkflow` (#28); all cancellation gating and
+   * already-cancelled handling lives in that workflow. This method is a thin,
+   * defensive adapter: it never throws on a benign already-cancelled or
+   * missing-identifier path, but it lets genuine retryable failures propagate so
+   * Medusa can surface a retry. Converges safely with the `order.canceled`
+   * subscriber (#32) because the workflow is idempotent.
+   */
+  async cancelFulfillment(
+    data: Record<string, unknown>
+  ): Promise<Record<string, unknown>> {
+    const stashed = (data ?? {}) as OngoingFulfillmentData
+
+    const ongoingOrderNumber =
+      typeof stashed.ongoing_order_number === "string"
+        ? stashed.ongoing_order_number
+        : undefined
+    const medusaFulfillmentId =
+      typeof stashed.medusa_fulfillment_id === "string"
+        ? stashed.medusa_fulfillment_id
+        : undefined
+    const medusaOrderId =
+      typeof stashed.medusa_order_id === "string"
+        ? stashed.medusa_order_id
+        : undefined
+
+    const container = this.container_
+
+    // Idempotent no-op: nothing in `data` lets us locate an OngoingOrderSync row.
+    if (!ongoingOrderNumber && !medusaFulfillmentId && !medusaOrderId) {
+      if (typeof stashed.location_id === "string") {
+        // Diagnostic lookup only; never throws.
+        try {
+          const ongoing = container.resolve("ongoing") as {
+            getIntegrationByLocation: (id: string) => Promise<unknown>
+          }
+          await ongoing.getIntegrationByLocation(stashed.location_id)
+        } catch {
+          // swallow — this is purely a diagnostic lookup
+        }
+      }
+      return { ...data, canceled: false, reason: "no_identifier" }
+    }
+
+    const input: Record<string, string> = {}
+    if (ongoingOrderNumber) {
+      input.ongoing_order_number = ongoingOrderNumber
+    }
+    if (medusaFulfillmentId) {
+      input.medusa_fulfillment_id = medusaFulfillmentId
+    }
+    if (medusaOrderId) {
+      input.medusa_order_id = medusaOrderId
+    }
+
+    // The workflow is idempotent and status-gated (#28). A `retryable` error
+    // propagates here so Medusa surfaces a retry; benign already-cancelled
+    // outcomes resolve via the decision result (no throw).
+    const { result } = await cancelOngoingOrderWorkflow(container).run({ input })
+
+    return {
+      ...data,
+      canceled: Boolean(result?.shouldCancel),
+      reason: result?.reason ?? "unknown",
+    }
   }
 }
 
