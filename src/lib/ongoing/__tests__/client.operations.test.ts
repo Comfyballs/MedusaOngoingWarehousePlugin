@@ -54,11 +54,21 @@ describe("OngoingClient operations", () => {
     })
   })
 
-  it("maps order statuses", async () => {
-    const fetchImpl = jest.fn().mockResolvedValue(json([{ Number: 200, Text: "Open" }, { Number: 400, Text: "Sent" }]))
+  it("maps order statuses from the wrapped GetOrderStatusesModel envelope", async () => {
+    const fetchImpl = jest.fn().mockResolvedValue(
+      json({
+        orderStatuses: [
+          { number: 200, text: "Open" },
+          { number: 400, text: "Sent" },
+        ],
+      })
+    )
     const client = new OngoingClient(creds, { fetchImpl })
     const statuses = await client.getOrderStatuses()
-    expect(statuses).toEqual([{ number: 200, text: "Open" }, { number: 400, text: "Sent" }])
+    expect(statuses).toEqual([
+      { number: 200, text: "Open" },
+      { number: 400, text: "Sent" },
+    ])
   })
 
   it("upserts an order and returns the ongoing id from the flat response", async () => {
@@ -77,7 +87,7 @@ describe("OngoingClient operations", () => {
   })
 
   it("testConnection returns true when statuses load", async () => {
-    const fetchImpl = jest.fn().mockResolvedValue(json([{ Number: 200, Text: "Open" }]))
+    const fetchImpl = jest.fn().mockResolvedValue(json({ orderStatuses: [{ number: 200, text: "Open" }] }))
     const client = new OngoingClient(creds, { fetchImpl })
     await expect(client.testConnection()).resolves.toBe(true)
   })

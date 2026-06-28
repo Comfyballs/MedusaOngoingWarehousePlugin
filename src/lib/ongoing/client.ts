@@ -82,8 +82,11 @@ export class OngoingClient {
   // --- public operations ---
 
   async getOrderStatuses(): Promise<OngoingOrderStatus[]> {
-    const raw = await this.request<any[]>("GET", `/orders/statuses?goodsOwnerId=${this.creds.goodsOwnerId}`)
-    return (raw ?? []).map(mapStatus)
+    const raw = await this.request<{ orderStatuses?: { number: number; text: string }[] }>(
+      "GET",
+      `/orders/statuses?goodsOwnerId=${this.creds.goodsOwnerId}`
+    )
+    return (raw?.orderStatuses ?? []).map(mapStatus)
   }
 
   async getInventory(articleNumbers?: string[]): Promise<OngoingInventoryRow[]> {
@@ -137,8 +140,8 @@ export class OngoingClient {
 
 const ONGOING_PAGE_SIZE = 50
 
-function mapStatus(raw: any): OngoingOrderStatus {
-  return { number: raw.Number, text: raw.Text }
+function mapStatus(raw: { number: number; text: string }): OngoingOrderStatus {
+  return { number: raw.number, text: raw.text }
 }
 
 function mapInventoryRow(raw: any): OngoingInventoryRow {
