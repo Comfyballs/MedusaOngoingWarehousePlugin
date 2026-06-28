@@ -1,4 +1,4 @@
-import { AbstractFulfillmentProviderService } from "@medusajs/framework/utils"
+import { AbstractFulfillmentProviderService, MedusaError } from "@medusajs/framework/utils"
 import type {
   CreateShippingOptionDTO,
   FulfillmentOption,
@@ -12,7 +12,7 @@ import {
   ONGOING_RETURN_OPTION_ID,
   ONGOING_STANDARD_OPTION_ID,
 } from "./constants"
-import { cancelOngoingOrderWorkflow } from "../../workflows"
+import { cancelOngoingOrderWorkflow, pushOrderToOngoing } from "../../workflows"
 
 /**
  * Shape `createFulfillment` (#21) stashes as the fulfillment `data`. Medusa hands
@@ -94,6 +94,92 @@ class OngoingFulfillmentProviderService extends AbstractFulfillmentProviderServi
   /** Ongoing rates are flat in this plugin → no calculated rates. */
   async canCalculate(_data: CreateShippingOptionDTO): Promise<boolean> {
     return false
+  }
+
+  /**
+   * Create the Ongoing order behind a freshly-created Medusa fulfillment.
+   *
+   * Medusa's fulfillment module-service calls this with the persisted fulfillment
+   * row as the 4th arg (minus `provider_id`/`data`/`items`), so `fulfillment.id`
+   * and `fulfillment.location_id` are hydrated — `location_id` is a non-nullable
+   * column on the fulfillment model and the upstream create-fulfillment workflow
+   * always resolves it. We still guard defensively (the DTO type is `Partial`):
+   * a missing `location_id` throws a terminal error, which makes the module-service
+   * delete the just-created fulfillment and surface a clean failure rather than
+   * guessing a warehouse.
+   *
+   * The integration is resolved here ONLY to obtain `credential_key` for the
+   * returned stash; the `pushOrderToOngoing` workflow (#26) re-queries the full
+   * order and re-derives its own integration context from the fulfillment id. The
+   * push runs synchronously so a failure aborts fulfillment creation.
+   *
+   * The returned `data` is persisted onto the fulfillment row and is the ONLY
+   * thing `cancelFulfillment` (#22) later receives — hence `credential_key` and
+   * `ongoing_order_number` must be stashed.
+   */
+  async createFulfillment(
+    _data: Record<string, unknown>,
+    _items: unknown[],
+    _order: unknown,
+    fulfillment: { id?: string; location_id?: string }
+  ): Promise<{ data: Record<string, unknown>; labels: [] }> {
+    const fulfillmentId = fulfillment?.id
+    const locationId = fulfillment?.location_id
+
+    // fulfillment.id is the only input the push workflow needs to re-query the
+    // order; without it there is nothing to push. Guard before anything else so
+    // the workflow is never invoked with an undefined id.
+    if (!fulfillmentId) {
+      throw new MedusaError(
+        MedusaError.Types.INVALID_DATA,
+        `[ongoing] cannot push to Ongoing: fulfillment.id is missing from the createFulfillment payload.`
+      )
+    }
+
+    if (!locationId) {
+      // Log once so a dev fulfillment surfaces any 2.16.0 hydration surprise.
+      this.logger_?.warn(
+        `[ongoing] createFulfillment received fulfillment ${fulfillmentId} without a location_id; refusing to guess a warehouse.`
+      )
+      throw new MedusaError(
+        MedusaError.Types.INVALID_DATA,
+        `[ongoing] cannot push fulfillment ${fulfillmentId} to Ongoing: ` +
+          `fulfillment.location_id is missing. Refusing to guess a warehouse.`
+      )
+    }
+
+    const ongoingService = this.container_.resolve("ongoing") as {
+      getIntegrationByLocation: (
+        locationId: string
+      ) => Promise<{ credential_key: string } | undefined>
+    }
+
+    const integration = await ongoingService.getIntegrationByLocation(locationId)
+    if (!integration) {
+      throw new MedusaError(
+        MedusaError.Types.NOT_FOUND,
+        `[ongoing] no enabled Ongoing integration is bound to stock location "${locationId}"; ` +
+          `cannot push fulfillment ${fulfillmentId}.`
+      )
+    }
+
+    // credential_key is captured here ONLY for the returned stash; the workflow
+    // re-derives its own integration context from the fulfillment id.
+    const credentialKey = integration.credential_key
+
+    const { result } = await pushOrderToOngoing(this.container_).run({
+      input: { fulfillment_id: fulfillmentId },
+    })
+
+    return {
+      data: {
+        ongoing_order_number: result.orderNumber,
+        ongoing_order_id: result.ongoingOrderId,
+        location_id: locationId,
+        credential_key: credentialKey,
+      },
+      labels: [],
+    }
   }
 
   /**
