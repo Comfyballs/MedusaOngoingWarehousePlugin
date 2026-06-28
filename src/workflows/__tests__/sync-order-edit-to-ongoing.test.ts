@@ -2,6 +2,7 @@ import { createMedusaContainer } from "@medusajs/framework/utils"
 import { asValue } from "awilix"
 import { decideOrderEditGate } from "../steps/gate-order-edit"
 import { syncOrderEditToOngoing } from "../sync-order-edit-to-ongoing"
+import { OngoingApiError } from "../../lib/ongoing/errors"
 
 // Mock the #26 shared re-query helper, the #24 pure mapper, and the #29 SKU
 // resolver so the upsert step is isolated. The re-query helper returns #26's
@@ -29,7 +30,13 @@ const putOrder = jest.fn().mockResolvedValue({ ongoingOrderId: 999 })
 
 const makeService = (overrides: Record<string, unknown> = {}) => ({
   listOngoingOrderSyncs: jest.fn().mockResolvedValue([
-    { id: "os_1", integration_id: "int_1", ongoing_order_number: "1001-abc", latest_status_code: 200 },
+    {
+      id: "os_1",
+      integration_id: "int_1",
+      ongoing_order_number: "1001-abc",
+      latest_status_code: 200,
+      medusa_fulfillment_id: "ful_1",
+    },
   ]),
   retrieveOngoingIntegration: jest.fn().mockResolvedValue({
     edit_sync_rules: { line_items: [200], address_contact: [200] },
@@ -91,6 +98,37 @@ describe("syncOrderEditToOngoing workflow", () => {
 
     expect(putOrder).not.toHaveBeenCalled()
     expect(result).toMatchObject({ synced: false, blocked: true, reason: "no_sync_row" })
+  })
+
+  it("records an error row and rethrows when putOrder fails (spec §6 error capture)", async () => {
+    const failingPut = jest.fn().mockRejectedValue(new OngoingApiError("boom", { kind: "retryable" }))
+    const service = makeService({ getClient: jest.fn().mockReturnValue({ putOrder: failingPut }) })
+
+    // The orchestrator's run() returns a thenable that rejects on step failure; the
+    // jest `.rejects` matcher mis-detects it, so assert the throw via try/catch.
+    let thrown: Error | undefined
+    try {
+      await syncOrderEditToOngoing(makeScope(service)).run({
+        input: { medusa_order_id: "order_1", medusa_fulfillment_id: "ful_1", category: "line_items" },
+      })
+    } catch (err) {
+      thrown = err as Error
+    }
+
+    expect(thrown).toBeDefined()
+    expect(thrown?.message).toBe("boom")
+    expect(failingPut).toHaveBeenCalledTimes(1)
+
+    // spec §6: the failed Ongoing call must write the error onto the sync row.
+    const errorWrite = (service.updateOngoingOrderSyncs as jest.Mock).mock.calls
+      .map((c) => c[0])
+      .find((d) => d.sync_state === "error")
+    expect(errorWrite).toMatchObject({
+      id: "os_1",
+      sync_state: "error",
+      error_class: "retryable",
+      last_error: "boom",
+    })
   })
 })
 

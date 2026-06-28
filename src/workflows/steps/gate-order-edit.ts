@@ -26,6 +26,7 @@ type SyncRow = {
   integration_id: string
   ongoing_order_number: string
   latest_status_code: number | null
+  medusa_fulfillment_id?: string | null
 }
 
 type IntegrationRow = {
@@ -60,6 +61,11 @@ export function decideOrderEditGate(args: {
     ongoing_order_number: sync.ongoing_order_number,
     latest_status_code: sync.latest_status_code,
     ...base,
+    // The sync row's own fulfillment id is AUTHORITATIVE for the re-query: the gate
+    // may be entered by order id (no input fulfillment id), but the upsert must
+    // re-query the fulfillment that was originally pushed. Prefer the row, fall back
+    // to the input so the two steps never disagree.
+    medusa_fulfillment_id: sync.medusa_fulfillment_id ?? input.medusa_fulfillment_id,
   }
 
   const rules = integration?.edit_sync_rules
