@@ -1,3 +1,5 @@
+import { MedusaError } from "@medusajs/framework/utils"
+
 export type OngoingOrderNumberInput = {
   displayId: number | string
   fulfillmentId: string
@@ -20,12 +22,18 @@ export type OngoingOrderNumberInput = {
 export function buildOngoingOrderNumber(input: OngoingOrderNumberInput): string {
   const displayId = input?.displayId
   if (displayId === undefined || displayId === null || `${displayId}` === "") {
-    throw new Error("[ongoing] cannot build order number: order display_id is missing")
+    throw new MedusaError(
+      MedusaError.Types.INVALID_DATA,
+      "[ongoing] cannot build order number: order display_id is missing"
+    )
   }
 
   const fulfillmentId = input?.fulfillmentId
   if (!fulfillmentId) {
-    throw new Error("[ongoing] cannot build order number: fulfillment id is missing")
+    throw new MedusaError(
+      MedusaError.Types.INVALID_DATA,
+      "[ongoing] cannot build order number: fulfillment id is missing"
+    )
   }
 
   return `${displayId}-${fulfillmentId}`
