@@ -153,7 +153,53 @@ describe("order-edit.confirmed subscriber — line_items re-sync", () => {
     ).resolves.toBeUndefined()
 
     expect(logger.error).toHaveBeenCalledWith(
-      expect.stringContaining("order-edit.confirmed handler failed for order_1: boom")
+      expect.stringContaining("order-edit.confirmed handler failed for order_1 (sync oos_1): boom")
     )
+  })
+
+  it("isolates a failing row so other rows still re-sync", async () => {
+    const { container, logger } = makeContainer({
+      syncRows: [
+        { id: "oos_1", medusa_fulfillment_id: "ful_1", integration_id: "int_1", latest_status_code: 100 },
+        { id: "oos_2", medusa_fulfillment_id: "ful_2", integration_id: "int_1", latest_status_code: 100 },
+      ],
+      editSyncRules: { int_1: { edit_sync_rules: { line_items: [100] } } },
+    })
+
+    // First row's re-sync blows up; the second must still run.
+    runMock.mockRejectedValueOnce(new Error("boom"))
+
+    await expect(
+      orderEditConfirmedHandler({ ...event("order_1", ["ITEM_UPDATE"]), container })
+    ).resolves.toBeUndefined()
+
+    expect(runMock).toHaveBeenCalledTimes(2)
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining("order-edit.confirmed handler failed for order_1 (sync oos_1): boom")
+    )
+  })
+
+  it("emits edit_blocked when the workflow itself returns blocked (no false success)", async () => {
+    const { container, emit } = makeContainer({
+      syncRows: [
+        { id: "oos_1", medusa_fulfillment_id: "ful_1", integration_id: "int_1", latest_status_code: 100 },
+      ],
+      editSyncRules: { int_1: { edit_sync_rules: { line_items: [100] } } }, // subscriber-allowed
+    })
+
+    // Status passes the subscriber's gate, but the workflow re-gates and blocks.
+    runMock.mockResolvedValueOnce({ result: { synced: false, blocked: true, reason: "status_blocked" } })
+
+    await orderEditConfirmedHandler({ ...event("order_1", ["ITEM_UPDATE"]), container })
+
+    expect(emit).toHaveBeenCalledWith({
+      name: "ongoing.sync.edit_blocked",
+      data: {
+        medusa_order_id: "order_1",
+        ongoing_order_sync_id: "oos_1",
+        category: "line_items",
+        latest_status_code: 100,
+      },
+    })
   })
 })

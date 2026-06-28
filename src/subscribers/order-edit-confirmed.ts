@@ -72,45 +72,71 @@ export default async function orderEditConfirmedHandler({
 
     const eventBus = container.resolve(Modules.EVENT_BUS)
 
-    // 3. For each sync row, gate on edit_sync_rules.line_items and re-sync.
-    for (const row of syncRows) {
-      const integration = await service.retrieveOngoingIntegration(row.integration_id)
-      const rules: Record<string, number[]> | null = integration?.edit_sync_rules ?? null
-      const allowedCodes = rules?.line_items ?? []
-      const code = row.latest_status_code
-
-      const allowed =
-        code !== null && code !== undefined && allowedCodes.includes(code)
-
-      if (!allowed) {
-        logger.warn(
-          `[ongoing] order-edit.confirmed for ${orderId}: line_items edit blocked for sync ${row.id} (status ${code ?? "unknown"} not in [${allowedCodes.join(", ")}])`
-        )
-        await eventBus.emit({
-          name: "ongoing.sync.edit_blocked",
-          data: {
-            medusa_order_id: orderId,
-            ongoing_order_sync_id: row.id,
-            category: "line_items",
-            latest_status_code: code,
-          },
-        })
-        continue
-      }
-
-      await syncOrderEditToOngoing(container).run({
-        input: {
+    const emitBlocked = (row: OngoingOrderSyncRow) =>
+      eventBus.emit({
+        name: "ongoing.sync.edit_blocked",
+        data: {
           medusa_order_id: orderId,
-          medusa_fulfillment_id: row.medusa_fulfillment_id ?? null,
+          ongoing_order_sync_id: row.id,
           category: "line_items",
+          latest_status_code: row.latest_status_code,
         },
       })
-      logger.info(
-        `[ongoing] order-edit.confirmed for ${orderId}: re-synced line_items edit for sync ${row.id}`
-      )
+
+    // 3. For each sync row, gate on edit_sync_rules.line_items and re-sync.
+    //    Each row is isolated: a failure on one fulfillment never drops the
+    //    re-sync of the others (matches order-canceled.ts), and the handler
+    //    still never throws (outer catch is the backstop).
+    for (const row of syncRows) {
+      try {
+        const integration = await service.retrieveOngoingIntegration(row.integration_id)
+        const rules: Record<string, number[]> | null = integration?.edit_sync_rules ?? null
+        const allowedCodes = rules?.line_items ?? []
+        const code = row.latest_status_code
+
+        const allowed =
+          code !== null && code !== undefined && allowedCodes.includes(code)
+
+        if (!allowed) {
+          logger.warn(
+            `[ongoing] order-edit.confirmed for ${orderId}: line_items edit blocked for sync ${row.id} (status ${code ?? "unknown"} not in [${allowedCodes.join(", ")}])`
+          )
+          await emitBlocked(row)
+          continue
+        }
+
+        // The workflow re-gates against the latest snapshot (per fulfillment) and
+        // is the source of truth: honour its decision so a row the workflow blocks
+        // is reported as blocked, never as a false success.
+        const { result } = await syncOrderEditToOngoing(container).run({
+          input: {
+            medusa_order_id: orderId,
+            medusa_fulfillment_id: row.medusa_fulfillment_id ?? null,
+            category: "line_items",
+          },
+        })
+
+        if (result?.blocked) {
+          logger.warn(
+            `[ongoing] order-edit.confirmed for ${orderId}: line_items re-sync blocked by workflow for sync ${row.id} (reason: ${result.reason})`
+          )
+          await emitBlocked(row)
+          continue
+        }
+
+        logger.info(
+          `[ongoing] order-edit.confirmed for ${orderId}: re-synced line_items edit for sync ${row.id}`
+        )
+      } catch (error) {
+        // Subscribers never throw (spec §8): log this row and keep going.
+        const message = error instanceof Error ? error.message : String(error)
+        logger.error(
+          `[ongoing] order-edit.confirmed handler failed for ${orderId} (sync ${row.id}): ${message}`
+        )
+      }
     }
   } catch (error) {
-    // Subscribers never throw (spec §8): log + record, complete gracefully.
+    // Backstop so the handler never throws (spec §8) on errors outside the loop.
     const message = error instanceof Error ? error.message : String(error)
     logger.error(
       `[ongoing] order-edit.confirmed handler failed for ${orderId}: ${message}`
