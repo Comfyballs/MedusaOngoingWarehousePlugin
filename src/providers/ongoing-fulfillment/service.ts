@@ -80,6 +80,39 @@ class OngoingFulfillmentProviderService extends AbstractFulfillmentProviderServi
   async canCalculate(_data: CreateShippingOptionDTO): Promise<boolean> {
     return false
   }
+
+  /**
+   * Extension point — returns fulfillment.
+   *
+   * Returns are out of scope for now (see design §1 "Out of scope": returns /
+   * label retrieval are stubbed as extension points). The base
+   * `AbstractFulfillmentProviderService.createReturn` THROWS
+   * ("createReturn must be overridden"), so this MUST be overridden even to
+   * no-op. The empty `{ data, labels }` shape matches Medusa's manual
+   * fulfillment provider. Implement real Ongoing return creation here when
+   * returns come into scope.
+   */
+  async createReturnFulfillment(
+    _fulfillment: Record<string, unknown>
+  ): Promise<{ data: Record<string, unknown>; labels: never[] }> {
+    return { data: {}, labels: [] }
+  }
+
+  /**
+   * Extension point — fulfillment document retrieval.
+   *
+   * Label / document retrieval is out of scope for now (design §1). The base
+   * returns `[]` and does NOT throw, so this override is optional; it is added
+   * explicitly to mark a discoverable extension point. The sibling
+   * `getReturnDocuments` and `getShipmentDocuments` methods also default to
+   * `[]` on the base class and are related extension points to implement when
+   * document retrieval comes into scope.
+   */
+  async getFulfillmentDocuments(
+    _data: Record<string, unknown>
+  ): Promise<never[]> {
+    return []
+  }
 }
 
 export default OngoingFulfillmentProviderService
