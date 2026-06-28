@@ -1,4 +1,4 @@
-import { MedusaService } from "@medusajs/framework/utils"
+import { MedusaError, MedusaService } from "@medusajs/framework/utils"
 import OngoingIntegration from "./models/integration"
 import OngoingOrderSync from "./models/order-sync"
 import { validateOngoingOptions } from "./options"
@@ -17,14 +17,24 @@ class OngoingModuleService extends MedusaService({
     this.options_ = validateOngoingOptions(options)
   }
 
+  // Pure synchronous config accessor (no I/O) — kept sync on purpose so call
+  // sites don't need to await a plain in-memory lookup. The async-methods rule
+  // targets DB-backed service methods, which this is not.
+  // eslint-disable-next-line @medusajs/service-methods-must-be-async
   getCredentials(credentialKey: string): OngoingCredentials {
     const found = this.options_.integrations.find((i) => i.key === credentialKey)
     if (!found) {
-      throw new Error(`[ongoing] no credentials configured for credential_key "${credentialKey}"`)
+      throw new MedusaError(
+        MedusaError.Types.INVALID_DATA,
+        `[ongoing] no credentials configured for credential_key "${credentialKey}"`
+      )
     }
     return found
   }
 
+  // Pure synchronous factory (constructs a client from in-memory config) — see
+  // getCredentials above for why this is intentionally not async.
+  // eslint-disable-next-line @medusajs/service-methods-must-be-async
   getClient(credentialKey: string): OngoingClient {
     return new OngoingClient(this.getCredentials(credentialKey), {
       concurrency: this.options_.rateLimitConcurrency ?? 2,
