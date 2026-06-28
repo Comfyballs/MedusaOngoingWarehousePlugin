@@ -1,5 +1,5 @@
 export { OngoingClient } from "./client"
-export { OngoingApiError, classifyHttpStatus } from "./errors"
+export { OngoingApiError, classifyHttpStatus, classifyError } from "./errors"
 export { Throttle } from "./throttle"
 export { mapOrderToPostOrderModel } from "./order-mapper"
 export { resolveArticleNumber, type ArticleNumberQuery } from "./resolve-article-number"

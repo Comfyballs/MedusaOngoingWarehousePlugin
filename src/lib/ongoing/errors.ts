@@ -7,6 +7,15 @@ export function classifyHttpStatus(status: number): OngoingErrorKind {
   return "terminal"
 }
 
+// Classify any thrown value for retry/dead-letter routing. An OngoingApiError carries
+// its own kind (terminal for 4xx/validation, retryable for 429/5xx). Anything else is a
+// raw/unknown failure — most importantly a network error (ECONNRESET / timeout / DNS / a
+// fetch TypeError) — which is transient by nature and must be retried, NOT dead-lettered
+// as terminal. See #67.
+export function classifyError(err: unknown): OngoingErrorKind {
+  return err instanceof OngoingApiError ? err.kind : "retryable"
+}
+
 export class OngoingApiError extends Error {
   status?: number
   kind: OngoingErrorKind

@@ -48,6 +48,34 @@ describe("OngoingClient.request", () => {
     expect(sleep).toHaveBeenCalledTimes(1)
   })
 
+  it("retries a raw network error (non-OngoingApiError) then surfaces after maxRetries", async () => {
+    // A fetch-level failure (ECONNRESET / DNS / timeout) rejects the fetch promise
+    // with a plain Error — not an OngoingApiError. It must be retried, not dead-lettered.
+    const netErr = new TypeError("fetch failed")
+    const fetchImpl = jest.fn().mockRejectedValue(netErr)
+    const sleep = jest.fn().mockResolvedValue(undefined)
+    const client = new OngoingClient(creds, { fetchImpl, sleep, maxRetries: 2 })
+    // @ts-expect-error private
+    await expect(client.request("GET", "/x")).rejects.toBe(netErr)
+    // initial try + 2 retries = 3 calls
+    expect(fetchImpl).toHaveBeenCalledTimes(3)
+    expect(sleep).toHaveBeenCalledTimes(2)
+  })
+
+  it("retries a raw network error then succeeds", async () => {
+    const fetchImpl = jest
+      .fn()
+      .mockRejectedValueOnce(new TypeError("fetch failed"))
+      .mockResolvedValueOnce(jsonResponse(200, { ok: 1 }))
+    const sleep = jest.fn().mockResolvedValue(undefined)
+    const client = new OngoingClient(creds, { fetchImpl, sleep, maxRetries: 2 })
+    // @ts-expect-error private
+    const data = await client.request("GET", "/x")
+    expect(data).toEqual({ ok: 1 })
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
+    expect(sleep).toHaveBeenCalledTimes(1)
+  })
+
   it("honors Retry-After seconds on 429 and gives up as retryable after maxRetries", async () => {
     // A Response body can only be read once, so hand each fetch call a fresh instance.
     const fetchImpl = jest.fn().mockImplementation(() =>

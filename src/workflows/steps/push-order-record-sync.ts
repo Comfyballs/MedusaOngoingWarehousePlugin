@@ -1,5 +1,5 @@
 import { createStep, StepResponse } from "@medusajs/framework/workflows-sdk"
-import { OngoingApiError } from "../../lib/ongoing/errors"
+import { classifyError } from "../../lib/ongoing/errors"
 import type { PostOrderModel } from "../../lib/ongoing/types"
 import { ONGOING_MODULE } from "../../modules/ongoing"
 
@@ -49,8 +49,9 @@ export async function pushOrderRecordSyncHandler(
     const res = await client.putOrder(input.model)
     ongoingOrderId = res.ongoingOrderId
   } catch (err) {
-    const kind = err instanceof OngoingApiError ? err.kind : undefined
-    const errorClass = kind === "retryable" ? "retryable" : "terminal"
+    // #67: classifyError defaults a non-OngoingApiError (network/unknown) failure to
+    // "retryable" so a brief outage is retried by #21, not dead-lettered as terminal.
+    const errorClass = classifyError(err)
     await service.recordSync({
       ongoing_order_number: input.ongoing_order_number,
       integration_id: input.integration_id,

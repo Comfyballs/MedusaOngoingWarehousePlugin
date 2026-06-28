@@ -130,6 +130,33 @@ describe("syncOrderEditToOngoing workflow", () => {
       last_error: "boom",
     })
   })
+
+  it("classifies a non-OngoingApiError (network/unknown) failure as retryable (#67)", async () => {
+    // A raw network error (ECONNRESET / timeout / DNS / fetch TypeError) is NOT an
+    // OngoingApiError; it must be recorded retryable, not dead-lettered as terminal.
+    const failingPut = jest.fn().mockRejectedValue(new TypeError("fetch failed"))
+    const service = makeService({ getClient: jest.fn().mockReturnValue({ putOrder: failingPut }) })
+
+    let thrown: Error | undefined
+    try {
+      await syncOrderEditToOngoing(makeScope(service)).run({
+        input: { medusa_order_id: "order_1", medusa_fulfillment_id: "ful_1", category: "line_items" },
+      })
+    } catch (err) {
+      thrown = err as Error
+    }
+
+    expect(thrown?.message).toBe("fetch failed")
+    const errorWrite = (service.updateOngoingOrderSyncs as jest.Mock).mock.calls
+      .map((c) => c[0])
+      .find((d) => d.sync_state === "error")
+    expect(errorWrite).toMatchObject({
+      id: "os_1",
+      sync_state: "error",
+      error_class: "retryable",
+      last_error: "fetch failed",
+    })
+  })
 })
 
 describe("decideOrderEditGate", () => {

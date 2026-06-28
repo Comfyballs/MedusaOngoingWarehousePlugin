@@ -1,7 +1,7 @@
 import { createStep, StepResponse } from "@medusajs/framework/workflows-sdk"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { ONGOING_MODULE } from "../../modules/ongoing"
-import { OngoingApiError } from "../../lib/ongoing/errors"
+import { classifyError } from "../../lib/ongoing/errors"
 // Canonical #26 contract: the SHARED, EXPORTED re-query helper #26 owns.
 import { reQueryFulfillmentOrder } from "../../lib/ongoing/re-query-fulfillment-order"
 import { resolveArticleNumber } from "../../lib/ongoing/resolve-article-number"
@@ -90,8 +90,9 @@ export const upsertOngoingOrderEditStep = createStep(
       }
       return new StepResponse(upsertResult)
     } catch (err) {
-      const kind = err instanceof OngoingApiError ? err.kind : undefined
-      const errorClass = kind === "retryable" ? "retryable" : "terminal"
+      // #67: classifyError defaults a non-OngoingApiError (network/unknown) failure to
+      // "retryable" so a brief outage is retried, not dead-lettered as terminal.
+      const errorClass = classifyError(err)
       await service.updateOngoingOrderSyncs({
         id: decision.order_sync_id,
         sync_state: "error",
