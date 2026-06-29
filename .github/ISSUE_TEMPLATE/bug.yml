@@ -1,0 +1,26 @@
+# superpowers-setup managed file. setup-version: 2. Do not edit by hand; re-run /init-project to update.
+name: Bug
+description: A defect or regression.
+labels: ["type:bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+    validations: { required: true }
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations: { required: true }
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+    validations: { required: true }
+  - type: input
+    id: regression-test
+    attributes:
+      label: Regression test (backlink)
+      description: This bug can only be closed once a regression test exists. Link it here.
+    validations: { required: false }
