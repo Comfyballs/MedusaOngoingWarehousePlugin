@@ -71,6 +71,12 @@ When implementing, consult these for the exact order/article/inventory payloads 
 
 The `medusa-dev` skills (`building-with-medusa`, `building-admin-dashboard-customizations`) and the MedusaDocs MCP are available — load them when planning or implementing backend modules/providers or admin UI.
 
+## Code review before merging (required)
+
+**Before merging any PR — including auto-driven `/work-milestone` wave merges — a Medusa-aware code review MUST happen first.** Do not squash/merge a PR until it has been reviewed by an agent (or session) that has loaded the **`medusa-dev:building-with-medusa`** skill; for PRs touching `src/admin/**`, also load **`medusa-dev:building-admin-dashboard-customizations`**. A generic review misses Medusa-specific defects this skill catches: mutations not wrapped in workflows, PUT/PATCH routes, broken module isolation / cross-module service calls, wrong `query.graph` vs `query.index` usage, non-`async` service methods, `MedusaError` vs generic `Error`, price-format (stored as-is, not cents), and workflow-composition rules (no async/arrow/conditionals in `createWorkflow`).
+
+The reviewer runs `yarn lint`, `yarn build`, and the test suite, and confirms the diff against the skill's rule categories. Merge only after the review is clean (or its findings are addressed). This is in addition to the generic `requesting-code-review` step in `process.md` below.
+
 ## graphify
 
 This project has a graphify knowledge graph at graphify-out/.
@@ -79,3 +85,5 @@ Rules:
 - Before answering architecture or codebase questions, read graphify-out/GRAPH_REPORT.md for god nodes and community structure
 - If graphify-out/wiki/index.md exists, navigate it instead of reading raw files
 - After modifying code files in this session, run `graphify update .` to keep the graph current (AST-only, no API cost)
+
+@docs/superpowers/process.md
