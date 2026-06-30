@@ -10,6 +10,8 @@ export type SyncOngoingInventoryInput = {
   integration_id: string
   credential_key: string
   stock_location_id: string
+  // goods_owner_id is not used by this workflow but is part of the dispatcher
+  // contract (#38) so all integration fields are co-located on the input type.
   goods_owner_id: number
   stock_reconcile_mode: "sellable_plus_reserved" | "precise" | "onhand"
 }
