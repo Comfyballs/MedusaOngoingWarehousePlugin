@@ -85,4 +85,16 @@ describe("OngoingModuleService sync lock + default interval", () => {
       })
     })
   })
+
+  describe("getDefaultStockSyncIntervalMs", () => {
+    it("parses the configured interval string into a number of ms", () => {
+      const svc = makeService({ defaultStockSyncInterval: "300000" })
+      expect(svc.getDefaultStockSyncIntervalMs()).toBe(300000)
+    })
+
+    it("falls back to 600000 when no default interval is configured", () => {
+      const svc = makeService()
+      expect(svc.getDefaultStockSyncIntervalMs()).toBe(600000)
+    })
+  })
 })
