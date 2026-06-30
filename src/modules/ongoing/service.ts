@@ -76,6 +76,35 @@ class OngoingModuleService extends MedusaService({
     const created = await this.createOngoingOrderSyncs(data)
     return { id: created.id }
   }
+
+  // Pure synchronous config accessor (parses an in-memory option, no I/O) — kept
+  // sync on purpose, same rationale as getCredentials/getClient above.
+  // eslint-disable-next-line @medusajs/service-methods-must-be-async
+  getDefaultStatusPollIntervalMs(): number {
+    return parseInt(this.options_.defaultStatusPollInterval ?? "60000", 10)
+  }
+
+  // Best-effort advisory lock so two ticks can't poll the same integration at
+  // once. Read-then-write is fine for a single-instance cron; the TTL is a crash
+  // safety net (the dispatcher also releases it in a finally).
+  async acquireSyncLock(integrationId: string, ttlMs: number): Promise<boolean> {
+    const integration = await this.retrieveOngoingIntegration(integrationId)
+    const lockedUntil = integration?.sync_lock_until
+      ? new Date(integration.sync_lock_until).getTime()
+      : 0
+    if (lockedUntil > Date.now()) {
+      return false
+    }
+    await this.updateOngoingIntegrations({
+      id: integrationId,
+      sync_lock_until: new Date(Date.now() + ttlMs),
+    })
+    return true
+  }
+
+  async releaseSyncLock(integrationId: string): Promise<void> {
+    await this.updateOngoingIntegrations({ id: integrationId, sync_lock_until: null })
+  }
 }
 
 export default OngoingModuleService

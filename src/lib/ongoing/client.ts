@@ -105,7 +105,7 @@ export class OngoingClient {
     const rows = await this.paginate((page) =>
       this.request<any[]>(
         "GET",
-        `/orders?goodsOwnerId=${this.creds.goodsOwnerId}&orderStatusFrom=${from}&orderStatusTo=${to}&page=${page}`
+        `/orders?goodsOwnerId=${this.creds.goodsOwnerId}&orderStatusFrom=${from}&orderStatusTo=${to}&page=${page}&pageSize=${ONGOING_PAGE_SIZE}`
       )
     )
     return rows.map(mapTrackedOrder)
