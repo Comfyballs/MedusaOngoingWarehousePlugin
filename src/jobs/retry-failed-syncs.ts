@@ -26,6 +26,7 @@ type OngoingServiceLike = {
   updateOngoingOrderSyncs: (data: {
     id: string
     retry_count: number
+    last_synced_at?: Date
     error_class?: "terminal"
   }) => Promise<unknown>
 }
@@ -81,12 +82,25 @@ async function processRow(
     return
   }
 
-  // Persist the incremented count BEFORE re-invoking: a crash between the two
-  // operations must not cause the count to regress (it is safe to lose one
-  // re-invocation but not to reset the counter).
+  // Persist the incremented count AND stamp last_synced_at BEFORE re-invoking.
+  //
+  // Two crash-safety properties:
+  // 1. Count must not regress: persisting before re-invocation means a crash
+  //    mid-flight leaves the count incremented (safe to lose one re-invocation).
+  // 2. Backoff anchor must advance regardless of workflow outcome: if an early
+  //    workflow step throws before recordSync runs, recordSync never stamps
+  //    last_synced_at — the row would appear "due" again on the very next tick
+  //    and re-fire every minute until dead-lettered, bypassing all exponential
+  //    spacing. Stamping here ensures every attempt advances the anchor, so the
+  //    full backoff window (5/10/20/40/60 min) is always honoured.
+  //
+  //    If the workflow succeeds, recordSync may overwrite last_synced_at with a
+  //    slightly later timestamp — that is harmless, as a successful run transitions
+  //    the row out of error/retryable state entirely.
   await service.updateOngoingOrderSyncs({
     id: row.id,
     retry_count: outcome.retry_count,
+    last_synced_at: new Date(),
   })
 
   await pushOrderToOngoing(container).run({

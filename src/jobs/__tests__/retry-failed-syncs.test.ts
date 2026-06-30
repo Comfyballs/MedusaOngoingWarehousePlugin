@@ -86,21 +86,56 @@ describe("retryFailedSyncsJob", () => {
     })
   })
 
-  it("re-invokes pushOrderToOngoing for a due retryable row and persists incremented retry_count", async () => {
+  it("re-invokes pushOrderToOngoing for a due retryable row and persists incremented retry_count with last_synced_at", async () => {
     // retry_count=0 → backoff=5 min; last_synced_at=10h ago → due
     const r = row({ retry_count: 0 })
     const h = makeHarness({ rows: [r] })
 
     await retryFailedSyncsJob(h.container)
 
-    // Persists incremented retry_count BEFORE re-invocation.
-    expect(h.service.updateOngoingOrderSyncs).toHaveBeenCalledWith({
-      id: "sync_1",
-      retry_count: 1,
-    })
+    // Persists incremented retry_count AND stamps last_synced_at BEFORE re-invocation.
+    // last_synced_at advances the backoff anchor so the next sweep respects the
+    // exponential interval even if the workflow rejects before its recordSync step.
+    expect(h.service.updateOngoingOrderSyncs).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "sync_1",
+        retry_count: 1,
+        last_synced_at: expect.any(Date),
+      })
+    )
 
     // Re-invokes the push workflow.
     expect(pushRun).toHaveBeenCalledWith({ input: { fulfillment_id: "ful_abc" } })
+  })
+
+  it("stamps last_synced_at before re-invocation so the backoff is anchored even when the workflow rejects before recordSync", async () => {
+    // Bug scenario: early workflow step throws (e.g. fulfillment deleted),
+    // so recordSync inside pushOrderToOngoing never runs and never advances
+    // last_synced_at. Without stamping it in the pre-invocation update, the row
+    // would appear "due" again on the very next tick and re-fire every minute
+    // until dead-lettered — bypassing all exponential spacing.
+    const r = row({ retry_count: 0, last_synced_at: FAR_PAST })
+    const updateCalls: Array<Record<string, unknown>> = []
+    const updateImpl = jest.fn(async (data: Record<string, unknown>) => {
+      updateCalls.push({ ...data })
+      return {}
+    })
+    const h = makeHarness({ rows: [r], updateImpl })
+
+    pushRun.mockRejectedValueOnce(new Error("step 1 throws: fulfillment not found"))
+
+    await retryFailedSyncsJob(h.container)
+
+    // The pre-invocation update MUST include last_synced_at so the next sweep
+    // treats the row as not-due for the full 5-min backoff window.
+    expect(updateImpl).toHaveBeenCalledTimes(1)
+    const updateArg = updateCalls[0]
+    expect(updateArg).toHaveProperty("id", "sync_1")
+    expect(updateArg).toHaveProperty("retry_count", 1)
+    expect(updateArg).toHaveProperty("last_synced_at")
+    expect(updateArg["last_synced_at"]).toBeInstanceOf(Date)
+    // The stamped time must be recent (within 1 s of this test run).
+    expect(Date.now() - (updateArg["last_synced_at"] as Date).getTime()).toBeLessThan(1000)
   })
 
   it("skips a row whose backoff window has not yet elapsed", async () => {
