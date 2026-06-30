@@ -138,6 +138,24 @@ describe("ongoing stock-sync job", () => {
     expect(run).toHaveBeenCalledTimes(1)
   })
 
+  it("falls back to the default interval for malformed stock_sync_interval strings", async () => {
+    for (const bad of ["0", "-1", "invalid", "NaN"]) {
+      jest.clearAllMocks()
+      run.mockResolvedValue({ result: { written: 0, skipped: 0 } })
+
+      const due = integ({
+        stock_sync_interval: bad,
+        last_stock_sync_at: new Date(Date.now() - 700000),
+      })
+      const h = makeHarness({ integrations: [due], defaultIntervalMs: 600000 })
+
+      await ongoingStockSyncJob(h.container)
+
+      // Must use the default interval, not the malformed value.
+      expect(h.service.acquireSyncLock).toHaveBeenCalledWith("int_1", 600000)
+    }
+  })
+
   it("stamps last_stock_sync_at and releases the lock even when the workflow throws", async () => {
     const due = integ({ last_stock_sync_at: new Date(Date.now() - 700000) })
     const h = makeHarness({ integrations: [due] })
@@ -176,6 +194,9 @@ describe("ongoing stock-sync job", () => {
     await expect(ongoingStockSyncJob(h.container)).resolves.toBeUndefined()
 
     expect(h.logger.error).toHaveBeenCalled()
+    // Both locks must be released: int_a via finally even though its workflow threw,
+    // and int_b as part of a normal successful run.
+    expect(h.service.releaseSyncLock).toHaveBeenCalledWith("int_a")
     expect(h.service.releaseSyncLock).toHaveBeenCalledWith("int_b")
     expect(run).toHaveBeenCalledTimes(2)
     expect(run).toHaveBeenCalledWith(
