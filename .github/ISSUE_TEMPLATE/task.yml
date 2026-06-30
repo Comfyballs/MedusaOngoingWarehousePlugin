@@ -1,0 +1,21 @@
+# superpowers-setup managed file. setup-version: 4. Do not edit by hand; re-run /init-project to update.
+name: Task
+description: A discrete unit of work.
+labels: ["type:task"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What needs doing and why.
+    validations: { required: true }
+  - type: textarea
+    id: acceptance
+    attributes: { label: Acceptance criteria }
+    validations: { required: true }
+  - type: input
+    id: plan
+    attributes:
+      label: Plan link
+      description: Link to the docs/plans/ or docs/superpowers/plans/ file this task comes from.
+    validations: { required: false }

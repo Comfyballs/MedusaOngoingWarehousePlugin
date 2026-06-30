@@ -1,0 +1,5 @@
+# superpowers-setup managed file. setup-version: 4. Do not edit by hand; re-run /init-project to update.
+.env
+.env.local
+.env.*.local
+.envrc

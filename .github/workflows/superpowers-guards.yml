@@ -1,0 +1,13 @@
+# superpowers-setup managed file. setup-version: 4. Do not edit by hand; re-run /init-project to update.
+name: superpowers-guards
+on:
+  pull_request:
+  push:
+jobs:
+  doc-status:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '24' }
+      - run: node scripts/doc-status-guard.mjs

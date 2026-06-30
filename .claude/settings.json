@@ -1,0 +1,16 @@
+{
+  "advisorModel": "opus",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/scripts/doc-status-guard-hook.mjs"
+          }
+        ]
+      }
+    ]
+  }
+}

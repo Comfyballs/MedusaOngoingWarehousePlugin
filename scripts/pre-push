@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# superpowers-setup managed file. setup-version: 4. Do not edit by hand; re-run /init-project to update.
+# Block a non-fast-forward push to a shared branch.
+set -euo pipefail
+while read -r _local_ref local_sha _remote_ref remote_sha; do
+  # A deletion has an all-zeros local sha; there is nothing to fast-forward-check.
+  if [ "$local_sha" = "0000000000000000000000000000000000000000" ]; then
+    continue
+  fi
+  if [ "$remote_sha" != "0000000000000000000000000000000000000000" ]; then
+    if ! git merge-base --is-ancestor "$remote_sha" "$local_sha"; then
+      echo "Non-fast-forward push blocked. Rebase onto the remote first." >&2
+      exit 1
+    fi
+  fi
+done
+exit 0

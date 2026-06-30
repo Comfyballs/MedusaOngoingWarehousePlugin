@@ -1,0 +1,13 @@
+# superpowers-setup managed file. setup-version: 4. Do not edit by hand; re-run /init-project to update.
+name: Feature / Epic
+description: A feature or epic, grouped under a milestone.
+labels: ["type:feature"]
+body:
+  - type: textarea
+    id: summary
+    attributes: { label: Summary }
+    validations: { required: true }
+  - type: textarea
+    id: scope
+    attributes: { label: Scope and out of scope }
+    validations: { required: true }
