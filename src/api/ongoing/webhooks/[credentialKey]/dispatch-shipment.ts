@@ -1,6 +1,8 @@
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import type { MedusaContainer } from "@medusajs/framework/types"
 import type { WebhookOrderPayload } from "../../../../lib/ongoing/types"
+import { syncOngoingShipmentWorkflow } from "../../../../workflows"
+import { mapWebhookPayloadToShipmentInput } from "./map-payload-to-shipment-input"
 
 export type VerifiedShipmentWebhook = {
   payload: WebhookOrderPayload
@@ -16,10 +18,20 @@ export async function dispatchVerifiedShipment(
   scope: MedusaContainer,
   verified: VerifiedShipmentWebhook
 ): Promise<void> {
-  const logger = scope.resolve(ContainerRegistrationKeys.LOGGER)
-  logger.debug(
-    `[ongoing] webhook: verified in-band shipment for order ` +
-      `${verified.payload.orderNumber ?? verified.payload.orderId} ` +
-      `(integration ${verified.integrationId}); shipment dispatch is wired in #36`
-  )
+  // Fill #35's seam: hand the verified "shipped" payload to the idempotent
+  // shipment-sync workflow (#33). Swallow workflow errors so the route still
+  // returns 200 — Ongoing floods retries on non-2xx, and the workflow's
+  // shipped_at guard makes a later retry safe.
+  const input = mapWebhookPayloadToShipmentInput(verified.payload)
+  try {
+    await syncOngoingShipmentWorkflow(scope).run({ input })
+  } catch (error) {
+    scope
+      .resolve(ContainerRegistrationKeys.LOGGER)
+      .error(
+        `[ongoing] webhook: syncOngoingShipmentWorkflow failed for ${input.ongoing_order_number}: ${
+          (error as Error).message
+        }`
+      )
+  }
 }
