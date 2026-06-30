@@ -90,3 +90,25 @@ export function resolveRetryOutcome(
     dead_lettered: false,
   }
 }
+
+/**
+ * Compute the exponential backoff delay (in ms) before a failed sync row is eligible
+ * for re-invocation. The due-check in `retryFailedSyncsJob` is:
+ *   `(Date.now() - new Date(row.last_synced_at).getTime()) >= computeRetryBackoffMs(row.retry_count)`
+ *
+ * Defaults: BASE=300_000 ms (5 min), factor=2, CAP=3_600_000 ms (60 min).
+ * Resulting delays for retries 0..4: 5 / 10 / 20 / 40 / 60 min.
+ *
+ * The optional `opts` parameter allows overriding base/cap in unit tests.
+ */
+export const BASE_RETRY_BACKOFF_MS = 300_000
+export const MAX_RETRY_BACKOFF_MS = 3_600_000
+
+export function computeRetryBackoffMs(
+  retryCount: number,
+  opts: { baseMs?: number; capMs?: number } = {}
+): number {
+  const base = opts.baseMs ?? BASE_RETRY_BACKOFF_MS
+  const cap = opts.capMs ?? MAX_RETRY_BACKOFF_MS
+  return Math.min(cap, base * 2 ** retryCount)
+}
