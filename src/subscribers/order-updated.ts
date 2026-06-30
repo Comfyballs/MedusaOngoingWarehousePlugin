@@ -139,8 +139,9 @@ export default async function orderUpdatedHandler({
         const { result } = await syncOrderEditToOngoing(container).run({
           input: {
             medusa_order_id: orderId,
-            // Per-row targeting via fulfillment id (mirrors #31); #27 ignores
-            // ongoing_order_sync_id, so passing it would mis-target multi-row orders.
+            // Per-row targeting by the sync row's own id (#72): order_sync_id is the
+            // gate's primary key, with medusa_fulfillment_id as the secondary fallback.
+            order_sync_id: row.id,
             medusa_fulfillment_id: row.medusa_fulfillment_id ?? null,
             category: "address_contact",
           },

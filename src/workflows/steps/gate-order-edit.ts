@@ -6,6 +6,7 @@ export type OrderEditCategory = "address_contact" | "line_items"
 export type GateInput = {
   medusa_order_id: string
   medusa_fulfillment_id?: string | null
+  order_sync_id?: string
   category: OrderEditCategory
 }
 
@@ -93,9 +94,14 @@ export const gateOrderEditStep = createStep(
       retrieveOngoingIntegration: (id: string) => Promise<IntegrationRow>
     }
 
-    const filters: Record<string, unknown> = input.medusa_fulfillment_id
-      ? { medusa_fulfillment_id: input.medusa_fulfillment_id }
-      : { medusa_order_id: input.medusa_order_id }
+    // Three-way priority (#72): the sync row's own id is authoritative and resolves
+    // to exactly one row, so multi-row null-fulfillment orders never collapse to
+    // row[0]. Fall back to fulfillment id (#31/#54), then order id (last resort).
+    const filters: Record<string, unknown> = input.order_sync_id
+      ? { id: input.order_sync_id }
+      : input.medusa_fulfillment_id
+        ? { medusa_fulfillment_id: input.medusa_fulfillment_id }
+        : { medusa_order_id: input.medusa_order_id }
 
     const [sync] = await service.listOngoingOrderSyncs(filters)
     const integration = sync

@@ -112,6 +112,7 @@ export default async function orderEditConfirmedHandler({
           input: {
             medusa_order_id: orderId,
             medusa_fulfillment_id: row.medusa_fulfillment_id ?? null,
+            order_sync_id: row.id,
             category: "line_items",
           },
         })

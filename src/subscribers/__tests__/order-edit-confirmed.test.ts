@@ -75,6 +75,7 @@ describe("order-edit.confirmed subscriber — line_items re-sync", () => {
       input: {
         medusa_order_id: "order_1",
         medusa_fulfillment_id: "ful_1",
+        order_sync_id: "oos_1",
         category: "line_items",
       },
     })
@@ -82,6 +83,7 @@ describe("order-edit.confirmed subscriber — line_items re-sync", () => {
       input: {
         medusa_order_id: "order_1",
         medusa_fulfillment_id: "ful_2",
+        order_sync_id: "oos_2",
         category: "line_items",
       },
     })

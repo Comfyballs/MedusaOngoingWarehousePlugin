@@ -94,6 +94,7 @@ describe("order.updated subscriber — address/contact re-sync", () => {
       input: {
         medusa_order_id: "order_1",
         medusa_fulfillment_id: "ful_1",
+        order_sync_id: "oos_1",
         category: "address_contact",
       },
     })
@@ -101,6 +102,7 @@ describe("order.updated subscriber — address/contact re-sync", () => {
       input: {
         medusa_order_id: "order_1",
         medusa_fulfillment_id: "ful_2",
+        order_sync_id: "oos_2",
         category: "address_contact",
       },
     })
