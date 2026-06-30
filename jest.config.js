@@ -8,4 +8,9 @@ module.exports = {
   },
   moduleFileExtensions: ["ts", "js", "json"],
   clearMocks: true,
+  // buffer-equal-constant-time uses SlowBuffer which was removed in Node.js v26.
+  // This shim preserves the API without the removed API.
+  moduleNameMapper: {
+    "^buffer-equal-constant-time$": "<rootDir>/__mocks__/buffer-equal-constant-time.js",
+  },
 }

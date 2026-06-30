@@ -20,3 +20,5 @@ export type {
   SyncOngoingShipmentInput,
   ShipmentDecision,
 } from "./sync-ongoing-shipment"
+export { syncOngoingInventoryWorkflow } from "./sync-ongoing-inventory"
+export type { SyncOngoingInventoryInput } from "./sync-ongoing-inventory"
