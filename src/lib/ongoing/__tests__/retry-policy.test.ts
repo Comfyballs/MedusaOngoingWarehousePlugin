@@ -1,6 +1,7 @@
 import {
   resolveRetryOutcome,
   MAX_SYNC_RETRIES,
+  computeRetryBackoffMs,
   type RetryPolicyInput,
   type RetryOutcome,
 } from "../retry-policy"
@@ -71,8 +72,6 @@ describe("resolveRetryOutcome", () => {
     expect(outcome).toEqual(expected)
   })
 })
-
-import { computeRetryBackoffMs } from "../retry-policy"
 
 describe("computeRetryBackoffMs", () => {
   it("retry 0 → BASE (5 min = 300_000 ms)", () => {
