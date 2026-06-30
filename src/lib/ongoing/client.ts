@@ -97,7 +97,7 @@ export class OngoingClient {
   async getInventory(articleNumbers?: string[]): Promise<OngoingInventoryRow[]> {
     const filter = articleNumbers?.length ? `&articleNumber=${articleNumbers.map(encodeURIComponent).join(",")}` : ""
     return this.paginate((page) =>
-      this.request<any[]>("GET", `/articles/inventory?goodsOwnerId=${this.creds.goodsOwnerId}&page=${page}${filter}`)
+      this.request<any[]>("GET", `/articles/inventory?goodsOwnerId=${this.creds.goodsOwnerId}&page=${page}&pageSize=${ONGOING_PAGE_SIZE}${filter}`)
     ).then((rows) => rows.map(mapInventoryRow))
   }
 
