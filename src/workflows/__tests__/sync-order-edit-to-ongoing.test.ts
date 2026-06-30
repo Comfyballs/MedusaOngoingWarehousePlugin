@@ -90,6 +90,30 @@ describe("syncOrderEditToOngoing workflow", () => {
     expect(result).toMatchObject({ synced: false, blocked: true, reason: "status_blocked" })
   })
 
+  it("targets the gate by order_sync_id when provided (multi-row, null fulfillment) (#72)", async () => {
+    const service = makeService({
+      listOngoingOrderSyncs: jest.fn().mockResolvedValue([
+        {
+          id: "os_2",
+          integration_id: "int_1",
+          ongoing_order_number: "1001-abc",
+          latest_status_code: 200,
+          medusa_fulfillment_id: null,
+        },
+      ]),
+    })
+    const { result } = await syncOrderEditToOngoing(makeScope(service)).run({
+      input: {
+        medusa_order_id: "order_1",
+        order_sync_id: "os_2",
+        category: "line_items",
+      },
+    })
+
+    expect(service.listOngoingOrderSyncs).toHaveBeenCalledWith({ id: "os_2" })
+    expect(result).toMatchObject({ synced: true, blocked: false, reason: "allowed" })
+  })
+
   it("does NOT call putOrder when there is no sync row", async () => {
     const service = makeService({ listOngoingOrderSyncs: jest.fn().mockResolvedValue([]) })
     const { result } = await syncOrderEditToOngoing(makeScope(service)).run({
