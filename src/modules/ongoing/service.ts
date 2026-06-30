@@ -84,6 +84,13 @@ class OngoingModuleService extends MedusaService({
     return parseInt(this.options_.defaultStatusPollInterval ?? "60000", 10)
   }
 
+  // Pure synchronous config accessor (parses an in-memory option, no I/O) — kept
+  // sync on purpose, same rationale as getDefaultStatusPollIntervalMs above.
+  // eslint-disable-next-line @medusajs/service-methods-must-be-async
+  getDefaultStockSyncIntervalMs(): number {
+    return parseInt(this.options_.defaultStockSyncInterval ?? "600000", 10)
+  }
+
   // Best-effort advisory lock so two ticks can't poll the same integration at
   // once. Read-then-write is fine for a single-instance cron; the TTL is a crash
   // safety net (the dispatcher also releases it in a finally).
