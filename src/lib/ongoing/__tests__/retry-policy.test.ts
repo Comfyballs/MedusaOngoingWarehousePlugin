@@ -1,6 +1,7 @@
 import {
   resolveRetryOutcome,
   MAX_SYNC_RETRIES,
+  computeRetryBackoffMs,
   type RetryPolicyInput,
   type RetryOutcome,
 } from "../retry-policy"
@@ -69,5 +70,39 @@ describe("resolveRetryOutcome", () => {
         ? resolveRetryOutcome(input)
         : resolveRetryOutcome(input, maxRetries)
     expect(outcome).toEqual(expected)
+  })
+})
+
+describe("computeRetryBackoffMs", () => {
+  it("retry 0 → BASE (5 min = 300_000 ms)", () => {
+    expect(computeRetryBackoffMs(0)).toBe(300_000)
+  })
+
+  it("retry 1 → 2× BASE (10 min = 600_000 ms)", () => {
+    expect(computeRetryBackoffMs(1)).toBe(600_000)
+  })
+
+  it("retry 2 → 4× BASE (20 min = 1_200_000 ms)", () => {
+    expect(computeRetryBackoffMs(2)).toBe(1_200_000)
+  })
+
+  it("retry 3 → 8× BASE (40 min = 2_400_000 ms)", () => {
+    expect(computeRetryBackoffMs(3)).toBe(2_400_000)
+  })
+
+  it("retry 4 → capped at MAX (60 min = 3_600_000 ms)", () => {
+    expect(computeRetryBackoffMs(4)).toBe(3_600_000)
+  })
+
+  it("retry 10 → still capped at MAX (3_600_000 ms)", () => {
+    expect(computeRetryBackoffMs(10)).toBe(3_600_000)
+  })
+
+  it("retry 0 with explicit opts base=1000, cap=4000 → 1000", () => {
+    expect(computeRetryBackoffMs(0, { baseMs: 1_000, capMs: 4_000 })).toBe(1_000)
+  })
+
+  it("retry 2 with explicit opts base=1000, cap=4000 → capped at 4000", () => {
+    expect(computeRetryBackoffMs(2, { baseMs: 1_000, capMs: 4_000 })).toBe(4_000)
   })
 })
