@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# superpowers-setup managed file. setup-version: 2. Do not edit by hand; re-run /init-project to update.
+# superpowers-setup managed file. setup-version: 4. Do not edit by hand; re-run /init-project to update.
 # Emit project status as TSV for the /status command: one H row per open
 # milestone, one I row per open issue. Read-only — no GitHub or local writes.
 # Stage is DERIVED (idea/specced/planned/in-progress), never a label. The single

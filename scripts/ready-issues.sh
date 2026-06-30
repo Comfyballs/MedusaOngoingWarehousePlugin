@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# superpowers-setup managed file. setup-version: 2. Do not edit by hand; re-run /init-project to update.
+# superpowers-setup managed file. setup-version: 4. Do not edit by hand; re-run /init-project to update.
 # List ready issues in a milestone, highest priority first.
 # Ready = open AND no open blocked-by deps AND not status:backlog/status:deferred.
 # Readiness is derived from the native blocked-by graph, not a label.

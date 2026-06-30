@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# superpowers-setup managed file. setup-version: 2. Do not edit by hand; re-run /init-project to update.
+# superpowers-setup managed file. setup-version: 4. Do not edit by hand; re-run /init-project to update.
 # Warn if the current branch is behind its upstream. Run before working an existing branch.
 set -euo pipefail
 git fetch -q

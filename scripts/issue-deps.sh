@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# superpowers-setup managed file. setup-version: 2. Do not edit by hand; re-run /init-project to update.
+# superpowers-setup managed file. setup-version: 4. Do not edit by hand; re-run /init-project to update.
 # Manage native "blocked by" relationships between issues.
 # Usage: issue-deps.sh block <issue> <blocker> | unblock <issue> <blocker> | list <issue>
 set -euo pipefail

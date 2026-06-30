@@ -1,4 +1,4 @@
-<!-- superpowers-setup managed file. setup-version: 2. Do not edit by hand; re-run /init-project to update. -->
+<!-- superpowers-setup managed file. setup-version: 4. Do not edit by hand; re-run /init-project to update. -->
 ---
 name: knowledge-sources
 description: Use when asked why a rule or convention exists, where something is defined, or how an upstream library/API behaves. Routes the question to grep over docs, a docs MCP (Context7), or a code graph, and keeps answers cited and honest about staleness.

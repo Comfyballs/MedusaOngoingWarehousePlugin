@@ -1,4 +1,4 @@
-<!-- superpowers-setup managed file. setup-version: 2. Do not edit by hand; re-run /init-project to update. -->
+<!-- superpowers-setup managed file. setup-version: 4. Do not edit by hand; re-run /init-project to update. -->
 # Process and tracking rules
 
 These rules govern how work is tracked and how it flows from idea to merge. They are project-agnostic. Project-specific rules live in CLAUDE.md above the import of this file.
@@ -30,7 +30,7 @@ Per unit of work the spine is binding, not narration. When a trigger matches, in
 - Before any new feature, component, or behavior change (before entering plan mode): `brainstorming`.
 - You have a spec or requirements for a multi-step task, before touching code: `writing-plans`.
 - Implementing any feature or bugfix in business logic: `test-driven-development` (failing test first). Config, scripts, infra, and pure scaffolding are exempt; verify by running instead.
-- A plan has 2+ independent tasks (no shared state): `dispatching-parallel-agents` plus `using-git-worktrees`, parallel by default, one worktree per task. Sequential only when tasks share state.
+- A plan has 2+ independent tasks (no shared state): `dispatching-parallel-agents`. When an automated orchestrator (e.g. `/work-milestone`) dispatches parallel task agents, worktree isolation comes from the **subagent's `isolation: worktree` frontmatter** — each agent gets its own worktree automatically. For human-driven parallel work, use `using-git-worktrees`. Sequential only when tasks share state. (`worktree.baseRef: "head"` lets subagents see WIP for brainstorming sessions, but the default branches from `origin/HEAD` because `/work-milestone` correctness depends on it.)
 - Executing a plan, independent tasks, this session: `subagent-driven-development`.
 - Executing a plan in a separate session with checkpoints: `executing-plans`.
 - Any bug, test failure, or unexpected behavior, before proposing a fix: `systematic-debugging`.
@@ -40,3 +40,12 @@ Per unit of work the spine is binding, not narration. When a trigger matches, in
 - Phase or milestone close: `finishing-a-development-branch` plus the Milestone reconcile.
 
 Use conventional commits. Every `fix(` commit references an issue. One branch, one owner: sync before you work, push early. Before working an existing branch, fetch and fast-forward; if the remote advanced, rebase onto it before committing. Absorb a remote move with a rebase, not a second merge.
+
+## Long-running runs with /goal
+
+`/goal` is **user-opt-in** and is NOT invoked automatically by any command. When used, it lets a command run unattended to a declared stop condition. Two canonical stop conditions:
+
+- **Unattended planning catch-up:** every open `type:task` issue in milestone \<X\> has a `Plan: docs/superpowers/plans/…` comment, is in `status:backlog`/`deferred`, or is in the failed set — or stop after 30 turns.
+- **Unattended wave-loop execution:** every plan-ready issue in milestone \<X\> has a merged PR closing it — or stop after 60 turns.
+
+**Advisor model.** The scaffold sets `advisorModel: "opus"` in `.claude/settings.json` — this makes the Claude Code advisor Opus, not the main model the user runs. The advisor escalates hard judgement calls on top of whatever main model the user chose; the spine rows marked `requesting-code-review` and `verification-before-completion` rely on this escalation. Portability note: `advisorModel` is an Anthropic API feature; it is a harmless no-op on Bedrock, Vertex, and Foundry backends.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# superpowers-setup managed file. setup-version: 2. Do not edit by hand; re-run /init-project to update.
+# superpowers-setup managed file. setup-version: 4. Do not edit by hand; re-run /init-project to update.
 # Show open vs closed issue counts for a milestone. Usage: milestone-status.sh "<milestone>"
 set -euo pipefail
 ms="${1:?usage: milestone-status.sh <milestone>}"

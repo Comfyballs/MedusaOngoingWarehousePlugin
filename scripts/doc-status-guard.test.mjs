@@ -1,4 +1,4 @@
-// superpowers-setup managed file. setup-version: 2. Do not edit by hand; re-run /init-project to update.
+// superpowers-setup managed file. setup-version: 4. Do not edit by hand; re-run /init-project to update.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
