@@ -6,3 +6,5 @@ export { resolveArticleNumber, type ArticleNumberQuery } from "./resolve-article
 export * from "./types"
 export { buildOngoingOrderNumber } from "./order-number"
 export type { OngoingOrderNumberInput } from "./order-number"
+export { resolveRetryOutcome, MAX_SYNC_RETRIES } from "./retry-policy"
+export type { RetryPolicyInput, RetryOutcome } from "./retry-policy"
