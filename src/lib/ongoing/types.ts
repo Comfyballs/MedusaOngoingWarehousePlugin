@@ -151,3 +151,45 @@ export interface MapOrderInput {
   shipping_address?: MapOrderInputAddress | null
   lines: MapOrderInputLine[]
 }
+
+// --- Inbound webhook payload (Ongoing -> POST /ongoing/webhooks/:credentialKey) ---
+// Auth is a static X-Auth-Token header compared against webhookSecret (NOT HMAC;
+// see plan 2026-06-30-webhook-route-35.md). These fields are the subset the route
+// parses/validates and that #36's syncOngoingShipment consumes.
+
+export interface WebhookOrderStatus {
+  number: number
+  text?: string
+}
+
+export interface WebhookOrderTracking {
+  trackingUrl?: string
+  waybill?: string
+  isReturn?: boolean
+}
+
+export interface WebhookOrderParcelTracking {
+  trackingUrl?: string
+}
+
+export interface WebhookOrderParcel {
+  id?: number
+  parcelNumber?: string
+  isReturnParcel?: boolean
+  tracking?: WebhookOrderParcelTracking
+}
+
+export interface WebhookOrderPayload {
+  webhookOrdersId?: number
+  webhookEventId?: number
+  orderId?: number
+  orderNumber?: string
+  // Our client reference (= ongoing_order_number / goodsOwnerOrderId).
+  goodsOwnerOrderId?: string
+  goodsOwnerId: number
+  orderStatus: WebhookOrderStatus
+  tracking?: WebhookOrderTracking[]
+  parcels?: WebhookOrderParcel[]
+  // ISO-8601 with 7 fractional digits, e.g. "2026-06-30T12:00:00.0000000Z".
+  timestamp?: string
+}
