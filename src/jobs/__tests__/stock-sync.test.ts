@@ -40,11 +40,17 @@ function makeHarness(opts: {
     updateOngoingIntegrations: jest.fn(async () => ({})),
   }
 
+  const emit = jest.fn().mockResolvedValue(undefined)
+
   const container = {
-    resolve: jest.fn((key: string) => (key === "logger" ? logger : service)),
+    resolve: jest.fn((key: string) => {
+      if (key === "logger") return logger
+      if (key === "event_bus") return { emit }
+      return service
+    }),
   } as unknown as MedusaContainer
 
-  return { container, service, logger }
+  return { container, service, logger, emit }
 }
 
 const integ = (over: Partial<Integration> = {}): Integration => ({
@@ -123,6 +129,11 @@ describe("ongoing stock-sync job", () => {
       last_stock_sync_at: expect.any(Date),
     })
     expect(h.service.releaseSyncLock).toHaveBeenCalledWith("int_1")
+
+    expect(h.emit).toHaveBeenCalledWith({
+      name: "ongoing.sync.inventory_synced",
+      data: { integration_id: "int_1", credential_key: "wh-a", stock_location_id: "sloc_1", written: 0, skipped: 0 },
+    })
   })
 
   it("uses the default interval when stock_sync_interval is null", async () => {
