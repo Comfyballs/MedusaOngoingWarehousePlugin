@@ -81,6 +81,16 @@ describe("POST /admin/ongoing/integrations", () => {
     expect(createOngoingIntegrationWorkflow).not.toHaveBeenCalled()
   })
 
+  it("rejects an array value for edit_sync_rules without running the workflow", async () => {
+    const service = makeService({})
+    const res = makeRes()
+
+    await expect(
+      POST(makeReq({ ...validBody(), edit_sync_rules: [1, 2, 3] }, service), res)
+    ).rejects.toThrow(MedusaError)
+    expect(createOngoingIntegrationWorkflow).not.toHaveBeenCalled()
+  })
+
   it("runs the workflow with the validated input and returns 201", async () => {
     const created = { id: "integ_1", credential_key: "wh-1", stock_location_id: "sloc_1" }
     const run = jest.fn().mockResolvedValue({ result: created })

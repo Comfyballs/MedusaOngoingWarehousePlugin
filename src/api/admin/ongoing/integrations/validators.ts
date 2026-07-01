@@ -58,7 +58,7 @@ export function validateCreateIntegrationInput(body: unknown): CreateIntegration
   if (
     b.edit_sync_rules !== undefined &&
     b.edit_sync_rules !== null &&
-    typeof b.edit_sync_rules !== "object"
+    (typeof b.edit_sync_rules !== "object" || Array.isArray(b.edit_sync_rules))
   ) {
     invalid("edit_sync_rules must be an object")
   }

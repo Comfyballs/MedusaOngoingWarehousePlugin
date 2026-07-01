@@ -73,6 +73,16 @@ describe("POST /admin/ongoing/integrations/:id", () => {
     expect(updateOngoingIntegrationWorkflow).not.toHaveBeenCalled()
   })
 
+  it("rejects an array value for edit_sync_rules without running the workflow", async () => {
+    const service = makeService({})
+    const res = makeRes()
+
+    await expect(
+      POST(makeReq("integ_1", { edit_sync_rules: [1, 2, 3] }, service), res)
+    ).rejects.toThrow(MedusaError)
+    expect(updateOngoingIntegrationWorkflow).not.toHaveBeenCalled()
+  })
+
   it("runs the workflow with only the allowed fields", async () => {
     const updated = { id: "integ_1", enabled: false }
     const run = jest.fn().mockResolvedValue({ result: updated })

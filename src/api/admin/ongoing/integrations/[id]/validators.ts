@@ -55,7 +55,10 @@ export function validateUpdateIntegrationInput(body: unknown): UpdateIntegration
     result.stock_reconcile_mode = b.stock_reconcile_mode as StockReconcileMode
   }
   if (b.edit_sync_rules !== undefined) {
-    if (b.edit_sync_rules !== null && typeof b.edit_sync_rules !== "object") {
+    if (
+      b.edit_sync_rules !== null &&
+      (typeof b.edit_sync_rules !== "object" || Array.isArray(b.edit_sync_rules))
+    ) {
       invalid("edit_sync_rules must be an object or null")
     }
     result.edit_sync_rules = b.edit_sync_rules as Record<string, unknown> | null
