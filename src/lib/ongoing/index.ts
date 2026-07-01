@@ -8,3 +8,15 @@ export { buildOngoingOrderNumber } from "./order-number"
 export type { OngoingOrderNumberInput } from "./order-number"
 export { resolveRetryOutcome, MAX_SYNC_RETRIES } from "./retry-policy"
 export type { RetryPolicyInput, RetryOutcome } from "./retry-policy"
+export { ONGOING_EVENTS } from "./events"
+export type {
+  OngoingEventName,
+  OrderPushedPayload,
+  PushFailedPayload,
+  ShipmentAppliedPayload,
+  OrderCancelledPayload,
+  OrderRetriedPayload,
+  OrderDeadLetteredPayload,
+  InventorySyncedPayload,
+  EditBlockedPayload,
+} from "./events"
