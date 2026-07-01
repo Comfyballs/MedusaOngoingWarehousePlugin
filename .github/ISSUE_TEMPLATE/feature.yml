@@ -1,4 +1,4 @@
-# superpowers-setup managed file. setup-version: 4. Do not edit by hand; re-run /init-project to update.
+# superpowers-setup managed file. setup-version: 5. Do not edit by hand; re-run /init-project to update.
 name: Feature / Epic
 description: A feature or epic, grouped under a milestone.
 labels: ["type:feature"]
