@@ -7,6 +7,9 @@ jest.mock("@medusajs/framework/utils", () => ({
   ContainerRegistrationKeys: {
     LOGGER: "logger",
   },
+  Modules: {
+    EVENT_BUS: "event_bus",
+  },
 }))
 
 // Prevent the modules/ongoing import from triggering model.define loading.
@@ -50,11 +53,17 @@ function makeHarness(opts: {
     updateOngoingOrderSyncs: opts.updateImpl ?? jest.fn(async () => ({})),
   }
 
+  const emit = jest.fn().mockResolvedValue(undefined)
+
   const container = {
-    resolve: jest.fn((key: string) => (key === "logger" ? logger : service)),
+    resolve: jest.fn((key: string) => {
+      if (key === "logger") return logger
+      if (key === "event_bus") return { emit }
+      return service
+    }),
   } as unknown as MedusaContainer
 
-  return { container, service, logger }
+  return { container, service, logger, emit }
 }
 
 function row(over: Partial<ErrorRow> = {}): ErrorRow {
@@ -106,6 +115,15 @@ describe("retryFailedSyncsJob", () => {
 
     // Re-invokes the push workflow.
     expect(pushRun).toHaveBeenCalledWith({ input: { fulfillment_id: "ful_abc" } })
+
+    expect(h.emit).toHaveBeenCalledWith({
+      name: "ongoing.sync.order_retried",
+      data: {
+        ongoing_order_sync_id: "sync_1",
+        medusa_fulfillment_id: "ful_abc",
+        retry_count: 1,
+      },
+    })
   })
 
   it("stamps last_synced_at before re-invocation so the backoff is anchored even when the workflow rejects before recordSync", async () => {
@@ -165,6 +183,15 @@ describe("retryFailedSyncsJob", () => {
       error_class: "terminal",
     })
     expect(pushRun).not.toHaveBeenCalled()
+
+    expect(h.emit).toHaveBeenCalledWith({
+      name: "ongoing.sync.order_dead_lettered",
+      data: {
+        ongoing_order_sync_id: "sync_1",
+        medusa_fulfillment_id: "ful_abc",
+        retry_count: 5,
+      },
+    })
   })
 
   it("skips a row with null medusa_fulfillment_id and logs a warning — does not dead-letter", async () => {
