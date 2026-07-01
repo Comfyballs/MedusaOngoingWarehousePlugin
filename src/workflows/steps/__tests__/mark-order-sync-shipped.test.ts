@@ -1,13 +1,39 @@
 import { markOrderSyncShippedHandler } from "../mark-order-sync-shipped"
 
+const baseInput = {
+  order_sync_id: "os_1",
+  status_code: 200,
+  status_text: "Shipped",
+  medusa_order_id: "order_1",
+  medusa_fulfillment_id: "ful_1",
+  ongoing_order_number: "1001-ful1",
+  tracking_numbers: ["TRK1", "TRK2"],
+}
+
+function makeContainer({ updateOngoingOrderSyncs }: { updateOngoingOrderSyncs: jest.Mock }) {
+  const service = { updateOngoingOrderSyncs }
+  const logger = { info: jest.fn(), warn: jest.fn(), error: jest.fn() }
+  const emit = jest.fn().mockResolvedValue(undefined)
+  const container = {
+    resolve: jest.fn((key: string) => {
+      switch (key) {
+        case "logger":
+          return logger
+        case "event_bus":
+          return { emit }
+        default:
+          return service
+      }
+    }),
+  }
+  return { container, logger, emit }
+}
+
 describe("markOrderSyncShippedStep", () => {
   it("sets sync_state shipped, shipped_at, status fields and clears error fields", async () => {
     const updateOngoingOrderSyncs = jest.fn().mockResolvedValue([{ id: "os_1" }])
-    const service = { updateOngoingOrderSyncs }
-    const res = await markOrderSyncShippedHandler(
-      { order_sync_id: "os_1", status_code: 200, status_text: "Shipped" },
-      { container: { resolve: (_: string) => service } }
-    )
+    const { container } = makeContainer({ updateOngoingOrderSyncs })
+    const res = await markOrderSyncShippedHandler(baseInput, { container })
     expect(updateOngoingOrderSyncs).toHaveBeenCalledTimes(1)
     const arg = updateOngoingOrderSyncs.mock.calls[0][0]
     expect(arg.id).toBe("os_1")
@@ -19,5 +45,37 @@ describe("markOrderSyncShippedStep", () => {
     expect(arg.shipped_at).toBeInstanceOf(Date)
     expect(arg.last_synced_at).toBeInstanceOf(Date)
     expect(res.output).toEqual({ order_sync_id: "os_1" })
+  })
+
+  it("emits ongoing.sync.shipment_applied with correlation ids and tracking numbers", async () => {
+    const updateOngoingOrderSyncs = jest.fn().mockResolvedValue([{ id: "os_1" }])
+    const { container, emit } = makeContainer({ updateOngoingOrderSyncs })
+
+    await markOrderSyncShippedHandler(baseInput, { container })
+
+    expect(emit).toHaveBeenCalledWith({
+      name: "ongoing.sync.shipment_applied",
+      data: {
+        medusa_order_id: "order_1",
+        medusa_fulfillment_id: "ful_1",
+        ongoing_order_sync_id: "os_1",
+        ongoing_order_number: "1001-ful1",
+        tracking_numbers: ["TRK1", "TRK2"],
+      },
+    })
+  })
+
+  it("logs and rethrows without emitting when updateOngoingOrderSyncs fails", async () => {
+    const updateOngoingOrderSyncs = jest.fn().mockRejectedValue(new Error("db down"))
+    const { container, logger, emit } = makeContainer({ updateOngoingOrderSyncs })
+
+    await expect(markOrderSyncShippedHandler(baseInput, { container })).rejects.toThrow(
+      "db down"
+    )
+
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining("mark-order-sync-shipped: failed")
+    )
+    expect(emit).not.toHaveBeenCalled()
   })
 })
