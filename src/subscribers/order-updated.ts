@@ -2,6 +2,7 @@ import { SubscriberArgs, type SubscriberConfig } from "@medusajs/framework"
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 import { ONGOING_MODULE } from "../modules/ongoing"
 import { syncOrderEditToOngoing } from "../workflows/sync-order-edit-to-ongoing"
+import { ONGOING_EVENTS } from "../lib/ongoing/events"
 
 // Order-change action detail types (set by Medusa's updateOrderWorkflow) that we
 // classify as the spec §8 "address_contact" edit category. See spec §13.3 — verify
@@ -125,7 +126,7 @@ export default async function orderUpdatedHandler({
             `[ongoing] order.updated for ${orderId}: address_contact edit blocked for sync ${row.id} (status ${code ?? "unknown"} not in [${allowedCodes.join(", ")}])`
           )
           await eventBus.emit({
-            name: "ongoing.sync.edit_blocked",
+            name: ONGOING_EVENTS.EDIT_BLOCKED,
             data: {
               medusa_order_id: orderId,
               ongoing_order_sync_id: row.id,
