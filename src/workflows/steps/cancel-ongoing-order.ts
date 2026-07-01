@@ -1,4 +1,5 @@
 import { createStep, StepResponse } from "@medusajs/framework/workflows-sdk"
+import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { OngoingApiError } from "../../lib/ongoing/errors"
 
 export type CancelStepInput = {
@@ -16,16 +17,26 @@ export const cancelOngoingOrderHandler = async (
   { container }: { container: any }
 ): Promise<StepResponse<CancelStepResult>> => {
   const ongoing = container.resolve("ongoing") as any
+  const logger: any = container.resolve(ContainerRegistrationKeys.LOGGER)
   const client = ongoing.getClient(input.credentialKey)
 
   try {
     await client.cancelOrder(input.ongoingOrderId)
+    logger.info(
+      `[ongoing] cancel-ongoing-order: cancelled ongoing_order_id=${input.ongoingOrderId}`
+    )
     return new StepResponse({ cancelled: true, swallowed: false })
   } catch (err) {
     if (err instanceof OngoingApiError && err.kind === "terminal") {
       // 4xx — Ongoing already cancelled / cannot cancel: idempotent success.
+      logger.info(
+        `[ongoing] cancel-ongoing-order: already cancelled/terminal ongoing_order_id=${input.ongoingOrderId}, swallowing`
+      )
       return new StepResponse({ cancelled: false, swallowed: true })
     }
+    logger.error(
+      `[ongoing] cancel-ongoing-order: failed ongoing_order_id=${input.ongoingOrderId} error=${(err as Error).message}`
+    )
     throw err
   }
 }
