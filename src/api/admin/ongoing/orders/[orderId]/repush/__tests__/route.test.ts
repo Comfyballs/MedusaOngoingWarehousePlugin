@@ -1,7 +1,7 @@
 import { MedusaError } from "@medusajs/framework/utils"
 
 const workflowRun = jest.fn()
-const pushOrderToOngoing = jest.fn(() => ({ run: workflowRun }))
+const pushOrderToOngoing = jest.fn((..._args: unknown[]) => ({ run: workflowRun }))
 
 jest.mock("../../../../../../../workflows", () => ({
   __esModule: true,
