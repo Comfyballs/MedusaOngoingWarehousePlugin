@@ -1,6 +1,6 @@
 import { defineWidgetConfig } from "@medusajs/admin-sdk"
 import type { DetailWidgetProps, AdminOrder } from "@medusajs/framework/types"
-import { Badge, Button, Container, Text } from "@medusajs/ui"
+import { Badge, Button, Container, Text, toast } from "@medusajs/ui"
 import { Spinner } from "@medusajs/icons"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { sdk } from "../lib/sdk"
@@ -54,8 +54,13 @@ function RepushButton({ orderId, sync }: { orderId: string; sync: OngoingOrderSy
         method: "POST",
         body: { fulfillment_id },
       }),
-    onSuccess: () => {
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: queryKeyFor(orderId) })
+    },
+    onError: (error) => {
+      toast.error("Failed to re-push order to Ongoing", {
+        description: error.message,
+      })
     },
   })
 
@@ -77,14 +82,14 @@ function RepushButton({ orderId, sync }: { orderId: string; sync: OngoingOrderSy
 }
 
 const OngoingOrderSyncWidget = ({ data }: DetailWidgetProps<AdminOrder>) => {
-  const { data: response, isLoading } = useQuery<SyncResponse>({
+  const { data: response, isLoading, isError, error } = useQuery<SyncResponse>({
     queryKey: queryKeyFor(data.id),
     queryFn: () => sdk.client.fetch<SyncResponse>(`/admin/ongoing/orders/${data.id}/sync`),
   })
 
   const syncs = response?.syncs ?? []
 
-  if (!isLoading && syncs.length === 0) {
+  if (!isLoading && !isError && syncs.length === 0) {
     return null
   }
 
@@ -98,6 +103,14 @@ const OngoingOrderSyncWidget = ({ data }: DetailWidgetProps<AdminOrder>) => {
       {isLoading && (
         <div className="flex items-center justify-center px-6 py-4">
           <Spinner className="animate-spin text-ui-fg-subtle" />
+        </div>
+      )}
+      {isError && (
+        <div className="px-6 py-4">
+          <Text size="small" className="text-ui-fg-error">
+            Failed to load Ongoing sync status
+            {error instanceof Error && error.message ? `: ${error.message}` : "."}
+          </Text>
         </div>
       )}
       {syncs.map((sync) => (
