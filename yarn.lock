@@ -10557,6 +10557,7 @@ __metadata:
     "@medusajs/eslint-plugin": "npm:2.16.0"
     "@medusajs/framework": "npm:2.16.0"
     "@medusajs/icons": "npm:2.16.0"
+    "@medusajs/js-sdk": "npm:2.16.0"
     "@medusajs/medusa": "npm:2.16.0"
     "@medusajs/test-utils": "npm:2.16.0"
     "@medusajs/ui": "npm:4.1.16"

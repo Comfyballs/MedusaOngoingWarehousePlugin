@@ -40,6 +40,7 @@
     "@medusajs/eslint-plugin": "2.16.0",
     "@medusajs/framework": "2.16.0",
     "@medusajs/icons": "2.16.0",
+    "@medusajs/js-sdk": "2.16.0",
     "@medusajs/medusa": "2.16.0",
     "@medusajs/test-utils": "2.16.0",
     "@medusajs/ui": "4.1.16",
