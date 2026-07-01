@@ -52,6 +52,13 @@ class OngoingModuleService extends MedusaService({
     })
   }
 
+  // Pure synchronous config accessor (no I/O) — same rationale as getCredentials
+  // and getClient above: this reads in-memory plugin options, not the DB.
+  // eslint-disable-next-line @medusajs/service-methods-must-be-async
+  listCredentialKeys(): string[] {
+    return this.options_.integrations.map((i) => i.key)
+  }
+
   async getIntegrationByLocation(stockLocationId: string) {
     const [integration] = await this.listOngoingIntegrations({
       stock_location_id: stockLocationId,
