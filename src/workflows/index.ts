@@ -22,3 +22,5 @@ export type {
 } from "./sync-ongoing-shipment"
 export { syncOngoingInventoryWorkflow } from "./sync-ongoing-inventory"
 export type { SyncOngoingInventoryInput } from "./sync-ongoing-inventory"
+export { createOngoingIntegrationWorkflow } from "./create-ongoing-integration"
+export type { CreateOngoingIntegrationInput } from "./create-ongoing-integration"

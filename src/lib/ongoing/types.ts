@@ -193,3 +193,8 @@ export interface WebhookOrderPayload {
   // ISO-8601 with 7 fractional digits, e.g. "2026-06-30T12:00:00.0000000Z".
   timestamp?: string
 }
+
+// --- Ongoing integration settings enums (admin CRUD + workflows; #40) ---
+
+export const STOCK_RECONCILE_MODES = ["sellable_plus_reserved", "precise", "onhand"] as const
+export type StockReconcileMode = (typeof STOCK_RECONCILE_MODES)[number]
