@@ -1,6 +1,7 @@
 import { defineWidgetConfig } from "@medusajs/admin-sdk"
 import type { DetailWidgetProps, AdminOrder } from "@medusajs/framework/types"
-import { Badge, Button, Container, Heading, Text } from "@medusajs/ui"
+import { Badge, Button, Container, Text } from "@medusajs/ui"
+import { Spinner } from "@medusajs/icons"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { sdk } from "../lib/sdk"
 
@@ -76,22 +77,29 @@ function RepushButton({ orderId, sync }: { orderId: string; sync: OngoingOrderSy
 }
 
 const OngoingOrderSyncWidget = ({ data }: DetailWidgetProps<AdminOrder>) => {
-  const { data: response } = useQuery<SyncResponse>({
+  const { data: response, isLoading } = useQuery<SyncResponse>({
     queryKey: queryKeyFor(data.id),
     queryFn: () => sdk.client.fetch<SyncResponse>(`/admin/ongoing/orders/${data.id}/sync`),
   })
 
   const syncs = response?.syncs ?? []
 
-  if (syncs.length === 0) {
+  if (!isLoading && syncs.length === 0) {
     return null
   }
 
   return (
     <Container className="divide-y p-0">
       <div className="flex items-center justify-between px-6 py-4">
-        <Heading level="h2">Ongoing Warehouse</Heading>
+        <Text size="large" weight="plus">
+          Ongoing Warehouse
+        </Text>
       </div>
+      {isLoading && (
+        <div className="flex items-center justify-center px-6 py-4">
+          <Spinner className="animate-spin text-ui-fg-subtle" />
+        </div>
+      )}
       {syncs.map((sync) => (
         <div key={sync.id} className="flex flex-col gap-y-2 px-6 py-4">
           <div className="flex items-center justify-between">
