@@ -1,7 +1,8 @@
 import { SubscriberArgs, type SubscriberConfig } from "@medusajs/framework"
-import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 import { ONGOING_MODULE } from "../modules/ongoing"
 import { cancelOngoingOrderWorkflow } from "../workflows/cancel-ongoing-order"
+import { ONGOING_EVENTS } from "../lib/ongoing/events"
 
 type OrderSyncRow = {
   id: string
@@ -30,6 +31,7 @@ export default async function orderCanceledHandler({
   container,
 }: SubscriberArgs<{ id: string }>): Promise<void> {
   const logger = container.resolve(ContainerRegistrationKeys.LOGGER)
+  const eventBus = container.resolve(Modules.EVENT_BUS) as any
   const orderId = data.id
 
   let rows: OrderSyncRow[]
@@ -69,6 +71,17 @@ export default async function orderCanceledHandler({
           result?.reason ?? "done"
         }`
       )
+      if (result?.shouldCancel === true) {
+        await eventBus.emit({
+          name: ONGOING_EVENTS.ORDER_CANCELLED,
+          data: {
+            medusa_order_id: orderId,
+            ongoing_order_number: row.ongoing_order_number,
+            ongoing_order_sync_id: row.id,
+            reason: result?.reason ?? "ok",
+          },
+        })
+      }
     } catch (error) {
       logger.error(
         `[ongoing] order.canceled: cancelOngoingOrderWorkflow failed for ${row.ongoing_order_number} (order ${orderId}): ${
