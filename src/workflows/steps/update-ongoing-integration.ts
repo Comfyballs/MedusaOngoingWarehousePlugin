@@ -51,6 +51,17 @@ export const updateOngoingIntegrationHandler = async (
   return new StepResponse(updated, { id: input.id, previous })
 }
 
+// This compensation is currently unreachable: updateOngoingIntegrationWorkflow
+// (src/workflows/update-ongoing-integration.ts) is a single terminal step, and
+// Medusa saga semantics only run a step's compensation when a LATER step in
+// the same workflow fails — never when the step itself throws. It is kept
+// intentionally (not removed) as defense-in-depth in case a step is ever
+// appended after this one in that workflow, at which point it would become
+// live. This differs from deleteOngoingIntegrationStep
+// (src/workflows/steps/delete-ongoing-integration.ts), which omits
+// compensation entirely rather than defining an unreachable one — delete has
+// no restorable prior state at all, so there is nothing a compensation could
+// ever restore, reachable or not.
 export const compensateOngoingIntegrationHandler = async (
   compensation: UpdateOngoingIntegrationCompensation | undefined,
   { container }: { container: any }
