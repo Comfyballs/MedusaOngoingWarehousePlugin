@@ -43,6 +43,10 @@ export const syncOngoingShipmentWorkflow = createWorkflow(
         order_sync_id: data.decision.order_sync_id as string,
         status_code: data.input.status_code,
         status_text: data.input.status_text,
+        medusa_order_id: data.decision.medusa_order_id as string,
+        medusa_fulfillment_id: data.decision.medusa_fulfillment_id as string,
+        ongoing_order_number: data.input.ongoing_order_number,
+        tracking_numbers: data.input.tracking_numbers,
       }))
 
       markOrderSyncShippedStep(markInput)

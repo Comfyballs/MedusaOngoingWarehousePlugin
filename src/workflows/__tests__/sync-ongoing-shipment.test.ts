@@ -16,6 +16,15 @@ const makeService = (rows: any[]) => ({
 const makeScope = (service: Record<string, unknown>) => {
   const container: any = createMedusaContainer()
   container.register("ongoing", asValue(service))
+  container.register("logger", asValue({ info: jest.fn(), warn: jest.fn(), error: jest.fn() }))
+  container.register(
+    "event_bus",
+    asValue({
+      emit: jest.fn().mockResolvedValue(undefined),
+      releaseGroupedEvents: jest.fn().mockResolvedValue(undefined),
+      clearGroupedEvents: jest.fn().mockResolvedValue(undefined),
+    })
+  )
   return container
 }
 
@@ -36,7 +45,8 @@ describe("syncOngoingShipmentWorkflow", () => {
     const service = makeService([
       { id: "os_1", medusa_order_id: "order_1", medusa_fulfillment_id: "ful_1", shipped_at: null },
     ])
-    const { result } = await syncOngoingShipmentWorkflow(makeScope(service)).run({ input })
+    const container = makeScope(service)
+    const { result } = await syncOngoingShipmentWorkflow(container).run({ input })
 
     expect(run).toHaveBeenCalledWith({
       input: {
@@ -55,6 +65,16 @@ describe("syncOngoingShipmentWorkflow", () => {
       .find((d) => d.sync_state === "shipped")
     expect(shippedWrite).toMatchObject({ id: "os_1", sync_state: "shipped", latest_status_code: 200, latest_status_text: "Shipped" })
     expect(result).toMatchObject({ skip: false, reason: "ok" })
+    expect(container.resolve("event_bus").emit).toHaveBeenCalledWith({
+      name: "ongoing.sync.shipment_applied",
+      data: {
+        medusa_order_id: "order_1",
+        medusa_fulfillment_id: "ful_1",
+        ongoing_order_sync_id: "os_1",
+        ongoing_order_number: "1001-abc",
+        tracking_numbers: ["TRK1", "TRK2"],
+      },
+    })
   })
 
   it("no-ops when the row is already shipped", async () => {
