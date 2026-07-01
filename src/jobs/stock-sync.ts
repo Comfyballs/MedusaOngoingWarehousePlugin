@@ -1,7 +1,8 @@
-import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 import type { MedusaContainer } from "@medusajs/framework/types"
 import { ONGOING_MODULE } from "../modules/ongoing"
 import { syncOngoingInventoryWorkflow } from "../workflows"
+import { ONGOING_EVENTS } from "../lib/ongoing/events"
 
 // Local structural types — no runtime import of the model class (mirrors status-poll.ts pattern).
 type IntegrationRow = {
@@ -95,6 +96,17 @@ async function syncIntegration(
     logger.info(
       `[ongoing] stock-sync: integration ${integration.id} reconciled ${result.written} level(s), skipped ${result.skipped}`
     )
+    const eventBus: any = container.resolve(Modules.EVENT_BUS)
+    await eventBus.emit({
+      name: ONGOING_EVENTS.INVENTORY_SYNCED,
+      data: {
+        integration_id: integration.id,
+        credential_key: integration.credential_key,
+        stock_location_id: integration.stock_location_id,
+        written: result.written,
+        skipped: result.skipped,
+      },
+    })
   } finally {
     try {
       await service.updateOngoingIntegrations({
