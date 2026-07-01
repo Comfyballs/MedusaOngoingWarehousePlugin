@@ -7,6 +7,10 @@ import {
   computeRetryBackoffMs,
 } from "../lib/ongoing/retry-policy"
 import { ONGOING_EVENTS } from "../lib/ongoing/events"
+import type {
+  OrderRetriedPayload,
+  OrderDeadLetteredPayload,
+} from "../lib/ongoing/events"
 
 // Shape of an OngoingOrderSync row in the error/retryable state.
 // Fields are the subset we read or write — matches OngoingOrderSync model
@@ -88,7 +92,7 @@ async function processRow(
         ongoing_order_sync_id: row.id,
         medusa_fulfillment_id: row.medusa_fulfillment_id,
         retry_count: outcome.retry_count,
-      },
+      } satisfies OrderDeadLetteredPayload,
     })
     return
   }
@@ -127,7 +131,7 @@ async function processRow(
       ongoing_order_sync_id: row.id,
       medusa_fulfillment_id: row.medusa_fulfillment_id,
       retry_count: outcome.retry_count,
-    },
+    } satisfies OrderRetriedPayload,
   })
 }
 

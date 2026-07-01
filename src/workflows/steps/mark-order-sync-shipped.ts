@@ -2,6 +2,7 @@ import { createStep, StepResponse } from "@medusajs/framework/workflows-sdk"
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 import { ONGOING_MODULE } from "../../modules/ongoing"
 import { ONGOING_EVENTS } from "../../lib/ongoing/events"
+import type { ShipmentAppliedPayload } from "../../lib/ongoing/events"
 
 export type MarkShippedInput = {
   order_sync_id: string
@@ -50,7 +51,7 @@ export const markOrderSyncShippedHandler = async (
       ongoing_order_sync_id: input.order_sync_id,
       ongoing_order_number: input.ongoing_order_number,
       tracking_numbers: input.tracking_numbers,
-    },
+    } satisfies ShipmentAppliedPayload,
   })
 
   return new StepResponse({ order_sync_id: input.order_sync_id })

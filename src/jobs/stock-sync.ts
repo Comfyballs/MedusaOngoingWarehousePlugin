@@ -3,6 +3,7 @@ import type { MedusaContainer } from "@medusajs/framework/types"
 import { ONGOING_MODULE } from "../modules/ongoing"
 import { syncOngoingInventoryWorkflow } from "../workflows"
 import { ONGOING_EVENTS } from "../lib/ongoing/events"
+import type { InventorySyncedPayload } from "../lib/ongoing/events"
 
 // Local structural types — no runtime import of the model class (mirrors status-poll.ts pattern).
 type IntegrationRow = {
@@ -105,7 +106,7 @@ async function syncIntegration(
         stock_location_id: integration.stock_location_id,
         written: result.written,
         skipped: result.skipped,
-      },
+      } satisfies InventorySyncedPayload,
     })
   } finally {
     try {

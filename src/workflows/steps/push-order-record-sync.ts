@@ -4,6 +4,7 @@ import { classifyError } from "../../lib/ongoing/errors"
 import type { PostOrderModel } from "../../lib/ongoing/types"
 import { ONGOING_MODULE } from "../../modules/ongoing"
 import { ONGOING_EVENTS } from "../../lib/ongoing/events"
+import type { OrderPushedPayload, PushFailedPayload } from "../../lib/ongoing/events"
 
 export type PushOrderInput = {
   model: PostOrderModel
@@ -77,7 +78,7 @@ export async function pushOrderRecordSyncHandler(
         integration_id: input.integration_id,
         error_class: errorClass,
         error_message: (err as Error).message,
-      },
+      } satisfies PushFailedPayload,
     })
     throw err
   }
@@ -104,7 +105,7 @@ export async function pushOrderRecordSyncHandler(
       ongoing_order_number: input.ongoing_order_number,
       ongoing_order_id: ongoingOrderId,
       integration_id: input.integration_id,
-    },
+    } satisfies OrderPushedPayload,
   })
 
   return { ongoingOrderId, orderNumber: input.ongoing_order_number }
