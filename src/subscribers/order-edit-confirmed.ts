@@ -2,6 +2,7 @@ import { SubscriberArgs, type SubscriberConfig } from "@medusajs/framework"
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 import { ONGOING_MODULE } from "../modules/ongoing"
 import { syncOrderEditToOngoing } from "../workflows/sync-order-edit-to-ongoing"
+import { markOrderSyncEditBlockedWorkflow } from "../workflows/mark-order-sync-edit-blocked"
 
 // ChangeActionType values that order-edit.confirmed carries: only line-item /
 // shipping mutations appear on this event (address/contact/email go through
@@ -98,10 +99,21 @@ export default async function orderEditConfirmedHandler({
           code !== null && code !== undefined && allowedCodes.includes(code)
 
         if (!allowed) {
+          // Mirrors gate-order-edit.ts's decideOrderEditGate reason precedence
+          // (matches order-updated.ts's derivation exactly — #91).
+          const reason = !rules
+            ? "no_edit_rules"
+            : code === null || code === undefined
+              ? "status_unknown"
+              : "status_blocked"
+
           logger.warn(
             `[ongoing] order-edit.confirmed for ${orderId}: line_items edit blocked for sync ${row.id} (status ${code ?? "unknown"} not in [${allowedCodes.join(", ")}])`
           )
           await emitBlocked(row)
+          await markOrderSyncEditBlockedWorkflow(container).run({
+            input: { order_sync_id: row.id, blocked: true, category: "line_items", reason },
+          })
           continue
         }
 
@@ -122,6 +134,14 @@ export default async function orderEditConfirmedHandler({
             `[ongoing] order-edit.confirmed for ${orderId}: line_items re-sync blocked by workflow for sync ${row.id} (reason: ${result.reason})`
           )
           await emitBlocked(row)
+          await markOrderSyncEditBlockedWorkflow(container).run({
+            input: {
+              order_sync_id: row.id,
+              blocked: true,
+              category: "line_items",
+              reason: result.reason ?? "status_blocked",
+            },
+          })
           continue
         }
 

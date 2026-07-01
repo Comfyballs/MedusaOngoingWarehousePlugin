@@ -2,6 +2,7 @@ import { SubscriberArgs, type SubscriberConfig } from "@medusajs/framework"
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 import { ONGOING_MODULE } from "../modules/ongoing"
 import { syncOrderEditToOngoing } from "../workflows/sync-order-edit-to-ongoing"
+import { markOrderSyncEditBlockedWorkflow } from "../workflows/mark-order-sync-edit-blocked"
 
 // Order-change action detail types (set by Medusa's updateOrderWorkflow) that we
 // classify as the spec §8 "address_contact" edit category. See spec §13.3 — verify
@@ -121,6 +122,15 @@ export default async function orderUpdatedHandler({
           code !== null && code !== undefined && allowedCodes.includes(code)
 
         if (!allowed) {
+          // Mirrors gate-order-edit.ts's decideOrderEditGate reason precedence
+          // (no_edit_rules checked before status_unknown before status_blocked)
+          // so the persisted reason vocabulary matches #27's gate exactly (#91).
+          const reason = !rules
+            ? "no_edit_rules"
+            : code === null || code === undefined
+              ? "status_unknown"
+              : "status_blocked"
+
           logger.warn(
             `[ongoing] order.updated for ${orderId}: address_contact edit blocked for sync ${row.id} (status ${code ?? "unknown"} not in [${allowedCodes.join(", ")}])`
           )
@@ -131,6 +141,14 @@ export default async function orderUpdatedHandler({
               ongoing_order_sync_id: row.id,
               category: "address_contact",
               latest_status_code: code,
+            },
+          })
+          await markOrderSyncEditBlockedWorkflow(container).run({
+            input: {
+              order_sync_id: row.id,
+              blocked: true,
+              category: "address_contact",
+              reason,
             },
           })
           continue

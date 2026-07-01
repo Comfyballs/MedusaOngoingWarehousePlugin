@@ -17,6 +17,9 @@ const OngoingOrderSync = model.define("ongoing_order_sync", {
   last_error: model.text().nullable(),
   retry_count: model.number().default(0),
   shipped_at: model.dateTime().nullable(),
+  edit_blocked_at: model.dateTime().nullable(),
+  edit_blocked_category: model.enum(["address_contact", "line_items"]).nullable(),
+  edit_blocked_reason: model.text().nullable(),
 })
 
 export default OngoingOrderSync
