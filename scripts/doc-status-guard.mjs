@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// superpowers-setup managed file. setup-version: 5. Do not edit by hand; re-run /init-project to update.
+// superpowers-setup managed file. setup-version: 7. Do not edit by hand; re-run /init-project to update.
 // Fails if a status marker (checkbox or progress count) appears under docs/specs or docs/adr.
 // Plans (docs/plans, docs/superpowers/plans) are exempt ephemeral scaffolding.
 import fs from 'node:fs';

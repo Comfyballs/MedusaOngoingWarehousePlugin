@@ -1,4 +1,4 @@
-<!-- superpowers-setup managed file. setup-version: 5. Do not edit by hand; re-run /init-project to update. -->
+<!-- superpowers-setup managed file. setup-version: 7. Do not edit by hand; re-run /init-project to update. -->
 # Process and tracking rules
 
 These rules govern how work is tracked and how it flows from idea to merge. They are project-agnostic. Project-specific rules live in CLAUDE.md above the import of this file.

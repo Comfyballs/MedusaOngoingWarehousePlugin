@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# superpowers-setup managed file. setup-version: 5. Do not edit by hand; re-run /init-project to update.
+# superpowers-setup managed file. setup-version: 7. Do not edit by hand; re-run /init-project to update.
 # Emit project status as TSV for the /status command: one H row per open
 # milestone, one I row per open issue. Read-only — no GitHub or local writes.
 # Stage is DERIVED (idea/specced/planned/in-progress), never a label. The single
@@ -23,23 +23,18 @@ done
 repo="$(gh repo view --json nameWithOwner -q .nameWithOwner)"
 here="$(dirname "$0")"
 
-# LOCAL PATCH (gh milestone-filter bug): `gh issue list --milestone <title|num>`
-# returns 0 issues in this environment (gh 2.93.0 routes it through a search/
-# GraphQL path that isn't indexing this repo), so we fetch and filter by
-# milestone title client-side. Uses the caller's in-scope $ms. Report upstream.
-ms_list() { # $1=state  $2=json-fields  $3=jq-tail (applied after array filter)
-  MS="$ms" gh issue list --state "$1" --limit 1000 --json "milestone,$2" \
-    -q "[.[] | select(.milestone.title == env.MS)] | $3"
-}
-
 # Open milestones, lowest number first (milestones are phases: M0, M1, …).
 titles="$(gh api "repos/$repo/milestones?state=open" --jq 'sort_by(.number)[].title')"
 
 # Active = lowest-numbered milestone with >=1 open issue.
 active=""
+# Count/list issues by exact milestone title client-side rather than via gh's
+# search-backed --milestone flag, which silently returns 0 on a renamed title.
+# Titles here come from the milestones API (line 27) so they always resolve;
+# no guard needed. --limit 1000 caps each fetch — ample for one milestone.
 while IFS= read -r ms; do
   [ -z "$ms" ] && continue
-  n="$(ms_list open number 'length')"
+  n="$(MS="$ms" gh issue list --state open --limit 1000 --json number,milestone -q '[ .[] | select(.milestone.title == env.MS) ] | length')"
   if [ "$n" -gt 0 ]; then active="$ms"; break; fi
 done <<< "$titles"
 
@@ -53,8 +48,8 @@ fi
 
 while IFS= read -r ms; do
   [ -z "$ms" ] && continue
-  closed="$(ms_list closed number 'length')"
-  open="$(ms_list open number 'length')"
+  closed="$(MS="$ms" gh issue list --state closed --limit 1000 --json number,milestone -q '[ .[] | select(.milestone.title == env.MS) ] | length')"
+  open="$(MS="$ms" gh issue list --state open --limit 1000 --json number,milestone -q '[ .[] | select(.milestone.title == env.MS) ] | length')"
   aflag="inactive"; [ "$ms" = "$expand" ] && aflag="active"
 
   # --active-only: skip the expensive next-pick + per-issue detail for every
@@ -70,8 +65,8 @@ while IFS= read -r ms; do
   next_title="$(printf '%s' "$next_line" | cut -f2-)"
   printf 'H\t%s\t%s\t%s\t%s\t%s\t%s\n' "$ms" "$closed" "$open" "$aflag" "$next_num" "$next_title"
 
-  ms_list open number,title,assignees,labels \
-    '.[] | [(.number|tostring), .title, ((.assignees|length)>0|tostring), ((.labels|map(.name))|join(","))] | @tsv' \
+  MS="$ms" gh issue list --state open --limit 1000 --json number,title,assignees,labels,milestone \
+    -q '.[] | select(.milestone.title == env.MS) | [(.number|tostring), .title, ((.assignees|length)>0|tostring), ((.labels|map(.name))|join(","))] | @tsv' \
   | while IFS=$'\t' read -r num title assigned labels; do
       view="$(gh issue view "$num" --json body,comments,closedByPullRequestsReferences \
               -q '"PR:" + ([.closedByPullRequestsReferences[]? | select(.state=="OPEN")] | length | tostring), (.body // ""), (.comments[].body // empty)')"

@@ -1,8 +1,9 @@
 {
-  "setupVersion": 5,
+  "setupVersion": 7,
   "managedKeys": [
     "advisorModel",
+    "permissions.allow",
     "hooks.PreToolUse"
   ],
-  "sliceHash": "dff69243279750f28a7ffc47c5a910736c00de969295d2c32b3003a3f1d929f7"
+  "sliceHash": "2dcfc1d366c58140d1d3b458e78f0e742a723ecc4080239064083bb5c3242551"
 }

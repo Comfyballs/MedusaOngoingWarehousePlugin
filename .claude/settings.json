@@ -12,5 +12,24 @@
         ]
       }
     ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(gh issue view:*)",
+      "Bash(gh issue list:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh pr list:*)",
+      "Bash(gh pr diff:*)",
+      "Bash(gh pr checks:*)",
+      "Bash(gh repo view:*)",
+      "Bash(bash scripts/ready-issues.sh:*)",
+      "Bash(bash scripts/status.sh:*)",
+      "Bash(bash scripts/milestone-status.sh:*)",
+      "Bash(bash scripts/verify-plan.sh:*)"
+    ]
   }
 }

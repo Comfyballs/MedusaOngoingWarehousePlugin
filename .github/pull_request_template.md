@@ -1,4 +1,4 @@
-<!-- superpowers-setup managed file. setup-version: 5. Do not edit by hand; re-run /init-project to update. -->
+<!-- superpowers-setup managed file. setup-version: 7. Do not edit by hand; re-run /init-project to update. -->
 ## Summary
 
 ## Issue

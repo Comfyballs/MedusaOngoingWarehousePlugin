@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// superpowers-setup managed file. setup-version: 5. Do not edit by hand; re-run /init-project to update.
+// superpowers-setup managed file. setup-version: 7. Do not edit by hand; re-run /init-project to update.
 // PreToolUse hook: blocks Edit/Write to docs/specs or docs/adr when the
 // pending content contains a status marker (checkbox or progress count).
 // Reads hook JSON from stdin; exits 2 with a stderr reason to block, exits 0 to allow.

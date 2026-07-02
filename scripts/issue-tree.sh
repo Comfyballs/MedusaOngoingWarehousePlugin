@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# superpowers-setup managed file. setup-version: 5. Do not edit by hand; re-run /init-project to update.
+# superpowers-setup managed file. setup-version: 7. Do not edit by hand; re-run /init-project to update.
 # Manage native sub-issues (epic -> task) and print the tree with rollup.
 # Usage: issue-tree.sh add <parent> <child> | remove <parent> <child> | show <parent>
 set -euo pipefail

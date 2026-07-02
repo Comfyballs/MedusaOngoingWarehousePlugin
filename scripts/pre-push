@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# superpowers-setup managed file. setup-version: 5. Do not edit by hand; re-run /init-project to update.
+# superpowers-setup managed file. setup-version: 7. Do not edit by hand; re-run /init-project to update.
 # Block a non-fast-forward push to a shared branch.
 set -euo pipefail
 while read -r _local_ref local_sha _remote_ref remote_sha; do

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# superpowers-setup managed file. setup-version: 5. Do not edit by hand; re-run /init-project to update.
+# superpowers-setup managed file. setup-version: 7. Do not edit by hand; re-run /init-project to update.
 # Install the repo's pre-push hook.
 set -euo pipefail
 root="$(git rev-parse --show-toplevel)"
