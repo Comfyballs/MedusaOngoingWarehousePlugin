@@ -39,6 +39,12 @@ export function EditIntegrationDrawer({ integration, onClose }: Props) {
     }
     setError(null)
     setTestResult(null)
+    // Reset the previous edit session's fetched statuses so IntegrationFormFields
+    // never renders a stale integration's status list against this integration's
+    // `selected` codes (see EditIntegrationDrawer — this instance persists across
+    // edit sessions with no `key`, so `testConnection.data` otherwise survives a
+    // switch from editing integration A to integration B).
+    testConnection.reset()
   }, [integration])
 
   const testConnection = useMutation({

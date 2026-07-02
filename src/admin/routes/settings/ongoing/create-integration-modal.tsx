@@ -25,6 +25,10 @@ export function CreateIntegrationModal({ open, onClose }: Props) {
       setForm(EMPTY_FORM)
       setError(null)
       setTestResult(null)
+      // Reset the previous open session's fetched statuses/credential key so a
+      // stale status list from a prior credential key never lingers into a new
+      // create session — this modal instance persists across opens with no `key`.
+      testConnection.reset()
     }
   }, [open])
 
