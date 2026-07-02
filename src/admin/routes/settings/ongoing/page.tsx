@@ -15,10 +15,11 @@ import {
 } from "@medusajs/ui"
 import { EllipsisHorizontal, PencilSquare, Plus, Trash } from "@medusajs/icons"
 import { sdk } from "../../../lib/sdk"
-import { IntegrationDrawer, OngoingIntegration } from "./integration-drawer"
+import { CreateIntegrationModal } from "./create-integration-modal"
+import { EditIntegrationDrawer, type OngoingIntegration } from "./edit-integration-drawer"
 
 const IntegrationsSettingsPage = () => {
-  const [drawerMode, setDrawerMode] = useState<"create" | "edit" | null>(null)
+  const [createOpen, setCreateOpen] = useState(false)
   const [editing, setEditing] = useState<OngoingIntegration | null>(null)
   const queryClient = useQueryClient()
   const prompt = usePrompt()
@@ -64,14 +65,7 @@ const IntegrationsSettingsPage = () => {
             Manage Ongoing integrations, stock location assignments, and sync settings.
           </Text>
         </div>
-        <Button
-          size="small"
-          variant="secondary"
-          onClick={() => {
-            setEditing(null)
-            setDrawerMode("create")
-          }}
-        >
+        <Button size="small" variant="secondary" onClick={() => setCreateOpen(true)}>
           <Plus />
           Create integration
         </Button>
@@ -113,10 +107,7 @@ const IntegrationsSettingsPage = () => {
                     <DropdownMenu.Content>
                       <DropdownMenu.Item
                         className="gap-x-2"
-                        onClick={() => {
-                          setEditing(integration)
-                          setDrawerMode("edit")
-                        }}
+                        onClick={() => setEditing(integration)}
                       >
                         <PencilSquare className="text-ui-fg-subtle" />
                         Edit
@@ -135,7 +126,8 @@ const IntegrationsSettingsPage = () => {
         </Table>
       )}
 
-      <IntegrationDrawer mode={drawerMode} integration={editing} onClose={() => setDrawerMode(null)} />
+      <CreateIntegrationModal open={createOpen} onClose={() => setCreateOpen(false)} />
+      <EditIntegrationDrawer integration={editing} onClose={() => setEditing(null)} />
     </Container>
   )
 }
