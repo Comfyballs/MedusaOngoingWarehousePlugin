@@ -25,16 +25,19 @@ const makeArgs = (
     overrides.listImpl ?? jest.fn().mockResolvedValue(rows)
   const service = { listOngoingOrderSyncs }
   const logger = { info: jest.fn(), warn: jest.fn(), error: jest.fn() }
+  const emit = jest.fn().mockResolvedValue(undefined)
   const container = {
-    resolve: jest.fn((key: string) =>
-      key === "logger" ? logger : service
-    ),
+    resolve: jest.fn((key: string) => {
+      if (key === "logger") return logger
+      if (key === "event_bus") return { emit }
+      return service
+    }),
   }
   const args = {
     event: { eventName: "order.canceled", data: { id: orderId } },
     container,
   } as unknown as SubscriberArgs<{ id: string }>
-  return { args, service, logger, container, listOngoingOrderSyncs }
+  return { args, service, logger, container, listOngoingOrderSyncs, emit }
 }
 
 describe("order.canceled subscriber", () => {
@@ -158,5 +161,48 @@ describe("order.canceled subscriber", () => {
         ongoing_order_number: "1001-aaa",
       },
     })
+  })
+
+  it("emits ongoing.sync.order_cancelled for each row the workflow actually cancels", async () => {
+    const rows: Row[] = [
+      {
+        id: "syn_1",
+        ongoing_order_number: "1001-aaa",
+        medusa_order_id: "order_6",
+        medusa_fulfillment_id: "ful_1",
+      },
+    ]
+    const { args, emit } = makeArgs("order_6", rows)
+
+    await orderCanceledHandler(args)
+
+    expect(emit).toHaveBeenCalledWith({
+      name: "ongoing.sync.order_cancelled",
+      data: {
+        medusa_order_id: "order_6",
+        ongoing_order_number: "1001-aaa",
+        ongoing_order_sync_id: "syn_1",
+        reason: "ok",
+      },
+    })
+  })
+
+  it("does not emit ongoing.sync.order_cancelled when the workflow does not cancel", async () => {
+    const rows: Row[] = [
+      {
+        id: "syn_1",
+        ongoing_order_number: "1001-aaa",
+        medusa_order_id: "order_7",
+        medusa_fulfillment_id: "ful_1",
+      },
+    ]
+    run.mockResolvedValueOnce({
+      result: { shouldCancel: false, reason: "already_cancelled" },
+    })
+    const { args, emit } = makeArgs("order_7", rows)
+
+    await orderCanceledHandler(args)
+
+    expect(emit).not.toHaveBeenCalled()
   })
 })

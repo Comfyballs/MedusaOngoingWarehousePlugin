@@ -1,4 +1,4 @@
-import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 import type { MedusaContainer } from "@medusajs/framework/types"
 import { ONGOING_MODULE } from "../modules/ongoing"
 import { pushOrderToOngoing } from "../workflows"
@@ -6,6 +6,11 @@ import {
   resolveRetryOutcome,
   computeRetryBackoffMs,
 } from "../lib/ongoing/retry-policy"
+import { ONGOING_EVENTS } from "../lib/ongoing/events"
+import type {
+  OrderRetriedPayload,
+  OrderDeadLetteredPayload,
+} from "../lib/ongoing/events"
 
 // Shape of an OngoingOrderSync row in the error/retryable state.
 // Fields are the subset we read or write — matches OngoingOrderSync model
@@ -58,6 +63,8 @@ async function processRow(
   logger: Logger,
   row: ErrorSyncRow
 ): Promise<void> {
+  const eventBus = (container as any).resolve(Modules.EVENT_BUS)
+
   if (row.medusa_fulfillment_id == null) {
     logger.warn(
       `[ongoing] retry: row ${row.id} has no medusa_fulfillment_id — skipping (not dead-lettering)`
@@ -79,6 +86,23 @@ async function processRow(
     logger.info(
       `[ongoing] retry: dead-lettered row ${row.id} after ${outcome.retry_count} attempts`
     )
+    // Best-effort emit: the dead-letter write above already committed — an
+    // event-bus outage here must not surface as a "row failed" log for a row
+    // that was actually processed successfully.
+    try {
+      await eventBus.emit({
+        name: ONGOING_EVENTS.ORDER_DEAD_LETTERED,
+        data: {
+          ongoing_order_sync_id: row.id,
+          medusa_fulfillment_id: row.medusa_fulfillment_id,
+          retry_count: outcome.retry_count,
+        } satisfies OrderDeadLetteredPayload,
+      })
+    } catch (emitErr) {
+      logger.error(
+        `[ongoing] retry: failed to emit ${ONGOING_EVENTS.ORDER_DEAD_LETTERED} for row ${row.id}: ${(emitErr as Error).message}`
+      )
+    }
     return
   }
 
@@ -110,6 +134,23 @@ async function processRow(
   logger.info(
     `[ongoing] retry: re-invoked push for row ${row.id} (attempt ${outcome.retry_count})`
   )
+  // Best-effort emit: the re-invocation above already ran to completion — an
+  // event-bus outage here must not surface as a "row failed" log for a row
+  // that was actually processed successfully.
+  try {
+    await eventBus.emit({
+      name: ONGOING_EVENTS.ORDER_RETRIED,
+      data: {
+        ongoing_order_sync_id: row.id,
+        medusa_fulfillment_id: row.medusa_fulfillment_id,
+        retry_count: outcome.retry_count,
+      } satisfies OrderRetriedPayload,
+    })
+  } catch (emitErr) {
+    logger.error(
+      `[ongoing] retry: failed to emit ${ONGOING_EVENTS.ORDER_RETRIED} for row ${row.id}: ${(emitErr as Error).message}`
+    )
+  }
 }
 
 export default async function retryFailedSyncsJob(

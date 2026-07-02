@@ -17,8 +17,22 @@ function makeContainer({ putOrder }: { putOrder: jest.Mock }) {
     getClient: jest.fn().mockReturnValue({ putOrder }),
     recordSync,
   }
-  const container = { resolve: jest.fn().mockReturnValue(service) }
-  return { container, recordSync, service }
+  const logger = { info: jest.fn(), warn: jest.fn(), error: jest.fn() }
+  const emit = jest.fn().mockResolvedValue(undefined)
+  const eventBus = { emit }
+  const container = {
+    resolve: jest.fn((key: string) => {
+      switch (key) {
+        case "logger":
+          return logger
+        case "event_bus":
+          return eventBus
+        default:
+          return service
+      }
+    }),
+  }
+  return { container, recordSync, service, logger, emit }
 }
 
 // The createStep wrapper does not expose its invoke fn; test the exported handler.
@@ -109,7 +123,20 @@ describe("pushOrderRecordSyncStep", () => {
       }),
       recordSync,
     }
-    const container = { resolve: jest.fn().mockReturnValue(service) }
+    const logger = { info: jest.fn(), warn: jest.fn(), error: jest.fn() }
+    const emit = jest.fn().mockResolvedValue(undefined)
+    const container = {
+      resolve: jest.fn((key: string) => {
+        switch (key) {
+          case "logger":
+            return logger
+          case "event_bus":
+            return { emit }
+          default:
+            return service
+        }
+      }),
+    }
 
     await expect(invoke(baseInput, { container })).rejects.toThrow("no credentials configured")
 
@@ -119,6 +146,74 @@ describe("pushOrderRecordSyncStep", () => {
     expect(recordSync.mock.calls[0][0]).toMatchObject({ sync_state: "pending" })
     expect(recordSync).toHaveBeenCalledWith(
       expect.objectContaining({ sync_state: "error", error_class: "retryable" })
+    )
+  })
+
+  it("emits ongoing.sync.order_pushed on success", async () => {
+    const putOrder = jest.fn().mockResolvedValue({ ongoingOrderId: 999 })
+    const { container, emit } = makeContainer({ putOrder })
+
+    await invoke(baseInput, { container })
+
+    expect(emit).toHaveBeenCalledWith({
+      name: "ongoing.sync.order_pushed",
+      data: {
+        medusa_order_id: "order_1",
+        medusa_fulfillment_id: "ful_1",
+        ongoing_order_number: "1001-ful1",
+        ongoing_order_id: 999,
+        integration_id: "int_1",
+      },
+    })
+  })
+
+  it("emits ongoing.sync.push_failed with error_class on failure, then rethrows", async () => {
+    const putOrder = jest
+      .fn()
+      .mockRejectedValue(new OngoingApiError("503 down", { kind: "retryable", status: 503 }))
+    const { container, emit } = makeContainer({ putOrder })
+
+    await expect(invoke(baseInput, { container })).rejects.toMatchObject({ kind: "retryable" })
+
+    expect(emit).toHaveBeenCalledWith({
+      name: "ongoing.sync.push_failed",
+      data: {
+        medusa_order_id: "order_1",
+        medusa_fulfillment_id: "ful_1",
+        ongoing_order_number: "1001-ful1",
+        integration_id: "int_1",
+        error_class: "retryable",
+        error_message: "503 down",
+      },
+    })
+  })
+
+  it("still completes and returns the pushed output when the order_pushed emit rejects (event-bus outage must not negate a committed push)", async () => {
+    const putOrder = jest.fn().mockResolvedValue({ ongoingOrderId: 999 })
+    const { container, logger, emit } = makeContainer({ putOrder })
+    emit.mockRejectedValueOnce(new Error("event bus unavailable"))
+
+    const output = await invoke(baseInput, { container })
+
+    expect(output).toEqual({ ongoingOrderId: 999, orderNumber: "1001-ful1" })
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining("event bus unavailable")
+    )
+  })
+
+  it("rethrows the original error (not the emit failure) when the push_failed emit rejects", async () => {
+    const putOrder = jest
+      .fn()
+      .mockRejectedValue(new OngoingApiError("503 down", { kind: "retryable", status: 503 }))
+    const { container, logger, emit } = makeContainer({ putOrder })
+    emit.mockRejectedValueOnce(new Error("event bus unavailable"))
+
+    await expect(invoke(baseInput, { container })).rejects.toMatchObject({
+      kind: "retryable",
+      message: "503 down",
+    })
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining("event bus unavailable")
     )
   })
 })

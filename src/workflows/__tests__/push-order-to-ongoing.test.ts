@@ -50,6 +50,19 @@ function buildContainer({ putOrder, recordSync }: { putOrder: jest.Mock; recordS
   const container: any = createMedusaContainer()
   container.register("query", asValue(query))
   container.register("ongoing", asValue(service))
+  container.register("logger", asValue({ info: jest.fn(), warn: jest.fn(), error: jest.fn() }))
+  container.register(
+    "event_bus",
+    asValue({
+      emit: jest.fn().mockResolvedValue(undefined),
+      // The workflow orchestrator itself resolves Modules.EVENT_BUS (with
+      // allowUnregistered) after every run to release/clear the flow's grouped
+      // events — these no-ops keep that machinery from throwing now that the key
+      // is registered.
+      releaseGroupedEvents: jest.fn().mockResolvedValue(undefined),
+      clearGroupedEvents: jest.fn().mockResolvedValue(undefined),
+    })
+  )
   return { container, query, service }
 }
 

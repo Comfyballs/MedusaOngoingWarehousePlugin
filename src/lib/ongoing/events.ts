@@ -1,0 +1,71 @@
+export const ONGOING_EVENTS = {
+  ORDER_PUSHED: "ongoing.sync.order_pushed",
+  PUSH_FAILED: "ongoing.sync.push_failed",
+  SHIPMENT_APPLIED: "ongoing.sync.shipment_applied",
+  ORDER_CANCELLED: "ongoing.sync.order_cancelled",
+  ORDER_RETRIED: "ongoing.sync.order_retried",
+  ORDER_DEAD_LETTERED: "ongoing.sync.order_dead_lettered",
+  INVENTORY_SYNCED: "ongoing.sync.inventory_synced",
+  EDIT_BLOCKED: "ongoing.sync.edit_blocked",
+} as const
+
+export type OngoingEventName = (typeof ONGOING_EVENTS)[keyof typeof ONGOING_EVENTS]
+
+export interface OrderPushedPayload {
+  medusa_order_id: string
+  medusa_fulfillment_id: string
+  ongoing_order_number: string
+  ongoing_order_id: number
+  integration_id: string
+}
+
+export interface PushFailedPayload {
+  medusa_order_id: string
+  medusa_fulfillment_id: string
+  ongoing_order_number: string
+  integration_id: string
+  error_class: "retryable" | "terminal"
+  error_message: string
+}
+
+export interface ShipmentAppliedPayload {
+  medusa_order_id: string
+  medusa_fulfillment_id: string
+  ongoing_order_sync_id: string
+  ongoing_order_number: string
+  tracking_numbers: string[]
+}
+
+export interface OrderCancelledPayload {
+  medusa_order_id: string
+  ongoing_order_number: string
+  ongoing_order_sync_id: string
+  reason: string
+}
+
+export interface OrderRetriedPayload {
+  ongoing_order_sync_id: string
+  medusa_fulfillment_id: string
+  retry_count: number
+}
+
+export interface OrderDeadLetteredPayload {
+  ongoing_order_sync_id: string
+  medusa_fulfillment_id: string
+  retry_count: number
+}
+
+export interface InventorySyncedPayload {
+  integration_id: string
+  credential_key: string
+  stock_location_id: string
+  written: number
+  skipped: number
+}
+
+export interface EditBlockedPayload {
+  medusa_order_id: string
+  ongoing_order_sync_id: string
+  category: string
+  latest_status_code: number | null
+}

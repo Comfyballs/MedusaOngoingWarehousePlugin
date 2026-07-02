@@ -1,7 +1,10 @@
 import { createStep, StepResponse } from "@medusajs/framework/workflows-sdk"
+import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 import { classifyError } from "../../lib/ongoing/errors"
 import type { PostOrderModel } from "../../lib/ongoing/types"
 import { ONGOING_MODULE } from "../../modules/ongoing"
+import { ONGOING_EVENTS } from "../../lib/ongoing/events"
+import type { OrderPushedPayload, PushFailedPayload } from "../../lib/ongoing/events"
 
 export type PushOrderInput = {
   model: PostOrderModel
@@ -28,6 +31,8 @@ export async function pushOrderRecordSyncHandler(
   { container }: { container: any }
 ): Promise<PushOrderOutput> {
   const service: any = container.resolve(ONGOING_MODULE)
+  const logger: any = container.resolve(ContainerRegistrationKeys.LOGGER)
+  const eventBus: any = container.resolve(Modules.EVENT_BUS)
 
   // Persist the order number BEFORE the PUT so a retry upserts the same Ongoing order.
   // Clear any error columns from a prior failed attempt so a retry starts clean.
@@ -61,6 +66,28 @@ export async function pushOrderRecordSyncHandler(
       error_class: errorClass,
       last_error: (err as Error).message,
     })
+    logger.error(
+      `[ongoing] push-order-record-sync: failed medusa_order_id=${input.medusa_order_id} medusa_fulfillment_id=${input.medusa_fulfillment_id} ongoing_order_number=${input.ongoing_order_number} integration_id=${input.integration_id} error_class=${errorClass} error=${(err as Error).message}`
+    )
+    // Best-effort emit: a failing event bus must not mask the real error (which
+    // is what the caller and the recorded error row are for).
+    try {
+      await eventBus.emit({
+        name: ONGOING_EVENTS.PUSH_FAILED,
+        data: {
+          medusa_order_id: input.medusa_order_id,
+          medusa_fulfillment_id: input.medusa_fulfillment_id,
+          ongoing_order_number: input.ongoing_order_number,
+          integration_id: input.integration_id,
+          error_class: errorClass,
+          error_message: (err as Error).message,
+        } satisfies PushFailedPayload,
+      })
+    } catch (emitErr) {
+      logger.error(
+        `[ongoing] push-order-record-sync: failed to emit ${ONGOING_EVENTS.PUSH_FAILED} medusa_order_id=${input.medusa_order_id} medusa_fulfillment_id=${input.medusa_fulfillment_id} error=${(emitErr as Error).message}`
+      )
+    }
     throw err
   }
 
@@ -74,6 +101,31 @@ export async function pushOrderRecordSyncHandler(
     error_class: null,
     last_error: null,
   })
+
+  logger.info(
+    `[ongoing] push-order-record-sync: pushed medusa_order_id=${input.medusa_order_id} medusa_fulfillment_id=${input.medusa_fulfillment_id} ongoing_order_number=${input.ongoing_order_number} ongoing_order_id=${ongoingOrderId} integration_id=${input.integration_id}`
+  )
+  // Best-effort emit: the order has already been recorded as "sent" above — an
+  // event-bus outage here must not turn a real successful push into a thrown
+  // error (pushOrderToOngoing runs synchronously inside createFulfillment, so a
+  // thrown emit would otherwise make Medusa treat a successful fulfillment as
+  // failed).
+  try {
+    await eventBus.emit({
+      name: ONGOING_EVENTS.ORDER_PUSHED,
+      data: {
+        medusa_order_id: input.medusa_order_id,
+        medusa_fulfillment_id: input.medusa_fulfillment_id,
+        ongoing_order_number: input.ongoing_order_number,
+        ongoing_order_id: ongoingOrderId,
+        integration_id: input.integration_id,
+      } satisfies OrderPushedPayload,
+    })
+  } catch (emitErr) {
+    logger.error(
+      `[ongoing] push-order-record-sync: failed to emit ${ONGOING_EVENTS.ORDER_PUSHED} medusa_order_id=${input.medusa_order_id} medusa_fulfillment_id=${input.medusa_fulfillment_id} error=${(emitErr as Error).message}`
+    )
+  }
 
   return { ongoingOrderId, orderNumber: input.ongoing_order_number }
 }

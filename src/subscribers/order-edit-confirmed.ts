@@ -3,6 +3,7 @@ import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 import { ONGOING_MODULE } from "../modules/ongoing"
 import { syncOrderEditToOngoing } from "../workflows/sync-order-edit-to-ongoing"
 import { markOrderSyncEditBlockedWorkflow } from "../workflows/mark-order-sync-edit-blocked"
+import { ONGOING_EVENTS } from "../lib/ongoing/events"
 
 // ChangeActionType values that order-edit.confirmed carries: only line-item /
 // shipping mutations appear on this event (address/contact/email go through
@@ -75,7 +76,7 @@ export default async function orderEditConfirmedHandler({
 
     const emitBlocked = (row: OngoingOrderSyncRow) =>
       eventBus.emit({
-        name: "ongoing.sync.edit_blocked",
+        name: ONGOING_EVENTS.EDIT_BLOCKED,
         data: {
           medusa_order_id: orderId,
           ongoing_order_sync_id: row.id,

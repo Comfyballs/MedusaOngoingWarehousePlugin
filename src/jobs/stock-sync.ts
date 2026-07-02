@@ -1,7 +1,9 @@
-import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 import type { MedusaContainer } from "@medusajs/framework/types"
 import { ONGOING_MODULE } from "../modules/ongoing"
 import { syncOngoingInventoryWorkflow } from "../workflows"
+import { ONGOING_EVENTS } from "../lib/ongoing/events"
+import type { InventorySyncedPayload } from "../lib/ongoing/events"
 
 // Local structural types — no runtime import of the model class (mirrors status-poll.ts pattern).
 type IntegrationRow = {
@@ -95,6 +97,26 @@ async function syncIntegration(
     logger.info(
       `[ongoing] stock-sync: integration ${integration.id} reconciled ${result.written} level(s), skipped ${result.skipped}`
     )
+    const eventBus: any = container.resolve(Modules.EVENT_BUS)
+    // Best-effort emit: the reconcile above already ran to completion — an
+    // event-bus outage here must not surface as an "integration failed" log for
+    // an integration that actually synced successfully.
+    try {
+      await eventBus.emit({
+        name: ONGOING_EVENTS.INVENTORY_SYNCED,
+        data: {
+          integration_id: integration.id,
+          credential_key: integration.credential_key,
+          stock_location_id: integration.stock_location_id,
+          written: result.written,
+          skipped: result.skipped,
+        } satisfies InventorySyncedPayload,
+      })
+    } catch (emitErr) {
+      logger.error(
+        `[ongoing] stock-sync: failed to emit ${ONGOING_EVENTS.INVENTORY_SYNCED} for integration ${integration.id}: ${(emitErr as Error).message}`
+      )
+    }
   } finally {
     try {
       await service.updateOngoingIntegrations({
