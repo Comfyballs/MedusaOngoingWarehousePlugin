@@ -24,6 +24,9 @@ type OngoingOrderSyncRow = {
   last_synced_at: string | null
   last_error: string | null
   retry_count: number
+  edit_blocked_at: string | null
+  edit_blocked_category: "address_contact" | "line_items" | null
+  edit_blocked_reason: string | null
   tracking: OngoingOrderSyncTracking[]
 }
 
@@ -40,6 +43,18 @@ const STATE_BADGE_COLOR: Record<
   shipped: "green",
   cancelled: "grey",
   error: "red",
+}
+
+const EDIT_BLOCKED_CATEGORY_LABEL: Record<"address_contact" | "line_items", string> = {
+  address_contact: "Address / contact",
+  line_items: "Line items",
+}
+
+const EDIT_BLOCKED_REASON_LABEL: Record<string, string> = {
+  no_edit_rules: "No edit rules configured for the current status",
+  status_unknown: "Order status is unknown",
+  status_blocked: "Order status does not allow this edit",
+  no_sync_row: "The Ongoing sync record no longer exists",
 }
 
 const queryKeyFor = (orderId: string) => ["ongoing", "order-sync", orderId]
@@ -130,6 +145,26 @@ const OngoingOrderSyncWidget = ({ data }: DetailWidgetProps<AdminOrder>) => {
           <Text size="small" className="text-ui-fg-subtle">
             Last synced: {sync.last_synced_at ? new Date(sync.last_synced_at).toLocaleString() : "—"}
           </Text>
+
+          {sync.edit_blocked_at && (
+            <div className="bg-ui-tag-orange-bg border-ui-tag-orange-border flex flex-col gap-y-1 rounded-md border px-3 py-2">
+              <div className="flex items-center gap-x-2">
+                <Badge color="orange" size="2xsmall">
+                  Edit blocked
+                </Badge>
+                <Text size="small" leading="compact" weight="plus" className="text-ui-tag-orange-text">
+                  {sync.edit_blocked_category
+                    ? EDIT_BLOCKED_CATEGORY_LABEL[sync.edit_blocked_category]
+                    : "Unknown edit type"}
+                </Text>
+              </div>
+              <Text size="small" leading="compact" className="text-ui-tag-orange-text">
+                {sync.edit_blocked_reason
+                  ? (EDIT_BLOCKED_REASON_LABEL[sync.edit_blocked_reason] ?? sync.edit_blocked_reason)
+                  : "Reason not recorded"}
+              </Text>
+            </div>
+          )}
 
           {sync.tracking.length > 0 && (
             <div className="flex flex-col gap-y-1">

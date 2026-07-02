@@ -18,6 +18,9 @@ const makeSyncRow = (overrides: Record<string, unknown> = {}) => ({
   last_error: null,
   retry_count: 0,
   shipped_at: "2026-07-01T00:00:00.000Z",
+  edit_blocked_at: null,
+  edit_blocked_category: null,
+  edit_blocked_reason: null,
   ...overrides,
 })
 
@@ -172,6 +175,23 @@ describe("GET /admin/ongoing/orders/:orderId/sync", () => {
         { ...rowB, tracking: [{ tracking_number: "T1", tracking_url: null }] },
         { ...rowC, tracking: [{ tracking_number: "T2", tracking_url: null }] },
       ],
+    })
+  })
+
+  it("passes through edit_blocked_at/category/reason fields unchanged", async () => {
+    const row = makeSyncRow({
+      edit_blocked_at: "2026-07-02T10:00:00.000Z",
+      edit_blocked_category: "line_items",
+      edit_blocked_reason: "status_blocked",
+    })
+    const ongoingService = makeOngoingService([row])
+    const query = makeQuery([])
+    const res = makeRes()
+
+    await GET(makeReq({ ongoingService, query }), res)
+
+    expect(res.json).toHaveBeenCalledWith({
+      syncs: [{ ...row, tracking: [] }],
     })
   })
 })
