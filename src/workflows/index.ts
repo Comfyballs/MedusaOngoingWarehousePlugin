@@ -30,3 +30,8 @@ export { updateOngoingIntegrationWorkflow } from "./update-ongoing-integration"
 export type { UpdateOngoingIntegrationInput } from "./update-ongoing-integration"
 export { deleteOngoingIntegrationWorkflow } from "./delete-ongoing-integration"
 export type { DeleteOngoingIntegrationInput } from "./delete-ongoing-integration"
+export { retryOngoingSyncsWorkflow } from "./retry-ongoing-syncs"
+export type {
+  RetryOngoingSyncsInput,
+  RetryOngoingSyncsOutput,
+} from "./steps/retry-ongoing-syncs"
