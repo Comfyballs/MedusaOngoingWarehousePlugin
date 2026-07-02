@@ -17,6 +17,9 @@ export type OngoingOrderSyncRow = {
   last_error: string | null
   retry_count: number
   shipped_at: string | Date | null
+  edit_blocked_at: string | Date | null
+  edit_blocked_category: "address_contact" | "line_items" | null
+  edit_blocked_reason: string | null
 }
 
 export type OngoingOrderSyncTracking = {
