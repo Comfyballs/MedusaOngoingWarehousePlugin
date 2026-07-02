@@ -193,6 +193,28 @@ describe("ongoing stock-sync job", () => {
     expect(h.service.acquireSyncLock).not.toHaveBeenCalled()
   })
 
+  it("still stamps last_stock_sync_at, releases the lock, and does not log an integration failure when only the inventory_synced emit rejects", async () => {
+    const due = integ({ last_stock_sync_at: new Date(Date.now() - 700000) })
+    const h = makeHarness({ integrations: [due] })
+    h.emit.mockRejectedValueOnce(new Error("event bus unavailable"))
+
+    await expect(ongoingStockSyncJob(h.container)).resolves.toBeUndefined()
+
+    expect(h.service.updateOngoingIntegrations).toHaveBeenCalledWith({
+      id: "int_1",
+      last_stock_sync_at: expect.any(Date),
+    })
+    expect(h.service.releaseSyncLock).toHaveBeenCalledWith("int_1")
+    // The reconcile itself succeeded — only the best-effort emit failed, so the
+    // per-integration sweep catch (`integration ${id} ... failed: ...`) must not fire.
+    expect(h.logger.error).not.toHaveBeenCalledWith(
+      expect.stringMatching(/^\[ongoing\] stock-sync: integration int_1 \(/)
+    )
+    expect(h.logger.error).toHaveBeenCalledWith(
+      expect.stringContaining("failed to emit ongoing.sync.inventory_synced")
+    )
+  })
+
   it("does not let one integration failure stop the others", async () => {
     const a = integ({ id: "int_a", credential_key: "wh-a", stock_location_id: "sloc_1" })
     const b = integ({ id: "int_b", credential_key: "wh-b", stock_location_id: "sloc_2" })

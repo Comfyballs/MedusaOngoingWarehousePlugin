@@ -78,4 +78,17 @@ describe("markOrderSyncShippedStep", () => {
     )
     expect(emit).not.toHaveBeenCalled()
   })
+
+  it("still completes and returns output when the shipment_applied emit rejects (event-bus outage must not negate a committed write)", async () => {
+    const updateOngoingOrderSyncs = jest.fn().mockResolvedValue([{ id: "os_1" }])
+    const { container, logger, emit } = makeContainer({ updateOngoingOrderSyncs })
+    emit.mockRejectedValueOnce(new Error("event bus unavailable"))
+
+    const res = await markOrderSyncShippedHandler(baseInput, { container })
+
+    expect(res.output).toEqual({ order_sync_id: "os_1" })
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining("event bus unavailable")
+    )
+  })
 })

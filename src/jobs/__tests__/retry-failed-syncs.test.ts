@@ -244,4 +244,42 @@ describe("retryFailedSyncsJob", () => {
     expect(h.service.updateOngoingOrderSyncs).toHaveBeenCalled()
     expect(pushRun).toHaveBeenCalled()
   })
+
+  it("does not log the row as failed when the order_retried emit rejects (the re-invocation itself succeeded)", async () => {
+    const r = row({ retry_count: 0 })
+    const h = makeHarness({ rows: [r] })
+    h.emit.mockRejectedValueOnce(new Error("event bus unavailable"))
+
+    await expect(retryFailedSyncsJob(h.container)).resolves.toBeUndefined()
+
+    expect(pushRun).toHaveBeenCalledWith({ input: { fulfillment_id: "ful_abc" } })
+    // The row-level sweep catch (`row ${id} ... failed: ...`) must not fire —
+    // the re-invocation itself succeeded, only the best-effort emit failed.
+    expect(h.logger.error).not.toHaveBeenCalledWith(
+      expect.stringMatching(/^\[ongoing\] retry: row sync_1 /)
+    )
+    expect(h.logger.error).toHaveBeenCalledWith(
+      expect.stringContaining("failed to emit ongoing.sync.order_retried")
+    )
+  })
+
+  it("does not log the row as failed when the order_dead_lettered emit rejects (the dead-letter write itself succeeded)", async () => {
+    const r = row({ retry_count: 4 })
+    const h = makeHarness({ rows: [r] })
+    h.emit.mockRejectedValueOnce(new Error("event bus unavailable"))
+
+    await expect(retryFailedSyncsJob(h.container)).resolves.toBeUndefined()
+
+    expect(h.service.updateOngoingOrderSyncs).toHaveBeenCalledWith({
+      id: "sync_1",
+      retry_count: 5,
+      error_class: "terminal",
+    })
+    expect(h.logger.error).not.toHaveBeenCalledWith(
+      expect.stringMatching(/^\[ongoing\] retry: row sync_1 /)
+    )
+    expect(h.logger.error).toHaveBeenCalledWith(
+      expect.stringContaining("failed to emit ongoing.sync.order_dead_lettered")
+    )
+  })
 })

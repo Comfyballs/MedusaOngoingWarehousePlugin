@@ -187,4 +187,33 @@ describe("pushOrderRecordSyncStep", () => {
       },
     })
   })
+
+  it("still completes and returns the pushed output when the order_pushed emit rejects (event-bus outage must not negate a committed push)", async () => {
+    const putOrder = jest.fn().mockResolvedValue({ ongoingOrderId: 999 })
+    const { container, logger, emit } = makeContainer({ putOrder })
+    emit.mockRejectedValueOnce(new Error("event bus unavailable"))
+
+    const output = await invoke(baseInput, { container })
+
+    expect(output).toEqual({ ongoingOrderId: 999, orderNumber: "1001-ful1" })
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining("event bus unavailable")
+    )
+  })
+
+  it("rethrows the original error (not the emit failure) when the push_failed emit rejects", async () => {
+    const putOrder = jest
+      .fn()
+      .mockRejectedValue(new OngoingApiError("503 down", { kind: "retryable", status: 503 }))
+    const { container, logger, emit } = makeContainer({ putOrder })
+    emit.mockRejectedValueOnce(new Error("event bus unavailable"))
+
+    await expect(invoke(baseInput, { container })).rejects.toMatchObject({
+      kind: "retryable",
+      message: "503 down",
+    })
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining("event bus unavailable")
+    )
+  })
 })
