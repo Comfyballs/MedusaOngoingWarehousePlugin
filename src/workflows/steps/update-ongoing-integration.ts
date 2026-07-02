@@ -1,5 +1,6 @@
 import { createStep, StepResponse } from "@medusajs/framework/workflows-sdk"
 import { ONGOING_MODULE } from "../../modules/ongoing"
+import type OngoingModuleService from "../../modules/ongoing/service"
 import type { StockReconcileMode } from "../../lib/ongoing/types"
 
 export type UpdateOngoingIntegrationInput = {
@@ -34,8 +35,13 @@ export const updateOngoingIntegrationHandler = async (
   input: UpdateOngoingIntegrationInput,
   { container }: { container: any }
 ): Promise<StepResponse<Record<string, unknown>, UpdateOngoingIntegrationCompensation>> => {
-  const ongoing = container.resolve(ONGOING_MODULE) as any
+  const ongoing = container.resolve(ONGOING_MODULE) as OngoingModuleService
   const existing = await ongoing.retrieveOngoingIntegration(input.id)
+  // `shipped_status_codes`/`cancellable_status_codes` come back typed as
+  // `Record<string, unknown> | null` on the generated retrieve DTO (they're
+  // `model.json()` columns) — narrower than this step's `number[] | null`
+  // (the actual runtime shape). Scoped to these two fields only; every other
+  // access on `existing`/`ongoing` stays fully typed.
   const previous: PreviousIntegrationState = {
     enabled: existing.enabled,
     stock_sync_enabled: existing.stock_sync_enabled,
@@ -43,11 +49,11 @@ export const updateOngoingIntegrationHandler = async (
     status_poll_interval: existing.status_poll_interval,
     stock_reconcile_mode: existing.stock_reconcile_mode,
     edit_sync_rules: existing.edit_sync_rules,
-    shipped_status_codes: existing.shipped_status_codes,
-    cancellable_status_codes: existing.cancellable_status_codes,
+    shipped_status_codes: existing.shipped_status_codes as unknown as number[] | null,
+    cancellable_status_codes: existing.cancellable_status_codes as unknown as number[] | null,
   }
 
-  const updated = await ongoing.updateOngoingIntegrations(input)
+  const updated = await ongoing.updateOngoingIntegrations(input as any)
   return new StepResponse(updated, { id: input.id, previous })
 }
 
@@ -69,8 +75,8 @@ export const compensateOngoingIntegrationHandler = async (
   if (!compensation) {
     return
   }
-  const ongoing = container.resolve(ONGOING_MODULE) as any
-  await ongoing.updateOngoingIntegrations({ id: compensation.id, ...compensation.previous })
+  const ongoing = container.resolve(ONGOING_MODULE) as OngoingModuleService
+  await ongoing.updateOngoingIntegrations({ id: compensation.id, ...compensation.previous } as any)
 }
 
 export const updateOngoingIntegrationStep = createStep(
