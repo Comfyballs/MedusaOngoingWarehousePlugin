@@ -10,11 +10,30 @@ jest.mock("../../../../../../../workflows", () => ({
 
 import { POST } from "../route"
 
-const makeReq = (body: unknown, orderId = "order_1") =>
+const MODULE_KEY = "ongoing"
+
+const makeOngoingService = (syncs: Array<Record<string, unknown>>) => ({
+  listOngoingOrderSyncs: jest.fn().mockResolvedValue(syncs),
+})
+
+const makeReq = (
+  body: unknown,
+  opts: {
+    orderId?: string
+    ongoingService?: ReturnType<typeof makeOngoingService>
+  } = {}
+) =>
   ({
-    params: { orderId },
+    params: { orderId: opts.orderId ?? "order_1" },
     body,
-    scope: { resolve: jest.fn() },
+    scope: {
+      resolve: jest.fn((key: string) => {
+        if (key === MODULE_KEY) {
+          return opts.ongoingService ?? makeOngoingService([{ id: "osync_1" }])
+        }
+        throw new Error(`unexpected resolve key: ${key}`)
+      }),
+    },
   }) as any
 
 const makeRes = () => {
@@ -47,15 +66,40 @@ describe("POST /admin/ongoing/orders/:orderId/repush", () => {
     expect(workflowRun).not.toHaveBeenCalled()
   })
 
-  it("invokes pushOrderToOngoing(req.scope).run with the fulfillment_id and returns the result", async () => {
+  it("throws MedusaError(NOT_FOUND) when fulfillment_id does not belong to a sync row for this order, and never invokes the workflow", async () => {
+    const ongoingService = makeOngoingService([])
+    const req = makeReq(
+      { fulfillment_id: "ful_from_other_order" },
+      { orderId: "order_1", ongoingService }
+    )
+    const res = makeRes()
+
+    await expect(POST(req, res)).rejects.toThrow(MedusaError)
+    expect(ongoingService.listOngoingOrderSyncs).toHaveBeenCalledWith({
+      medusa_order_id: "order_1",
+      medusa_fulfillment_id: "ful_from_other_order",
+    })
+    expect(pushOrderToOngoing).not.toHaveBeenCalled()
+    expect(workflowRun).not.toHaveBeenCalled()
+  })
+
+  it("invokes pushOrderToOngoing(req.scope).run with the fulfillment_id and returns the result when the fulfillment belongs to the order", async () => {
     workflowRun.mockResolvedValueOnce({
       result: { ongoingOrderId: 555, orderNumber: "1001-ful_1" },
     })
-    const req = makeReq({ fulfillment_id: "ful_1" })
+    const ongoingService = makeOngoingService([{ id: "osync_1" }])
+    const req = makeReq(
+      { fulfillment_id: "ful_1" },
+      { orderId: "order_1", ongoingService }
+    )
     const res = makeRes()
 
     await POST(req, res)
 
+    expect(ongoingService.listOngoingOrderSyncs).toHaveBeenCalledWith({
+      medusa_order_id: "order_1",
+      medusa_fulfillment_id: "ful_1",
+    })
     expect(pushOrderToOngoing).toHaveBeenCalledWith(req.scope)
     expect(workflowRun).toHaveBeenCalledWith({ input: { fulfillment_id: "ful_1" } })
     expect(res.status).toHaveBeenCalledWith(200)
@@ -71,8 +115,10 @@ describe("POST /admin/ongoing/orders/:orderId/repush", () => {
       "[ongoing] SKU resolves to more than one variant"
     )
     workflowRun.mockRejectedValueOnce(failure)
+    const ongoingService = makeOngoingService([{ id: "osync_1" }])
+    const req = makeReq({ fulfillment_id: "ful_1" }, { ongoingService })
     const res = makeRes()
 
-    await expect(POST(makeReq({ fulfillment_id: "ful_1" }), res)).rejects.toBe(failure)
+    await expect(POST(req, res)).rejects.toBe(failure)
   })
 })
