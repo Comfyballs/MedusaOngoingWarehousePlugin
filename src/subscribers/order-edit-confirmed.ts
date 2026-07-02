@@ -24,6 +24,7 @@ type OngoingOrderSyncRow = {
   medusa_fulfillment_id: string | null
   integration_id: string
   latest_status_code: number | null
+  edit_blocked_at: string | Date | null
 }
 
 type OngoingServiceLike = {
@@ -149,6 +150,14 @@ export default async function orderEditConfirmedHandler({
         logger.info(
           `[ongoing] order-edit.confirmed for ${orderId}: re-synced line_items edit for sync ${row.id}`
         )
+        // Clear a stale edit-blocked flag now that the edit re-synced. Guarded
+        // on edit_blocked_at so never-blocked rows take no DB write. The step
+        // nulls all three edit_blocked_* fields on blocked:false (#91). (#103)
+        if (row.edit_blocked_at) {
+          await markOrderSyncEditBlockedWorkflow(container).run({
+            input: { order_sync_id: row.id, blocked: false },
+          })
+        }
       } catch (error) {
         // Subscribers never throw (spec §8): log this row and keep going.
         const message = error instanceof Error ? error.message : String(error)

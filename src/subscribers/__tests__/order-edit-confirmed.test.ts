@@ -24,6 +24,7 @@ function makeContainer(opts: {
     medusa_fulfillment_id: string | null
     integration_id: string
     latest_status_code: number | null
+    edit_blocked_at?: string | Date | null
   }>
   editSyncRules: Record<string, { edit_sync_rules: Record<string, number[]> | null }>
 }) {
@@ -95,6 +96,49 @@ describe("order-edit.confirmed subscriber — line_items re-sync", () => {
         category: "line_items",
       },
     })
+  })
+
+  it("clears edit-blocked state after a successful re-sync of a previously-blocked row", async () => {
+    const { container } = makeContainer({
+      syncRows: [
+        {
+          id: "oos_1",
+          medusa_fulfillment_id: "ful_1",
+          integration_id: "int_1",
+          latest_status_code: 100,
+          edit_blocked_at: "2026-07-01T00:00:00.000Z",
+        },
+      ],
+      editSyncRules: { int_1: { edit_sync_rules: { line_items: [100, 110] } } },
+    })
+
+    // runMock's default resolves { result: {} } (test file line 12): blocked is
+    // falsy, so the handler takes the success path.
+    await orderEditConfirmedHandler({ ...event("order_1", ["ITEM_UPDATE"]), container })
+
+    expect(markBlockedRunMock).toHaveBeenCalledTimes(1)
+    expect(markBlockedRunMock).toHaveBeenCalledWith({
+      input: { order_sync_id: "oos_1", blocked: false },
+    })
+  })
+
+  it("does not clear edit-blocked state when the row was not blocked", async () => {
+    const { container } = makeContainer({
+      syncRows: [
+        {
+          id: "oos_1",
+          medusa_fulfillment_id: "ful_1",
+          integration_id: "int_1",
+          latest_status_code: 100,
+          edit_blocked_at: null,
+        },
+      ],
+      editSyncRules: { int_1: { edit_sync_rules: { line_items: [100, 110] } } },
+    })
+
+    await orderEditConfirmedHandler({ ...event("order_1", ["ITEM_UPDATE"]), container })
+
+    expect(markBlockedRunMock).not.toHaveBeenCalled()
   })
 
   it("no-ops when actions contain no line-item/shipping change", async () => {
