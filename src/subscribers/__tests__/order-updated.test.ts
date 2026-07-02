@@ -1,14 +1,21 @@
 import orderUpdatedHandler from "../order-updated"
 import { syncOrderEditToOngoing } from "../../workflows/sync-order-edit-to-ongoing"
+import { markOrderSyncEditBlockedWorkflow } from "../../workflows/mark-order-sync-edit-blocked"
 
 jest.mock("../../workflows/sync-order-edit-to-ongoing", () => ({
   syncOrderEditToOngoing: jest.fn(),
+}))
+jest.mock("../../workflows/mark-order-sync-edit-blocked", () => ({
+  markOrderSyncEditBlockedWorkflow: jest.fn(),
 }))
 
 const runMock = jest
   .fn()
   .mockResolvedValue({ result: { synced: true, blocked: false, reason: "allowed" } })
 ;(syncOrderEditToOngoing as unknown as jest.Mock).mockReturnValue({ run: runMock })
+
+const markBlockedRunMock = jest.fn().mockResolvedValue({ order_sync_id: "oos_1" })
+;(markOrderSyncEditBlockedWorkflow as unknown as jest.Mock).mockReturnValue({ run: markBlockedRunMock })
 
 type GraphCall = { entity: string }
 
@@ -74,6 +81,7 @@ const event = (id: string) => ({ event: { eventName: "order.updated", data: { id
 beforeEach(() => {
   jest.clearAllMocks()
   ;(syncOrderEditToOngoing as unknown as jest.Mock).mockReturnValue({ run: runMock })
+  ;(markOrderSyncEditBlockedWorkflow as unknown as jest.Mock).mockReturnValue({ run: markBlockedRunMock })
 })
 
 describe("order.updated subscriber — address/contact re-sync", () => {
@@ -141,6 +149,10 @@ describe("order.updated subscriber — address/contact re-sync", () => {
         latest_status_code: 999,
       },
     })
+    expect(markOrderSyncEditBlockedWorkflow).toHaveBeenCalledWith(container)
+    expect(markBlockedRunMock).toHaveBeenCalledWith({
+      input: { order_sync_id: "oos_1", blocked: true, category: "address_contact", reason: "status_blocked" },
+    })
   })
 
   it("blocks and emits a warning when latest_status_code is unknown (null)", async () => {
@@ -164,6 +176,9 @@ describe("order.updated subscriber — address/contact re-sync", () => {
         latest_status_code: null,
       },
     })
+    expect(markBlockedRunMock).toHaveBeenCalledWith({
+      input: { order_sync_id: "oos_1", blocked: true, category: "address_contact", reason: "status_unknown" },
+    })
   })
 
   it("blocks and emits a warning when the integration has no address_contact rules", async () => {
@@ -184,6 +199,9 @@ describe("order.updated subscriber — address/contact re-sync", () => {
         category: "address_contact",
         latest_status_code: 100,
       },
+    })
+    expect(markBlockedRunMock).toHaveBeenCalledWith({
+      input: { order_sync_id: "oos_1", blocked: true, category: "address_contact", reason: "status_blocked" },
     })
   })
 

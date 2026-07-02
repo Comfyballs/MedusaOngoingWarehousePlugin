@@ -15,6 +15,8 @@ export { gateOrderEditStep, decideOrderEditGate } from "./steps/gate-order-edit"
 export type { GateInput, GateDecision, OrderEditCategory } from "./steps/gate-order-edit"
 export { upsertOngoingOrderEditStep } from "./steps/upsert-ongoing-order-edit"
 export type { UpsertResult } from "./steps/upsert-ongoing-order-edit"
+export { markOrderSyncEditBlockedWorkflow } from "./mark-order-sync-edit-blocked"
+export type { MarkEditBlockedInput } from "./steps/mark-order-sync-edit-blocked"
 export { syncOngoingShipmentWorkflow } from "./sync-ongoing-shipment"
 export type {
   SyncOngoingShipmentInput,

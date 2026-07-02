@@ -1,12 +1,19 @@
 import orderEditConfirmedHandler from "../order-edit-confirmed"
 import { syncOrderEditToOngoing } from "../../workflows/sync-order-edit-to-ongoing"
+import { markOrderSyncEditBlockedWorkflow } from "../../workflows/mark-order-sync-edit-blocked"
 
 jest.mock("../../workflows/sync-order-edit-to-ongoing", () => ({
   syncOrderEditToOngoing: jest.fn(),
 }))
+jest.mock("../../workflows/mark-order-sync-edit-blocked", () => ({
+  markOrderSyncEditBlockedWorkflow: jest.fn(),
+}))
 
 const runMock = jest.fn().mockResolvedValue({ result: {} })
 ;(syncOrderEditToOngoing as unknown as jest.Mock).mockReturnValue({ run: runMock })
+
+const markBlockedRunMock = jest.fn().mockResolvedValue({ order_sync_id: "oos_1" })
+;(markOrderSyncEditBlockedWorkflow as unknown as jest.Mock).mockReturnValue({ run: markBlockedRunMock })
 
 // Builds a container whose resolve() returns logger / event_bus / the ongoing
 // module service. The service's retrieveOngoingIntegration returns the
@@ -56,6 +63,7 @@ const event = (order_id: string, actionTypes: string[]) =>
 beforeEach(() => {
   jest.clearAllMocks()
   ;(syncOrderEditToOngoing as unknown as jest.Mock).mockReturnValue({ run: runMock })
+  ;(markOrderSyncEditBlockedWorkflow as unknown as jest.Mock).mockReturnValue({ run: markBlockedRunMock })
 })
 
 describe("order-edit.confirmed subscriber — line_items re-sync", () => {
@@ -124,6 +132,10 @@ describe("order-edit.confirmed subscriber — line_items re-sync", () => {
         category: "line_items",
         latest_status_code: 999,
       },
+    })
+    expect(markOrderSyncEditBlockedWorkflow).toHaveBeenCalledWith(container)
+    expect(markBlockedRunMock).toHaveBeenCalledWith({
+      input: { order_sync_id: "oos_1", blocked: true, category: "line_items", reason: "status_blocked" },
     })
   })
 
@@ -202,6 +214,41 @@ describe("order-edit.confirmed subscriber — line_items re-sync", () => {
         category: "line_items",
         latest_status_code: 100,
       },
+    })
+    expect(markBlockedRunMock).toHaveBeenCalledWith({
+      input: { order_sync_id: "oos_1", blocked: true, category: "line_items", reason: "status_blocked" },
+    })
+  })
+
+  it("marks edit_blocked with reason 'no_edit_rules' when the integration has no edit_sync_rules at all", async () => {
+    const { container } = makeContainer({
+      syncRows: [
+        { id: "oos_1", medusa_fulfillment_id: "ful_1", integration_id: "int_1", latest_status_code: 100 },
+      ],
+      editSyncRules: { int_1: { edit_sync_rules: null } },
+    })
+
+    await orderEditConfirmedHandler({ ...event("order_1", ["ITEM_UPDATE"]), container })
+
+    expect(runMock).not.toHaveBeenCalled()
+    expect(markBlockedRunMock).toHaveBeenCalledWith({
+      input: { order_sync_id: "oos_1", blocked: true, category: "line_items", reason: "no_edit_rules" },
+    })
+  })
+
+  it("marks edit_blocked with reason 'status_unknown' when latest_status_code is null", async () => {
+    const { container } = makeContainer({
+      syncRows: [
+        { id: "oos_1", medusa_fulfillment_id: "ful_1", integration_id: "int_1", latest_status_code: null },
+      ],
+      editSyncRules: { int_1: { edit_sync_rules: { line_items: [100] } } },
+    })
+
+    await orderEditConfirmedHandler({ ...event("order_1", ["ITEM_UPDATE"]), container })
+
+    expect(runMock).not.toHaveBeenCalled()
+    expect(markBlockedRunMock).toHaveBeenCalledWith({
+      input: { order_sync_id: "oos_1", blocked: true, category: "line_items", reason: "status_unknown" },
     })
   })
 })
