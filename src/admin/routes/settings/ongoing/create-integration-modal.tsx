@@ -2,7 +2,7 @@ import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { FocusModal, Button, toast } from "@medusajs/ui"
 import { sdk } from "../../../lib/sdk"
-import { parseCodesCsv, parseEditSyncRulesJson } from "./utils/parse-codes"
+import { parseEditSyncRulesJson } from "./utils/parse-codes"
 import { EMPTY_FORM, IntegrationFormFields, type FormState } from "./integration-form-fields"
 
 type Props = {
@@ -78,12 +78,8 @@ export function CreateIntegrationModal({ open, onClose }: Props) {
 
   const handleSubmit = () => {
     setError(null)
-    let shipped_status_codes: number[] | null
-    let cancellable_status_codes: number[] | null
     let edit_sync_rules: Record<string, unknown> | null
     try {
-      shipped_status_codes = parseCodesCsv(form.shipped_status_codes_csv)
-      cancellable_status_codes = parseCodesCsv(form.cancellable_status_codes_csv)
       edit_sync_rules = parseEditSyncRulesJson(form.edit_sync_rules_json)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Invalid input")
@@ -99,8 +95,8 @@ export function CreateIntegrationModal({ open, onClose }: Props) {
       status_poll_interval: form.status_poll_interval || null,
       stock_reconcile_mode: form.stock_reconcile_mode,
       edit_sync_rules,
-      shipped_status_codes,
-      cancellable_status_codes,
+      shipped_status_codes: form.shipped_status_codes,
+      cancellable_status_codes: form.cancellable_status_codes,
     })
   }
 

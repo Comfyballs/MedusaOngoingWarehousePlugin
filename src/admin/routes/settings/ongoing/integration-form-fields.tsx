@@ -1,5 +1,6 @@
 import type { UseMutationResult } from "@tanstack/react-query"
 import { Input, Label, Select, Switch, Textarea, Text, Button } from "@medusajs/ui"
+import { StatusCodePicker } from "./components/StatusCodePicker"
 
 export type StockReconcileMode = "sellable_plus_reserved" | "precise" | "onhand"
 
@@ -26,8 +27,8 @@ export type FormState = {
   status_poll_interval: string
   stock_reconcile_mode: StockReconcileMode
   edit_sync_rules_json: string
-  shipped_status_codes_csv: string
-  cancellable_status_codes_csv: string
+  shipped_status_codes: number[]
+  cancellable_status_codes: number[]
 }
 
 export const EMPTY_FORM: FormState = {
@@ -39,8 +40,8 @@ export const EMPTY_FORM: FormState = {
   status_poll_interval: "",
   stock_reconcile_mode: "sellable_plus_reserved",
   edit_sync_rules_json: "",
-  shipped_status_codes_csv: "",
-  cancellable_status_codes_csv: "",
+  shipped_status_codes: [],
+  cancellable_status_codes: [],
 }
 
 export function toFormState(integration: OngoingIntegration): FormState {
@@ -55,8 +56,12 @@ export function toFormState(integration: OngoingIntegration): FormState {
     edit_sync_rules_json: integration.edit_sync_rules
       ? JSON.stringify(integration.edit_sync_rules, null, 2)
       : "",
-    shipped_status_codes_csv: (integration.shipped_status_codes ?? []).join(", "),
-    cancellable_status_codes_csv: (integration.cancellable_status_codes ?? []).join(", "),
+    shipped_status_codes: Array.isArray(integration.shipped_status_codes)
+      ? integration.shipped_status_codes
+      : [],
+    cancellable_status_codes: Array.isArray(integration.cancellable_status_codes)
+      ? integration.cancellable_status_codes
+      : [],
   }
 }
 
@@ -213,26 +218,19 @@ export function IntegrationFormFields({
         />
       </div>
 
-      {/* Basic comma/space-separated input for MVP. #41 (blocked by #40) upgrades
-          these two fields to a StatusCodePicker fed by the Test connection
-          statuses. */}
-      <div className="flex flex-col gap-y-2">
-        <Label>Shipped status codes</Label>
-        <Input
-          value={form.shipped_status_codes_csv}
-          onChange={(e) => setForm({ ...form, shipped_status_codes_csv: e.target.value })}
-          placeholder="e.g. 300, 320"
-        />
-      </div>
+      <StatusCodePicker
+        label="Shipped status codes"
+        statuses={testConnection.data?.statuses ?? []}
+        selected={form.shipped_status_codes}
+        onChange={(next) => setForm({ ...form, shipped_status_codes: next })}
+      />
 
-      <div className="flex flex-col gap-y-2">
-        <Label>Cancellable status codes</Label>
-        <Input
-          value={form.cancellable_status_codes_csv}
-          onChange={(e) => setForm({ ...form, cancellable_status_codes_csv: e.target.value })}
-          placeholder="e.g. 100, 110"
-        />
-      </div>
+      <StatusCodePicker
+        label="Cancellable status codes"
+        statuses={testConnection.data?.statuses ?? []}
+        selected={form.cancellable_status_codes}
+        onChange={(next) => setForm({ ...form, cancellable_status_codes: next })}
+      />
 
       <div className="flex flex-col gap-y-2 border-t pt-4">
         <Button
