@@ -29,6 +29,7 @@ function makeContainer(opts: {
     integration_id: string
     latest_status_code: number | null
     medusa_fulfillment_id: string | null
+    edit_blocked_at?: string | Date | null
   }>
   editSyncRules: Record<string, Record<string, number[]>> // integration_id -> { address_contact: number[] }
 }) {
@@ -114,6 +115,50 @@ describe("order.updated subscriber — address/contact re-sync", () => {
         category: "address_contact",
       },
     })
+  })
+
+  it("clears edit-blocked state after a successful re-sync of a previously-blocked row", async () => {
+    const { container } = makeContainer({
+      detailTypes: ["shipping_address"],
+      syncRows: [
+        {
+          id: "oos_1",
+          integration_id: "int_1",
+          latest_status_code: 100,
+          medusa_fulfillment_id: "ful_1",
+          edit_blocked_at: "2026-07-01T00:00:00.000Z",
+        },
+      ],
+      editSyncRules: { int_1: { address_contact: [100, 110] } },
+    })
+
+    // runMock's default resolves { synced: true, blocked: false } (test file line 14)
+    await orderUpdatedHandler({ ...event("order_1"), container })
+
+    expect(markBlockedRunMock).toHaveBeenCalledTimes(1)
+    expect(markBlockedRunMock).toHaveBeenCalledWith({
+      input: { order_sync_id: "oos_1", blocked: false },
+    })
+  })
+
+  it("does not clear edit-blocked state when the row was not blocked", async () => {
+    const { container } = makeContainer({
+      detailTypes: ["shipping_address"],
+      syncRows: [
+        {
+          id: "oos_1",
+          integration_id: "int_1",
+          latest_status_code: 100,
+          medusa_fulfillment_id: "ful_1",
+          edit_blocked_at: null,
+        },
+      ],
+      editSyncRules: { int_1: { address_contact: [100, 110] } },
+    })
+
+    await orderUpdatedHandler({ ...event("order_1"), container })
+
+    expect(markBlockedRunMock).not.toHaveBeenCalled()
   })
 
   it("no-ops when only metadata/locale changed (no relevant detail type)", async () => {
