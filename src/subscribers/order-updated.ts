@@ -183,7 +183,36 @@ export default async function orderUpdatedHandler({
               input: { order_sync_id: row.id, blocked: false },
             })
           }
+        } else if (result?.blocked) {
+          // Mirrors order-edit-confirmed.ts's post-workflow blocked branch: the
+          // workflow's own gate is authoritative, so a row it blocks must be
+          // persisted as blocked even though the subscriber's own pre-check
+          // gate (above) allowed it — this is exactly the race #94 closes.
+          logger.warn(
+            `[ongoing] order.updated for ${orderId}: address_contact re-sync blocked by workflow for sync ${row.id} (reason: ${result.reason})`
+          )
+          await eventBus.emit({
+            name: ONGOING_EVENTS.EDIT_BLOCKED,
+            data: {
+              medusa_order_id: orderId,
+              ongoing_order_sync_id: row.id,
+              category: "address_contact",
+              latest_status_code: code,
+            },
+          })
+          await markOrderSyncEditBlockedWorkflow(container).run({
+            input: {
+              order_sync_id: row.id,
+              blocked: true,
+              category: "address_contact",
+              reason: result.reason ?? "status_blocked",
+            },
+          })
         } else {
+          // Defensive fallback: result is present but neither synced nor
+          // blocked (should not happen given SyncOrderEditResult's derivation
+          // in sync-order-edit-to-ongoing.ts, but keep the prior behavior
+          // rather than silently dropping an unrecognized shape).
           logger.warn(
             `[ongoing] order.updated for ${orderId}: address_contact re-sync not applied for sync ${row.id} (workflow: ${result?.reason ?? "unknown"})`
           )
