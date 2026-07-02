@@ -43,16 +43,25 @@ export const markOrderSyncShippedHandler = async (
   logger.info(
     `[ongoing] mark-order-sync-shipped: applied ongoing_order_sync_id=${input.order_sync_id} medusa_order_id=${input.medusa_order_id} medusa_fulfillment_id=${input.medusa_fulfillment_id} ongoing_order_number=${input.ongoing_order_number} tracking_numbers=${input.tracking_numbers.join(",")}`
   )
-  await eventBus.emit({
-    name: ONGOING_EVENTS.SHIPMENT_APPLIED,
-    data: {
-      medusa_order_id: input.medusa_order_id,
-      medusa_fulfillment_id: input.medusa_fulfillment_id,
-      ongoing_order_sync_id: input.order_sync_id,
-      ongoing_order_number: input.ongoing_order_number,
-      tracking_numbers: input.tracking_numbers,
-    } satisfies ShipmentAppliedPayload,
-  })
+  // Best-effort emit: the sync row is already committed as "shipped" above — an
+  // event-bus outage here must not turn a real successful write into a thrown
+  // error.
+  try {
+    await eventBus.emit({
+      name: ONGOING_EVENTS.SHIPMENT_APPLIED,
+      data: {
+        medusa_order_id: input.medusa_order_id,
+        medusa_fulfillment_id: input.medusa_fulfillment_id,
+        ongoing_order_sync_id: input.order_sync_id,
+        ongoing_order_number: input.ongoing_order_number,
+        tracking_numbers: input.tracking_numbers,
+      } satisfies ShipmentAppliedPayload,
+    })
+  } catch (emitErr) {
+    logger.error(
+      `[ongoing] mark-order-sync-shipped: failed to emit ${ONGOING_EVENTS.SHIPMENT_APPLIED} ongoing_order_sync_id=${input.order_sync_id} medusa_order_id=${input.medusa_order_id} error=${(emitErr as Error).message}`
+    )
+  }
 
   return new StepResponse({ order_sync_id: input.order_sync_id })
 }

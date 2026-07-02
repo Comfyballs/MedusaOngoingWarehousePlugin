@@ -98,16 +98,25 @@ async function syncIntegration(
       `[ongoing] stock-sync: integration ${integration.id} reconciled ${result.written} level(s), skipped ${result.skipped}`
     )
     const eventBus: any = container.resolve(Modules.EVENT_BUS)
-    await eventBus.emit({
-      name: ONGOING_EVENTS.INVENTORY_SYNCED,
-      data: {
-        integration_id: integration.id,
-        credential_key: integration.credential_key,
-        stock_location_id: integration.stock_location_id,
-        written: result.written,
-        skipped: result.skipped,
-      } satisfies InventorySyncedPayload,
-    })
+    // Best-effort emit: the reconcile above already ran to completion — an
+    // event-bus outage here must not surface as an "integration failed" log for
+    // an integration that actually synced successfully.
+    try {
+      await eventBus.emit({
+        name: ONGOING_EVENTS.INVENTORY_SYNCED,
+        data: {
+          integration_id: integration.id,
+          credential_key: integration.credential_key,
+          stock_location_id: integration.stock_location_id,
+          written: result.written,
+          skipped: result.skipped,
+        } satisfies InventorySyncedPayload,
+      })
+    } catch (emitErr) {
+      logger.error(
+        `[ongoing] stock-sync: failed to emit ${ONGOING_EVENTS.INVENTORY_SYNCED} for integration ${integration.id}: ${(emitErr as Error).message}`
+      )
+    }
   } finally {
     try {
       await service.updateOngoingIntegrations({

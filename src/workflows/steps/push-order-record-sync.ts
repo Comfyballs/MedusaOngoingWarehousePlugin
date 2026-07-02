@@ -69,17 +69,25 @@ export async function pushOrderRecordSyncHandler(
     logger.error(
       `[ongoing] push-order-record-sync: failed medusa_order_id=${input.medusa_order_id} medusa_fulfillment_id=${input.medusa_fulfillment_id} ongoing_order_number=${input.ongoing_order_number} integration_id=${input.integration_id} error_class=${errorClass} error=${(err as Error).message}`
     )
-    await eventBus.emit({
-      name: ONGOING_EVENTS.PUSH_FAILED,
-      data: {
-        medusa_order_id: input.medusa_order_id,
-        medusa_fulfillment_id: input.medusa_fulfillment_id,
-        ongoing_order_number: input.ongoing_order_number,
-        integration_id: input.integration_id,
-        error_class: errorClass,
-        error_message: (err as Error).message,
-      } satisfies PushFailedPayload,
-    })
+    // Best-effort emit: a failing event bus must not mask the real error (which
+    // is what the caller and the recorded error row are for).
+    try {
+      await eventBus.emit({
+        name: ONGOING_EVENTS.PUSH_FAILED,
+        data: {
+          medusa_order_id: input.medusa_order_id,
+          medusa_fulfillment_id: input.medusa_fulfillment_id,
+          ongoing_order_number: input.ongoing_order_number,
+          integration_id: input.integration_id,
+          error_class: errorClass,
+          error_message: (err as Error).message,
+        } satisfies PushFailedPayload,
+      })
+    } catch (emitErr) {
+      logger.error(
+        `[ongoing] push-order-record-sync: failed to emit ${ONGOING_EVENTS.PUSH_FAILED} medusa_order_id=${input.medusa_order_id} medusa_fulfillment_id=${input.medusa_fulfillment_id} error=${(emitErr as Error).message}`
+      )
+    }
     throw err
   }
 
@@ -97,16 +105,27 @@ export async function pushOrderRecordSyncHandler(
   logger.info(
     `[ongoing] push-order-record-sync: pushed medusa_order_id=${input.medusa_order_id} medusa_fulfillment_id=${input.medusa_fulfillment_id} ongoing_order_number=${input.ongoing_order_number} ongoing_order_id=${ongoingOrderId} integration_id=${input.integration_id}`
   )
-  await eventBus.emit({
-    name: ONGOING_EVENTS.ORDER_PUSHED,
-    data: {
-      medusa_order_id: input.medusa_order_id,
-      medusa_fulfillment_id: input.medusa_fulfillment_id,
-      ongoing_order_number: input.ongoing_order_number,
-      ongoing_order_id: ongoingOrderId,
-      integration_id: input.integration_id,
-    } satisfies OrderPushedPayload,
-  })
+  // Best-effort emit: the order has already been recorded as "sent" above — an
+  // event-bus outage here must not turn a real successful push into a thrown
+  // error (pushOrderToOngoing runs synchronously inside createFulfillment, so a
+  // thrown emit would otherwise make Medusa treat a successful fulfillment as
+  // failed).
+  try {
+    await eventBus.emit({
+      name: ONGOING_EVENTS.ORDER_PUSHED,
+      data: {
+        medusa_order_id: input.medusa_order_id,
+        medusa_fulfillment_id: input.medusa_fulfillment_id,
+        ongoing_order_number: input.ongoing_order_number,
+        ongoing_order_id: ongoingOrderId,
+        integration_id: input.integration_id,
+      } satisfies OrderPushedPayload,
+    })
+  } catch (emitErr) {
+    logger.error(
+      `[ongoing] push-order-record-sync: failed to emit ${ONGOING_EVENTS.ORDER_PUSHED} medusa_order_id=${input.medusa_order_id} medusa_fulfillment_id=${input.medusa_fulfillment_id} error=${(emitErr as Error).message}`
+    )
+  }
 
   return { ongoingOrderId, orderNumber: input.ongoing_order_number }
 }
