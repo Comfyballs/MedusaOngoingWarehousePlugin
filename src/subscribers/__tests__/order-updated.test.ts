@@ -117,6 +117,36 @@ describe("order.updated subscriber — address/contact re-sync", () => {
     })
   })
 
+  it("emits edit_blocked and marks the row when the workflow's own re-gate blocks (post-workflow site)", async () => {
+    const { container, emit } = makeContainer({
+      detailTypes: ["shipping_address"],
+      syncRows: [{ id: "oos_1", integration_id: "int_1", latest_status_code: 100, medusa_fulfillment_id: "ful_1" }],
+      editSyncRules: { int_1: { address_contact: [100, 110] } }, // subscriber's own pre-check gate allows
+    })
+
+    // Status passes the subscriber's own pre-check gate, but the workflow's
+    // internal re-gate (gateOrderEditStep, inside syncOrderEditToOngoing) blocks
+    // — e.g. status changed between the subscriber's query and the workflow's own.
+    runMock.mockResolvedValueOnce({ result: { synced: false, blocked: true, reason: "status_blocked" } })
+
+    await orderUpdatedHandler({ ...event("order_1"), container })
+
+    expect(runMock).toHaveBeenCalledTimes(1)
+    expect(emit).toHaveBeenCalledWith({
+      name: "ongoing.sync.edit_blocked",
+      data: {
+        medusa_order_id: "order_1",
+        ongoing_order_sync_id: "oos_1",
+        category: "address_contact",
+        latest_status_code: 100,
+      },
+    })
+    expect(markOrderSyncEditBlockedWorkflow).toHaveBeenCalledWith(container)
+    expect(markBlockedRunMock).toHaveBeenCalledWith({
+      input: { order_sync_id: "oos_1", blocked: true, category: "address_contact", reason: "status_blocked" },
+    })
+  })
+
   it("clears edit-blocked state after a successful re-sync of a previously-blocked row", async () => {
     const { container } = makeContainer({
       detailTypes: ["shipping_address"],
