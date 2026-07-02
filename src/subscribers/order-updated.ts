@@ -20,6 +20,7 @@ type OngoingOrderSyncRow = {
   integration_id: string
   latest_status_code: number | null
   medusa_fulfillment_id: string | null
+  edit_blocked_at: string | Date | null
 }
 
 type OngoingServiceLike = {
@@ -83,6 +84,7 @@ export default async function orderUpdatedHandler({
           "integration_id",
           "latest_status_code",
           "medusa_fulfillment_id",
+          "edit_blocked_at",
         ],
       }
     )
@@ -173,6 +175,14 @@ export default async function orderUpdatedHandler({
           logger.info(
             `[ongoing] order.updated for ${orderId}: re-synced address_contact edit for sync ${row.id}`
           )
+          // Clear a stale edit-blocked flag now that the edit re-synced. Guarded
+          // on edit_blocked_at so never-blocked rows take no DB write. The step
+          // nulls all three edit_blocked_* fields on blocked:false (#91). (#103)
+          if (row.edit_blocked_at) {
+            await markOrderSyncEditBlockedWorkflow(container).run({
+              input: { order_sync_id: row.id, blocked: false },
+            })
+          }
         } else {
           logger.warn(
             `[ongoing] order.updated for ${orderId}: address_contact re-sync not applied for sync ${row.id} (workflow: ${result?.reason ?? "unknown"})`
