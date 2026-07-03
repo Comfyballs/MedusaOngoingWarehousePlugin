@@ -1,9 +1,18 @@
-import { MedusaError, MedusaService } from "@medusajs/framework/utils"
+import { InjectManager, MedusaContext, MedusaError, MedusaService } from "@medusajs/framework/utils"
+import type { Context } from "@medusajs/framework/types"
 import OngoingIntegration from "./models/integration"
 import OngoingOrderSync from "./models/order-sync"
 import { validateOngoingOptions } from "./options"
 import { OngoingClient } from "../../lib/ongoing/client"
 import type { OngoingCredentials, OngoingPluginOptions } from "../../lib/ongoing/types"
+
+export type RetrySyncTransitionInput = {
+  id: string
+  expected_retry_count: number
+  retry_count: number
+  last_synced_at: Date
+  error_class?: "terminal"
+}
 
 export type RecordSyncInput = {
   ongoing_order_number: string
@@ -118,6 +127,63 @@ class OngoingModuleService extends MedusaService({
 
   async releaseSyncLock(integrationId: string): Promise<void> {
     await this.updateOngoingIntegrations({ id: integrationId, sync_lock_until: null })
+  }
+
+  /**
+   * Guarded write for the retry-sweep driver (`src/jobs/retry-failed-syncs.ts`).
+   * Atomically transitions a row's `retry_count` (and, when dead-lettering,
+   * `error_class`) only if the row still matches the exact state this call site
+   * observed when it listed the row: `sync_state = "error" AND retry_count =
+   * expected_retry_count`.
+   *
+   * Returns `true` when this call won the race and the write landed. Returns
+   * `false` ("CAS lost") when zero rows matched — another overlapping tick
+   * already advanced `retry_count` for this row (multi-instance deployment, or
+   * a slow prior tick still in flight), or the row left the `error` state
+   * between listing and this call (e.g. a concurrent cancellation). The caller
+   * cannot distinguish which case fired and does not need to: both mean skip
+   * without re-invoking the sync or emitting a retry/dead-letter event, since
+   * whichever tick won the guard already did so.
+   *
+   * Bypasses the auto-CRUD `updateOngoingOrderSyncs` (read-then-write via
+   * `manager.assign()+persist()` — last-write-wins, confirmed by reading
+   * `@medusajs/utils`'s `MikroOrmBaseRepository.update()`) in favour of a single
+   * native `UPDATE ... WHERE id = ? AND sync_state = 'error' AND retry_count = ?`
+   * so the guard is enforced by the database in one round-trip, not by
+   * application-level read-then-write.
+   */
+  @InjectManager()
+  async attemptRetrySyncTransition(
+    input: RetrySyncTransitionInput,
+    @MedusaContext() sharedContext: Context = {}
+  ): Promise<boolean> {
+    const manager = sharedContext.manager as {
+      nativeUpdate: (
+        entityName: string,
+        where: Record<string, unknown>,
+        data: Record<string, unknown>
+      ) => Promise<number>
+    }
+
+    const data: Record<string, unknown> = {
+      retry_count: input.retry_count,
+      last_synced_at: input.last_synced_at,
+    }
+    if (input.error_class) {
+      data.error_class = input.error_class
+    }
+
+    const affectedRows = await manager.nativeUpdate(
+      "OngoingOrderSync",
+      {
+        id: input.id,
+        sync_state: "error",
+        retry_count: input.expected_retry_count,
+      },
+      data
+    )
+
+    return affectedRows === 1
   }
 }
 
