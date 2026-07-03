@@ -28,12 +28,13 @@ type OngoingServiceLike = {
     sync_state: string
     error_class: string
   }) => Promise<ErrorSyncRow[]>
-  updateOngoingOrderSyncs: (data: {
+  attemptRetrySyncTransition: (input: {
     id: string
+    expected_retry_count: number
     retry_count: number
-    last_synced_at?: Date
+    last_synced_at: Date
     error_class?: "terminal"
-  }) => Promise<unknown>
+  }) => Promise<boolean>
 }
 
 type Logger = {
@@ -77,12 +78,36 @@ async function processRow(
     error_class: row.error_class,
   })
 
+  // Guarded write: only succeeds if `id` still has `sync_state = "error" AND
+  // retry_count = row.retry_count` — i.e. nothing else has touched this row
+  // since it was listed at the top of the sweep. This closes the residual
+  // race from #39: two overlapping ticks (multi-instance deployment, or a
+  // slow prior tick still in flight past the next minute boundary) can both
+  // list the same due row, but only one of them can win this guarded update.
+  const won = await service.attemptRetrySyncTransition({
+    id: row.id,
+    expected_retry_count: row.retry_count,
+    retry_count: outcome.retry_count,
+    last_synced_at: new Date(),
+    ...(outcome.dead_lettered ? { error_class: "terminal" as const } : {}),
+  })
+
+  if (!won) {
+    // CAS lost: another tick already advanced this row's retry_count (or the
+    // row left `sync_state = "error"` between listing and this call, e.g. a
+    // concurrent cancellation). Skipping is correct — the tick/actor that won
+    // already persisted the outcome and, for the re-invoke branch, already
+    // re-triggered `pushOrderToOngoing`. Re-processing here would double the
+    // retry_count and double the Ongoing API calls, which is exactly the bug
+    // this guard exists to prevent. Logged at info (not warn/error): this is
+    // an expected outcome under multi-instance overlap, not a failure.
+    logger.info(
+      `[ongoing] retry: row ${row.id} lost the retry_count CAS guard (expected retry_count=${row.retry_count}, sync_state="error") — another tick already processed it; skipping`
+    )
+    return
+  }
+
   if (outcome.dead_lettered) {
-    await service.updateOngoingOrderSyncs({
-      id: row.id,
-      retry_count: outcome.retry_count,
-      error_class: "terminal",
-    })
     logger.info(
       `[ongoing] retry: dead-lettered row ${row.id} after ${outcome.retry_count} attempts`
     )
@@ -105,27 +130,6 @@ async function processRow(
     }
     return
   }
-
-  // Persist the incremented count AND stamp last_synced_at BEFORE re-invoking.
-  //
-  // Two crash-safety properties:
-  // 1. Count must not regress: persisting before re-invocation means a crash
-  //    mid-flight leaves the count incremented (safe to lose one re-invocation).
-  // 2. Backoff anchor must advance regardless of workflow outcome: if an early
-  //    workflow step throws before recordSync runs, recordSync never stamps
-  //    last_synced_at — the row would appear "due" again on the very next tick
-  //    and re-fire every minute until dead-lettered, bypassing all exponential
-  //    spacing. Stamping here ensures every attempt advances the anchor, so the
-  //    full backoff window (5/10/20/40/60 min) is always honoured.
-  //
-  //    If the workflow succeeds, recordSync may overwrite last_synced_at with a
-  //    slightly later timestamp — that is harmless, as a successful run transitions
-  //    the row out of error/retryable state entirely.
-  await service.updateOngoingOrderSyncs({
-    id: row.id,
-    retry_count: outcome.retry_count,
-    last_synced_at: new Date(),
-  })
 
   await pushOrderToOngoing(container).run({
     input: { fulfillment_id: row.medusa_fulfillment_id },
