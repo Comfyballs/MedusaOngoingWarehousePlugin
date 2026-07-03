@@ -56,6 +56,23 @@ describe("applyOrderShipmentStep", () => {
     expect(service.updateOngoingOrderSyncs).not.toHaveBeenCalled()
   })
 
+  it("is safe under an outer-workflow retry: a second call for the same fulfillment hits the already-shipped swallow, not a duplicate side effect (#113)", async () => {
+    const service = makeService()
+
+    run.mockResolvedValueOnce({ result: undefined })
+    const first = await invoke(baseInput, service)
+    expect(first.output).toEqual({ applied: true, reason: "shipped" })
+
+    run.mockRejectedValueOnce(
+      new MedusaError(MedusaError.Types.NOT_ALLOWED, "Shipment has already been created")
+    )
+    const second = await invoke(baseInput, service)
+    expect(second.output).toEqual({ applied: false, reason: "already_shipped" })
+
+    expect(run).toHaveBeenCalledTimes(2)
+    expect(service.updateOngoingOrderSyncs).not.toHaveBeenCalled()
+  })
+
   it("records error_class terminal and rethrows for a non-already-shipped MedusaError", async () => {
     run.mockRejectedValue(
       new MedusaError(MedusaError.Types.NOT_ALLOWED, "Cannot create shipment for a canceled fulfillment")
