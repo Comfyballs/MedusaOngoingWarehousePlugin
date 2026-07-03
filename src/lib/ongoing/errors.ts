@@ -1,5 +1,11 @@
 export type OngoingErrorKind = "retryable" | "terminal"
 
+// Machine-readable sub-classification for a terminal OngoingApiError, for callers/logs
+// that need to distinguish WHY beyond the coarse kind. "unexpected_body_shape": doFetch
+// received a 2xx response whose Content-Type wasn't application/json, or whose body
+// wasn't valid JSON — never cast an unvalidated body to the caller's generic T (#107).
+export type OngoingApiErrorReason = "unexpected_body_shape"
+
 export function classifyHttpStatus(status: number): OngoingErrorKind {
   if (status === 429 || status >= 500) {
     return "retryable"
@@ -21,10 +27,17 @@ export class OngoingApiError extends Error {
   kind: OngoingErrorKind
   retryAfterMs?: number
   body?: unknown
+  reason?: OngoingApiErrorReason
 
   constructor(
     message: string,
-    opts: { status?: number; kind: OngoingErrorKind; retryAfterMs?: number; body?: unknown }
+    opts: {
+      status?: number
+      kind: OngoingErrorKind
+      retryAfterMs?: number
+      body?: unknown
+      reason?: OngoingApiErrorReason
+    }
   ) {
     super(message)
     this.name = "OngoingApiError"
@@ -32,5 +45,6 @@ export class OngoingApiError extends Error {
     this.kind = opts.kind
     this.retryAfterMs = opts.retryAfterMs
     this.body = opts.body
+    this.reason = opts.reason
   }
 }

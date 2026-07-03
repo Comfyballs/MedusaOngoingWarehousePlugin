@@ -43,4 +43,14 @@ describe("OngoingApiError", () => {
     expect(err.kind).toBe("retryable")
     expect(err.body).toEqual({ e: 1 })
   })
+
+  it("carries an optional reason for finer-grained terminal classification", () => {
+    const err = new OngoingApiError("boom", {
+      status: 200,
+      kind: "terminal",
+      reason: "unexpected_body_shape",
+      body: "<html>",
+    })
+    expect(err.reason).toBe("unexpected_body_shape")
+  })
 })

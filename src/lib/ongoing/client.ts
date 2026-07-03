@@ -68,9 +68,12 @@ export class OngoingClient {
     })
 
     const text = await res.text()
-    const parsed = text ? safeJson(text) : undefined
 
     if (!res.ok) {
+      // Error-body parsing is best-effort/diagnostic only -- fed into
+      // OngoingApiError.body for logging, never cast to T -- so a swallowed
+      // JSON.parse failure here is safe.
+      const parsed = text ? safeJsonForDiagnostics(text) : undefined
       const kind = classifyHttpStatus(res.status)
       const retryAfterMs = parseRetryAfter(res.headers.get("retry-after"))
       throw new OngoingApiError(`Ongoing ${method} ${path} failed (${res.status})`, {
@@ -79,6 +82,35 @@ export class OngoingClient {
         retryAfterMs,
         body: parsed,
       })
+    }
+
+    // An empty 2xx body (e.g. a bare DELETE response) has no shape to validate.
+    if (!text) {
+      return undefined as T
+    }
+
+    // #107: a 2xx response is only trustworthy if the server actually says it's
+    // JSON. Ongoing (or an intermediary proxy) returning HTML/plain-text on a
+    // 200 must not be cast to T -- that silently produces `undefined` fields
+    // downstream (e.g. putOrder's `res.orderId`) with no error trail.
+    const contentType = (res.headers.get("content-type") ?? "").toLowerCase()
+    if (!contentType.includes("application/json")) {
+      throw new OngoingApiError(
+        `Ongoing ${method} ${path} returned a ${res.status} with content-type ` +
+          `"${contentType || "(none)"}" instead of application/json`,
+        { status: res.status, kind: "terminal", reason: "unexpected_body_shape", body: text }
+      )
+    }
+
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(text)
+    } catch {
+      throw new OngoingApiError(
+        `Ongoing ${method} ${path} returned a ${res.status} with content-type ` +
+          `application/json but an unparseable body`,
+        { status: res.status, kind: "terminal", reason: "unexpected_body_shape", body: text }
+      )
     }
 
     return parsed as T
@@ -175,7 +207,11 @@ function mapTrackedOrder(raw: any): OngoingTrackedOrder {
   }
 }
 
-function safeJson(text: string): unknown {
+// Best-effort diagnostic parse for an ERROR (!res.ok) response body only -- the
+// result is attached to OngoingApiError.body for logging and is never cast to a
+// caller's generic T, so swallowing a JSON.parse failure here is safe. A 2xx body
+// goes through the strict Content-Type + JSON.parse path in doFetch instead (#107).
+function safeJsonForDiagnostics(text: string): unknown {
   try {
     return JSON.parse(text)
   } catch {

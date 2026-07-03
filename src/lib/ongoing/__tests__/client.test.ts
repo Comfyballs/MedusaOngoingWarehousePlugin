@@ -15,12 +15,12 @@ describe("OngoingClient.getInventory — pageSize", () => {
       .mockResolvedValueOnce({
         ok: true,
         text: async () => JSON.stringify(fullPage),
-        headers: { get: () => null },
+        headers: { get: (name: string) => (name.toLowerCase() === "content-type" ? "application/json" : null) },
       })
       .mockResolvedValueOnce({
         ok: true,
         text: async () => JSON.stringify([]),
-        headers: { get: () => null },
+        headers: { get: (name: string) => (name.toLowerCase() === "content-type" ? "application/json" : null) },
       })
     const client = new OngoingClient(
       { key: "k", baseUrl: "https://api.example.com/api/v1", username: "u", password: "p", goodsOwnerId: 42 },

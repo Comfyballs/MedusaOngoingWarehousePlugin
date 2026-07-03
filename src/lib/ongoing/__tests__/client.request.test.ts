@@ -89,4 +89,69 @@ describe("OngoingClient.request", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(2)
     expect(sleep).toHaveBeenCalledWith(2000)
   })
+
+  it("throws a terminal unexpected_body_shape error when a 200 response has a non-JSON content-type", async () => {
+    // Simulates an intermediary proxy/gateway returning an HTML error page with a 200
+    // status (the CRIT-1 failure scenario) instead of Ongoing's real JSON response.
+    const fetchImpl = jest.fn().mockResolvedValue(
+      new Response("<html><body>Bad Gateway</body></html>", {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      })
+    )
+    const client = new OngoingClient(creds, { fetchImpl })
+    // @ts-expect-error private
+    await expect(client.request("GET", "/x")).rejects.toMatchObject({
+      kind: "terminal",
+      status: 200,
+      reason: "unexpected_body_shape",
+    })
+    // A malformed 2xx body must not be retried — it is not a transient failure.
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+  })
+
+  it("throws a terminal unexpected_body_shape error when a 200 body is parseable JSON but the content-type is wrong", async () => {
+    const fetchImpl = jest.fn().mockResolvedValue(
+      new Response(JSON.stringify({ orderId: 1 }), {
+        status: 200,
+        headers: { "content-type": "text/plain" },
+      })
+    )
+    const client = new OngoingClient(creds, { fetchImpl })
+    // @ts-expect-error private
+    await expect(client.request("GET", "/x")).rejects.toMatchObject({
+      kind: "terminal",
+      status: 200,
+      reason: "unexpected_body_shape",
+    })
+  })
+
+  it("throws a terminal unexpected_body_shape error when a 200 body is truncated JSON despite a correct content-type", async () => {
+    // Simulates a gateway-timeout page that cuts the body off mid-response.
+    const fetchImpl = jest.fn().mockResolvedValue(
+      new Response('{"orderId":', {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      })
+    )
+    const client = new OngoingClient(creds, { fetchImpl })
+    // @ts-expect-error private
+    await expect(client.request("GET", "/x")).rejects.toMatchObject({
+      kind: "terminal",
+      status: 200,
+      reason: "unexpected_body_shape",
+    })
+  })
+
+  it("resolves undefined for an empty 200 body without validating content-type", async () => {
+    // An empty body (e.g. a bare 204-style DELETE response) has no shape to
+    // validate and must keep resolving, not throw.
+    const fetchImpl = jest.fn().mockResolvedValue(
+      new Response("", { status: 200, headers: {} })
+    )
+    const client = new OngoingClient(creds, { fetchImpl })
+    // @ts-expect-error private
+    const data = await client.request("DELETE", "/orders/1")
+    expect(data).toBeUndefined()
+  })
 })
