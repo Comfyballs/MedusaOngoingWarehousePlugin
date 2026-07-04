@@ -49,14 +49,20 @@ export type RetryOutcome = {
  * Uses `>=` so any out-of-range stored count (e.g. already `>= maxRetries`) also
  * dead-letters rather than looping forever.
  *
- * Consumption contract for #39 (`retryFailedSyncs`):
+ * Consumption contract for #39/#112 (`retryFailedSyncs`):
  * 1. Query rows with `sync_state = "error" AND error_class = "retryable"`.
  * 2. For each, before re-invoking, call
  *    `resolveRetryOutcome({ retry_count: row.retry_count, error_class: row.error_class })`.
- * 3. If `outcome.dead_lettered`: do NOT re-invoke; persist via
- *    `updateOngoingOrderSyncs({ id, retry_count: outcome.retry_count, error_class: "terminal" })`.
- * 4. Else: persist `updateOngoingOrderSyncs({ id, retry_count: outcome.retry_count })`,
- *    then re-invoke the sync.
+ * 3. Persist the outcome via the CAS-guarded
+ *    `attemptRetrySyncTransition({ id, expected_retry_count: row.retry_count, retry_count:
+ *    outcome.retry_count, last_synced_at, error_class: outcome.dead_lettered ? "terminal" :
+ *    undefined })` (`src/modules/ongoing/service.ts`) instead of the plain, unguarded
+ *    `updateOngoingOrderSyncs` — this prevents two overlapping ticks from double-incrementing
+ *    the same row's `retry_count` (#112).
+ * 4. If the guarded write returns `false` ("CAS lost" — another tick already processed this
+ *    row), skip it: do not re-invoke, do not emit an event.
+ * 5. Else if `outcome.dead_lettered`: do NOT re-invoke.
+ * 6. Else: re-invoke the sync.
  *
  * @param input      The current `retry_count` and `error_class` of the failed row.
  * @param maxRetries Ceiling on workflow-level re-invocations. Defaults to {@link MAX_SYNC_RETRIES}.

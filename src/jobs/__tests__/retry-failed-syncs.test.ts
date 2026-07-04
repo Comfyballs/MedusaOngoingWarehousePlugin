@@ -42,7 +42,7 @@ const FAR_PAST = new Date(Date.now() - 10 * 60 * 60 * 1000) // 10 hours ago
 function makeHarness(opts: {
   rows?: ErrorRow[]
   listImpl?: () => Promise<ErrorRow[]>
-  updateImpl?: jest.Mock
+  transitionImpl?: jest.Mock
 }) {
   const logger = { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() }
 
@@ -50,7 +50,9 @@ function makeHarness(opts: {
     listOngoingOrderSyncs: jest.fn(
       opts.listImpl ?? (async () => opts.rows ?? [])
     ),
-    updateOngoingOrderSyncs: opts.updateImpl ?? jest.fn(async () => ({})),
+    // Defaults to "this tick won the CAS" (true) unless a test overrides it to
+    // simulate a losing tick (see the CAS-lost tests below).
+    attemptRetrySyncTransition: opts.transitionImpl ?? jest.fn(async () => true),
   }
 
   const emit = jest.fn().mockResolvedValue(undefined)
@@ -95,23 +97,23 @@ describe("retryFailedSyncsJob", () => {
     })
   })
 
-  it("re-invokes pushOrderToOngoing for a due retryable row and persists incremented retry_count with last_synced_at", async () => {
+  it("re-invokes pushOrderToOngoing for a single due retryable row, incrementing retry_count exactly once via the CAS guard", async () => {
     // retry_count=0 → backoff=5 min; last_synced_at=10h ago → due
     const r = row({ retry_count: 0 })
     const h = makeHarness({ rows: [r] })
 
     await retryFailedSyncsJob(h.container)
 
-    // Persists incremented retry_count AND stamps last_synced_at BEFORE re-invocation.
-    // last_synced_at advances the backoff anchor so the next sweep respects the
-    // exponential interval even if the workflow rejects before its recordSync step.
-    expect(h.service.updateOngoingOrderSyncs).toHaveBeenCalledWith(
-      expect.objectContaining({
-        id: "sync_1",
-        retry_count: 1,
-        last_synced_at: expect.any(Date),
-      })
-    )
+    // Guarded write: expected_retry_count pins the row to the exact state this
+    // tick observed when it listed the row; retry_count + last_synced_at are
+    // the next state to write if the guard holds.
+    expect(h.service.attemptRetrySyncTransition).toHaveBeenCalledTimes(1)
+    expect(h.service.attemptRetrySyncTransition).toHaveBeenCalledWith({
+      id: "sync_1",
+      expected_retry_count: 0,
+      retry_count: 1,
+      last_synced_at: expect.any(Date),
+    })
 
     // Re-invokes the push workflow.
     expect(pushRun).toHaveBeenCalledWith({ input: { fulfillment_id: "ful_abc" } })
@@ -126,34 +128,59 @@ describe("retryFailedSyncsJob", () => {
     })
   })
 
-  it("stamps last_synced_at before re-invocation so the backoff is anchored even when the workflow rejects before recordSync", async () => {
-    // Bug scenario: early workflow step throws (e.g. fulfillment deleted),
-    // so recordSync inside pushOrderToOngoing never runs and never advances
-    // last_synced_at. Without stamping it in the pre-invocation update, the row
-    // would appear "due" again on the very next tick and re-fire every minute
-    // until dead-lettered — bypassing all exponential spacing.
-    const r = row({ retry_count: 0, last_synced_at: FAR_PAST })
-    const updateCalls: Array<Record<string, unknown>> = []
-    const updateImpl = jest.fn(async (data: Record<string, unknown>) => {
-      updateCalls.push({ ...data })
-      return {}
-    })
-    const h = makeHarness({ rows: [r], updateImpl })
-
-    pushRun.mockRejectedValueOnce(new Error("step 1 throws: fulfillment not found"))
+  it("skips a row when the CAS guard loses — simulates a second overlapping tick that already won: no re-invoke, no event emit, no error, logs at info", async () => {
+    const r = row({ retry_count: 0 })
+    const transitionImpl = jest.fn(async () => false)
+    const h = makeHarness({ rows: [r], transitionImpl })
 
     await retryFailedSyncsJob(h.container)
 
-    // The pre-invocation update MUST include last_synced_at so the next sweep
-    // treats the row as not-due for the full 5-min backoff window.
-    expect(updateImpl).toHaveBeenCalledTimes(1)
-    const updateArg = updateCalls[0]
-    expect(updateArg).toHaveProperty("id", "sync_1")
-    expect(updateArg).toHaveProperty("retry_count", 1)
-    expect(updateArg).toHaveProperty("last_synced_at")
-    expect(updateArg["last_synced_at"]).toBeInstanceOf(Date)
-    // The stamped time must be recent (within 1 s of this test run).
-    expect(Date.now() - (updateArg["last_synced_at"] as Date).getTime()).toBeLessThan(1000)
+    expect(h.service.attemptRetrySyncTransition).toHaveBeenCalledWith({
+      id: "sync_1",
+      expected_retry_count: 0,
+      retry_count: 1,
+      last_synced_at: expect.any(Date),
+    })
+    expect(pushRun).not.toHaveBeenCalled()
+    expect(h.emit).not.toHaveBeenCalled()
+    expect(h.logger.error).not.toHaveBeenCalled()
+    expect(h.logger.info).toHaveBeenCalledWith(
+      expect.stringContaining("lost the retry_count CAS guard")
+    )
+  })
+
+  it("skips a row that left the error state between listing and updating (e.g. concurrently cancelled) — same CAS-lost path as a raced retry_count, correct", async () => {
+    // The job cannot distinguish "another tick raced retry_count" from "the row
+    // was cancelled concurrently" — both make attemptRetrySyncTransition's guarded
+    // WHERE match zero rows, so both return false and take the same skip path.
+    const r = row({ retry_count: 2 })
+    const transitionImpl = jest.fn(async () => false)
+    const h = makeHarness({ rows: [r], transitionImpl })
+
+    await retryFailedSyncsJob(h.container)
+
+    expect(pushRun).not.toHaveBeenCalled()
+    expect(h.emit).not.toHaveBeenCalled()
+    expect(h.logger.error).not.toHaveBeenCalled()
+  })
+
+  it("skips dead-lettering when the CAS guard loses on the dead-letter branch too", async () => {
+    // retry_count=4 → resolveRetryOutcome increments to 5 = MAX_SYNC_RETRIES → dead-letter branch
+    const r = row({ retry_count: 4 })
+    const transitionImpl = jest.fn(async () => false)
+    const h = makeHarness({ rows: [r], transitionImpl })
+
+    await retryFailedSyncsJob(h.container)
+
+    expect(h.service.attemptRetrySyncTransition).toHaveBeenCalledWith({
+      id: "sync_1",
+      expected_retry_count: 4,
+      retry_count: 5,
+      last_synced_at: expect.any(Date),
+      error_class: "terminal",
+    })
+    expect(h.emit).not.toHaveBeenCalled()
+    expect(h.logger.error).not.toHaveBeenCalled()
   })
 
   it("skips a row whose backoff window has not yet elapsed", async () => {
@@ -166,7 +193,7 @@ describe("retryFailedSyncsJob", () => {
 
     await retryFailedSyncsJob(h.container)
 
-    expect(h.service.updateOngoingOrderSyncs).not.toHaveBeenCalled()
+    expect(h.service.attemptRetrySyncTransition).not.toHaveBeenCalled()
     expect(pushRun).not.toHaveBeenCalled()
   })
 
@@ -177,9 +204,11 @@ describe("retryFailedSyncsJob", () => {
 
     await retryFailedSyncsJob(h.container)
 
-    expect(h.service.updateOngoingOrderSyncs).toHaveBeenCalledWith({
+    expect(h.service.attemptRetrySyncTransition).toHaveBeenCalledWith({
       id: "sync_1",
+      expected_retry_count: 4,
       retry_count: 5,
+      last_synced_at: expect.any(Date),
       error_class: "terminal",
     })
     expect(pushRun).not.toHaveBeenCalled()
@@ -201,7 +230,7 @@ describe("retryFailedSyncsJob", () => {
     await retryFailedSyncsJob(h.container)
 
     expect(h.logger.warn).toHaveBeenCalledWith(expect.stringContaining("sync_1"))
-    expect(h.service.updateOngoingOrderSyncs).not.toHaveBeenCalled()
+    expect(h.service.attemptRetrySyncTransition).not.toHaveBeenCalled()
     expect(pushRun).not.toHaveBeenCalled()
   })
 
@@ -217,7 +246,8 @@ describe("retryFailedSyncsJob", () => {
     await expect(retryFailedSyncsJob(h.container)).resolves.toBeUndefined()
 
     expect(h.logger.error).toHaveBeenCalled()
-    // Both rows attempt re-invoke; only the second succeeds but neither aborts the loop.
+    // Both rows win their CAS guard and attempt re-invoke; only the second
+    // succeeds but neither aborts the loop.
     expect(pushRun).toHaveBeenCalledTimes(2)
   })
 
@@ -240,8 +270,8 @@ describe("retryFailedSyncsJob", () => {
 
     await retryFailedSyncsJob(h.container)
 
-    // null → treated as 0 ms → always due → proceed to update + push
-    expect(h.service.updateOngoingOrderSyncs).toHaveBeenCalled()
+    // null → treated as 0 ms → always due → proceed to CAS guard + push
+    expect(h.service.attemptRetrySyncTransition).toHaveBeenCalled()
     expect(pushRun).toHaveBeenCalled()
   })
 
@@ -270,9 +300,11 @@ describe("retryFailedSyncsJob", () => {
 
     await expect(retryFailedSyncsJob(h.container)).resolves.toBeUndefined()
 
-    expect(h.service.updateOngoingOrderSyncs).toHaveBeenCalledWith({
+    expect(h.service.attemptRetrySyncTransition).toHaveBeenCalledWith({
       id: "sync_1",
+      expected_retry_count: 4,
       retry_count: 5,
+      last_synced_at: expect.any(Date),
       error_class: "terminal",
     })
     expect(h.logger.error).not.toHaveBeenCalledWith(
