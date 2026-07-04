@@ -1,4 +1,5 @@
 import { OngoingClient } from "../client"
+import { OngoingApiError } from "../errors"
 import type { OngoingCredentials } from "../types"
 
 const creds: OngoingCredentials = {
@@ -84,6 +85,34 @@ describe("OngoingClient operations", () => {
     const [url, init] = fetchImpl.mock.calls[0]
     expect(url).toBe("https://api.example.test/api/v1/orders")
     expect(init.method).toBe("PUT")
+  })
+
+  it("throws a retryable OngoingApiError when the 2xx response omits orderId", async () => {
+    const fetchImpl = jest.fn().mockResolvedValue(json({ message: "Order queued" }))
+    const client = new OngoingClient(creds, { fetchImpl })
+
+    await expect(
+      client.putOrder({
+        orderNumber: "1001-abc",
+        goodsOwnerId: 7,
+        deliveryDate: "2026-07-01T10:00:00.000Z",
+        consignee: { name: "Ada Lovelace", postCode: "0155", countryCode: "no" },
+      })
+    ).rejects.toMatchObject({ kind: "retryable" })
+  })
+
+  it("throws a retryable OngoingApiError when the 2xx response has orderId: null", async () => {
+    const fetchImpl = jest.fn().mockResolvedValue(json({ orderId: null, message: "Order queued" }))
+    const client = new OngoingClient(creds, { fetchImpl })
+
+    await expect(
+      client.putOrder({
+        orderNumber: "1001-abc",
+        goodsOwnerId: 7,
+        deliveryDate: "2026-07-01T10:00:00.000Z",
+        consignee: { name: "Ada Lovelace", postCode: "0155", countryCode: "no" },
+      })
+    ).rejects.toBeInstanceOf(OngoingApiError)
   })
 
   it("testConnection returns true when statuses load", async () => {

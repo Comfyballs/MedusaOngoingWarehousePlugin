@@ -35,3 +35,5 @@ export type {
   RetryOngoingSyncsInput,
   RetryOngoingSyncsOutput,
 } from "./steps/retry-ongoing-syncs"
+export { flagOrphanedOrderSyncsWorkflow } from "./flag-orphaned-order-syncs"
+export type { FlagOrphanedOrderSyncsOutput } from "./steps/flag-orphaned-order-syncs"

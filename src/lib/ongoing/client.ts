@@ -112,7 +112,22 @@ export class OngoingClient {
   }
 
   async putOrder(order: PostOrderModel): Promise<{ ongoingOrderId: number }> {
-    const res = await this.request<{ orderId: number; message?: string }>("PUT", "/orders", order)
+    const res = await this.request<{ orderId?: number | null; message?: string }>(
+      "PUT",
+      "/orders",
+      order
+    )
+    if (typeof res?.orderId !== "number") {
+      // #108: a 2xx response that omits (or nulls) orderId must not silently flow
+      // an undefined/null ongoing_order_id into the callers that persist it
+      // (push-order-record-sync.ts, upsert-ongoing-order-edit.ts). Throw so the
+      // existing OngoingApiError catch/record-error/retry pipeline (#67,
+      // retry-policy.ts) handles it instead of a type-hole return value.
+      throw new OngoingApiError(
+        "Ongoing PUT /orders returned a 2xx response without a numeric orderId",
+        { kind: "retryable", body: res }
+      )
+    }
     return { ongoingOrderId: res.orderId }
   }
 
