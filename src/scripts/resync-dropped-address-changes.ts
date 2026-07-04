@@ -33,6 +33,21 @@ export type OrderChangeRow = {
   actions?: Array<{ id?: string; details?: { type?: string } }> | null
 }
 
+// Minimal projection of an OngoingOrderSync row used to detect whether the
+// live orderUpdatedHandler replay actually mutated anything for a flagged
+// order. See didAnySyncAdvance below.
+export type OngoingOrderSyncSnapshotRow = {
+  id: string
+  sync_state?: string | null
+  last_synced_at?: string | Date | null
+  edit_blocked_at?: string | Date | null
+  last_error?: string | null
+  retry_count?: number | null
+  ongoing_order_id?: number | null
+}
+
+type QueryLike = { graph: (args: unknown) => Promise<{ data: unknown[] }> }
+
 const DEFAULT_SINCE_DAYS = 90
 const PAGE_SIZE = 500
 
@@ -90,6 +105,60 @@ export function findCandidateOrderIds(rows: OrderChangeRow[]): string[] {
   return [...candidates]
 }
 
+// Fetches the OngoingOrderSync rows for an order so the replay loop can tell
+// whether replaying orderUpdatedHandler actually did anything.
+async function snapshotOrderSyncRows(
+  query: QueryLike,
+  orderId: string
+): Promise<OngoingOrderSyncSnapshotRow[]> {
+  const { data } = await query.graph({
+    entity: "ongoing_order_sync",
+    fields: [
+      "id",
+      "sync_state",
+      "last_synced_at",
+      "edit_blocked_at",
+      "last_error",
+      "retry_count",
+      "ongoing_order_id",
+    ],
+    filters: { medusa_order_id: orderId },
+  })
+  return (data as OngoingOrderSyncSnapshotRow[]) ?? []
+}
+
+// The replay step calls the *live* orderUpdatedHandler, which re-derives
+// changedTypes from the order's CURRENT newest burst (by design, see
+// deriveBurstChangedTypes) rather than the specific historic burst that
+// findCandidateOrderIds flagged. If a later, unrelated order.updated event
+// has landed on the order since the dropped burst, the flagged burst falls
+// outside the current 2s window and the replay silently no-ops. Comparing a
+// before/after snapshot of the order's sync rows is how we detect that
+// no-op so it can be surfaced instead of swallowed.
+export function didAnySyncAdvance(
+  before: OngoingOrderSyncSnapshotRow[],
+  after: OngoingOrderSyncSnapshotRow[]
+): boolean {
+  if (before.length !== after.length) {
+    return true
+  }
+  const beforeById = new Map(before.map((row) => [row.id, row]))
+  return after.some((row) => {
+    const prior = beforeById.get(row.id)
+    if (!prior) {
+      return true
+    }
+    return (
+      String(prior.sync_state ?? "") !== String(row.sync_state ?? "") ||
+      String(prior.last_synced_at ?? "") !== String(row.last_synced_at ?? "") ||
+      String(prior.edit_blocked_at ?? "") !== String(row.edit_blocked_at ?? "") ||
+      String(prior.last_error ?? "") !== String(row.last_error ?? "") ||
+      (prior.retry_count ?? 0) !== (row.retry_count ?? 0) ||
+      (prior.ongoing_order_id ?? null) !== (row.ongoing_order_id ?? null)
+    )
+  })
+}
+
 export default async function resyncDroppedAddressChanges({
   container,
   args,
@@ -136,15 +205,27 @@ export default async function resyncDroppedAddressChanges({
     return
   }
 
+  let unrepairedFlaggedCount = 0
   for (const orderId of candidateOrderIds) {
+    const before = await snapshotOrderSyncRows(query as QueryLike, orderId)
+
     await orderUpdatedHandler({
       event: { name: "order.updated", data: { id: orderId } },
       container,
       pluginOptions: {},
     })
+
+    const after = await snapshotOrderSyncRows(query as QueryLike, orderId)
+
+    if (!didAnySyncAdvance(before, after)) {
+      unrepairedFlaggedCount += 1
+      logger.warn(
+        `[resync] order ${orderId} flagged as candidate but replay no-op'd (newer event likely superseded the historic burst) — manual review required`
+      )
+    }
   }
 
   logger.info(
-    `[ongoing] resync-dropped-address-changes: replayed order.updated for ${candidateOrderIds.length} order(s)`
+    `[ongoing] resync-dropped-address-changes: replayed order.updated for ${candidateOrderIds.length} order(s), ${unrepairedFlaggedCount} unrepaired-flagged`
   )
 }
