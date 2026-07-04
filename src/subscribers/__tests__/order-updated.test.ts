@@ -19,11 +19,18 @@ const markBlockedRunMock = jest.fn().mockResolvedValue({ order_sync_id: "oos_1" 
 
 type GraphCall = { entity: string }
 
+// Real Medusa semantics (#110): registerOrderChange_ inserts ONE order_change row
+// per changed field (never one row with multiple actions). `changeRows` models that:
+// one entry per row, listed newest-first (created_at DESC) to match the real
+// `order: { created_at: "DESC" }` query.
+type ChangeRow = { id: string; created_at: string; type: string }
+
 // Builds a container whose query.graph returns:
-//  - for entity "order_change": the latest update_order change with the given detail types
+//  - for entity "order_change": the update_order order_change rows for the burst
+//    that fired this event (see ChangeRow above)
 //  - for entity "ongoing_integration": the integration with the given edit_sync_rules
 function makeContainer(opts: {
-  detailTypes: string[]
+  changeRows: ChangeRow[]
   syncRows: Array<{
     id: string
     integration_id: string
@@ -42,17 +49,12 @@ function makeContainer(opts: {
     graph: jest.fn(async ({ entity }: GraphCall) => {
       if (entity === "order_change") {
         return {
-          data: [
-            {
-              id: "ordch_1",
-              change_type: "update_order",
-              created_at: "2026-06-28T10:00:00.000Z",
-              actions: opts.detailTypes.map((type, i) => ({
-                id: `act_${i}`,
-                details: { type },
-              })),
-            },
-          ],
+          data: opts.changeRows.map((row) => ({
+            id: row.id,
+            change_type: "update_order",
+            created_at: row.created_at,
+            actions: [{ id: `${row.id}_act`, details: { type: row.type } }],
+          })),
         }
       }
       if (entity === "ongoing_integration") {
@@ -88,7 +90,7 @@ beforeEach(() => {
 describe("order.updated subscriber — address/contact re-sync", () => {
   it("re-syncs each sync row with category address_contact when status is allowed", async () => {
     const { container } = makeContainer({
-      detailTypes: ["shipping_address"],
+      changeRows: [{ id: "ordch_1", created_at: "2026-06-28T10:00:00.000Z", type: "shipping_address" }],
       syncRows: [
         { id: "oos_1", integration_id: "int_1", latest_status_code: 100, medusa_fulfillment_id: "ful_1" },
         { id: "oos_2", integration_id: "int_1", latest_status_code: 100, medusa_fulfillment_id: "ful_2" },
@@ -117,9 +119,105 @@ describe("order.updated subscriber — address/contact re-sync", () => {
     })
   })
 
+  it("re-syncs when an address change is bundled with a locale edit in the same burst (regression #110)", async () => {
+    // Newest row (created_at DESC[0]) is "locale" — a pre-fix take:1 query would
+    // read only this row, see no address/contact type, and silently skip the
+    // real shipping_address change from the same updateOrderWorkflow call.
+    const { container } = makeContainer({
+      changeRows: [
+        { id: "ordch_2", created_at: "2026-06-28T10:00:00.010Z", type: "locale" },
+        { id: "ordch_1", created_at: "2026-06-28T10:00:00.000Z", type: "shipping_address" },
+      ],
+      syncRows: [{ id: "oos_1", integration_id: "int_1", latest_status_code: 100, medusa_fulfillment_id: "ful_1" }],
+      editSyncRules: { int_1: { address_contact: [100, 110] } },
+    })
+
+    await orderUpdatedHandler({ ...event("order_1"), container })
+
+    expect(runMock).toHaveBeenCalledTimes(1)
+    expect(runMock).toHaveBeenCalledWith({
+      input: {
+        medusa_order_id: "order_1",
+        medusa_fulfillment_id: "ful_1",
+        order_sync_id: "oos_1",
+        category: "address_contact",
+      },
+    })
+  })
+
+  it("re-syncs on an address-only edit with a single order_change row", async () => {
+    const { container } = makeContainer({
+      changeRows: [{ id: "ordch_1", created_at: "2026-06-28T10:00:00.000Z", type: "shipping_address" }],
+      syncRows: [{ id: "oos_1", integration_id: "int_1", latest_status_code: 100, medusa_fulfillment_id: "ful_1" }],
+      editSyncRules: { int_1: { address_contact: [100, 110] } },
+    })
+
+    await orderUpdatedHandler({ ...event("order_1"), container })
+
+    expect(runMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("re-syncs when address+metadata+locale are bundled in the same burst", async () => {
+    // Newest row is "metadata" — a pre-fix take:1 query would read only this row.
+    const { container } = makeContainer({
+      changeRows: [
+        { id: "ordch_3", created_at: "2026-06-28T10:00:00.020Z", type: "metadata" },
+        { id: "ordch_2", created_at: "2026-06-28T10:00:00.010Z", type: "locale" },
+        { id: "ordch_1", created_at: "2026-06-28T10:00:00.000Z", type: "shipping_address" },
+      ],
+      syncRows: [{ id: "oos_1", integration_id: "int_1", latest_status_code: 100, medusa_fulfillment_id: "ful_1" }],
+      editSyncRules: { int_1: { address_contact: [100, 110] } },
+    })
+
+    await orderUpdatedHandler({ ...event("order_1"), container })
+
+    expect(runMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("handles a burst of 5 changes (all updateOrderWorkflow fields) and re-syncs once per sync row", async () => {
+    // Newest row is "locale" (non-address) — a pre-fix take:1 query would read
+    // only this row and never re-sync either sync row.
+    const { container } = makeContainer({
+      changeRows: [
+        { id: "ordch_5", created_at: "2026-06-28T10:00:00.020Z", type: "locale" },
+        { id: "ordch_4", created_at: "2026-06-28T10:00:00.015Z", type: "metadata" },
+        { id: "ordch_3", created_at: "2026-06-28T10:00:00.010Z", type: "email" },
+        { id: "ordch_2", created_at: "2026-06-28T10:00:00.005Z", type: "billing_address" },
+        { id: "ordch_1", created_at: "2026-06-28T10:00:00.000Z", type: "shipping_address" },
+      ],
+      syncRows: [
+        { id: "oos_1", integration_id: "int_1", latest_status_code: 100, medusa_fulfillment_id: "ful_1" },
+        { id: "oos_2", integration_id: "int_1", latest_status_code: 100, medusa_fulfillment_id: "ful_2" },
+      ],
+      editSyncRules: { int_1: { address_contact: [100, 110] } },
+    })
+
+    await orderUpdatedHandler({ ...event("order_1"), container })
+
+    // Exactly once per sync row, not once per changed field.
+    expect(runMock).toHaveBeenCalledTimes(2)
+  })
+
+  it("ignores an order_change row outside the burst window from a separate earlier edit", async () => {
+    // The address change is >2s older than the newest row — a separate, already
+    // -handled edit, not part of this event's burst.
+    const { container } = makeContainer({
+      changeRows: [
+        { id: "ordch_2", created_at: "2026-06-28T10:00:02.500Z", type: "locale" },
+        { id: "ordch_1", created_at: "2026-06-28T10:00:00.000Z", type: "shipping_address" },
+      ],
+      syncRows: [{ id: "oos_1", integration_id: "int_1", latest_status_code: 100, medusa_fulfillment_id: "ful_1" }],
+      editSyncRules: { int_1: { address_contact: [100, 110] } },
+    })
+
+    await orderUpdatedHandler({ ...event("order_1"), container })
+
+    expect(runMock).not.toHaveBeenCalled()
+  })
+
   it("emits edit_blocked and marks the row when the workflow's own re-gate blocks (post-workflow site)", async () => {
     const { container, emit } = makeContainer({
-      detailTypes: ["shipping_address"],
+      changeRows: [{ id: "ordch_1", created_at: "2026-06-28T10:00:00.000Z", type: "shipping_address" }],
       syncRows: [{ id: "oos_1", integration_id: "int_1", latest_status_code: 100, medusa_fulfillment_id: "ful_1" }],
       editSyncRules: { int_1: { address_contact: [100, 110] } }, // subscriber's own pre-check gate allows
     })
@@ -149,7 +247,7 @@ describe("order.updated subscriber — address/contact re-sync", () => {
 
   it("clears edit-blocked state after a successful re-sync of a previously-blocked row", async () => {
     const { container } = makeContainer({
-      detailTypes: ["shipping_address"],
+      changeRows: [{ id: "ordch_1", created_at: "2026-06-28T10:00:00.000Z", type: "shipping_address" }],
       syncRows: [
         {
           id: "oos_1",
@@ -173,7 +271,7 @@ describe("order.updated subscriber — address/contact re-sync", () => {
 
   it("does not clear edit-blocked state when the row was not blocked", async () => {
     const { container } = makeContainer({
-      detailTypes: ["shipping_address"],
+      changeRows: [{ id: "ordch_1", created_at: "2026-06-28T10:00:00.000Z", type: "shipping_address" }],
       syncRows: [
         {
           id: "oos_1",
@@ -193,7 +291,10 @@ describe("order.updated subscriber — address/contact re-sync", () => {
 
   it("no-ops when only metadata/locale changed (no relevant detail type)", async () => {
     const { container } = makeContainer({
-      detailTypes: ["metadata", "locale"],
+      changeRows: [
+        { id: "ordch_2", created_at: "2026-06-28T10:00:00.010Z", type: "locale" },
+        { id: "ordch_1", created_at: "2026-06-28T10:00:00.000Z", type: "metadata" },
+      ],
       syncRows: [{ id: "oos_1", integration_id: "int_1", latest_status_code: 100, medusa_fulfillment_id: "ful_1" }],
       editSyncRules: { int_1: { address_contact: [100] } },
     })
@@ -207,7 +308,7 @@ describe("order.updated subscriber — address/contact re-sync", () => {
 
   it("emits a warning event and does not re-sync when status is blocked", async () => {
     const { container, emit } = makeContainer({
-      detailTypes: ["billing_address"],
+      changeRows: [{ id: "ordch_1", created_at: "2026-06-28T10:00:00.000Z", type: "billing_address" }],
       syncRows: [{ id: "oos_1", integration_id: "int_1", latest_status_code: 999, medusa_fulfillment_id: "ful_1" }],
       editSyncRules: { int_1: { address_contact: [100, 110] } }, // 999 not allowed
     })
@@ -234,7 +335,7 @@ describe("order.updated subscriber — address/contact re-sync", () => {
     // M2 default: latest_status_code is NULL until the status-poll milestone, so
     // the address_contact gate is closed by default. Pin that branch explicitly.
     const { container, emit } = makeContainer({
-      detailTypes: ["email"],
+      changeRows: [{ id: "ordch_1", created_at: "2026-06-28T10:00:00.000Z", type: "email" }],
       syncRows: [{ id: "oos_1", integration_id: "int_1", latest_status_code: null, medusa_fulfillment_id: "ful_1" }],
       editSyncRules: { int_1: { address_contact: [100] } },
     })
@@ -258,7 +359,7 @@ describe("order.updated subscriber — address/contact re-sync", () => {
 
   it("blocks and emits a warning when the integration has no address_contact rules", async () => {
     const { container, emit } = makeContainer({
-      detailTypes: ["shipping_address"],
+      changeRows: [{ id: "ordch_1", created_at: "2026-06-28T10:00:00.000Z", type: "shipping_address" }],
       syncRows: [{ id: "oos_1", integration_id: "int_1", latest_status_code: 100, medusa_fulfillment_id: "ful_1" }],
       editSyncRules: { int_1: {} }, // no address_contact allow-list
     })
@@ -282,7 +383,7 @@ describe("order.updated subscriber — address/contact re-sync", () => {
 
   it("no-ops when there are no sync rows for the order", async () => {
     const { container, emit } = makeContainer({
-      detailTypes: ["shipping_address"],
+      changeRows: [{ id: "ordch_1", created_at: "2026-06-28T10:00:00.000Z", type: "shipping_address" }],
       syncRows: [],
       editSyncRules: {},
     })
@@ -295,7 +396,7 @@ describe("order.updated subscriber — address/contact re-sync", () => {
 
   it("isolates a per-row failure and still processes the remaining rows", async () => {
     const { container, logger } = makeContainer({
-      detailTypes: ["shipping_address"],
+      changeRows: [{ id: "ordch_1", created_at: "2026-06-28T10:00:00.000Z", type: "shipping_address" }],
       syncRows: [
         { id: "oos_1", integration_id: "int_1", latest_status_code: 100, medusa_fulfillment_id: "ful_1" },
         { id: "oos_2", integration_id: "int_1", latest_status_code: 100, medusa_fulfillment_id: "ful_2" },
@@ -318,7 +419,7 @@ describe("order.updated subscriber — address/contact re-sync", () => {
 
   it("never throws when an internal call fails (logs error instead)", async () => {
     const { container, logger } = makeContainer({
-      detailTypes: ["shipping_address"],
+      changeRows: [{ id: "ordch_1", created_at: "2026-06-28T10:00:00.000Z", type: "shipping_address" }],
       syncRows: [{ id: "oos_1", integration_id: "int_1", latest_status_code: 100, medusa_fulfillment_id: "ful_1" }],
       editSyncRules: { int_1: { address_contact: [100] } },
     })

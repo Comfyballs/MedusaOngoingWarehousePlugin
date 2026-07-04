@@ -4,16 +4,11 @@ import { ONGOING_MODULE } from "../modules/ongoing"
 import { syncOrderEditToOngoing } from "../workflows/sync-order-edit-to-ongoing"
 import { markOrderSyncEditBlockedWorkflow } from "../workflows/mark-order-sync-edit-blocked"
 import { ONGOING_EVENTS } from "../lib/ongoing/events"
-
-// Order-change action detail types (set by Medusa's updateOrderWorkflow) that we
-// classify as the spec §8 "address_contact" edit category. See spec §13.3 — verify
-// this set against a live `update_order` order-change during integration testing.
-const ADDRESS_CONTACT_DETAIL_TYPES = new Set([
-  "shipping_address",
-  "billing_address",
-  "email",
-  "contact",
-])
+import {
+  ORDER_CHANGE_BURST_QUERY_LIMIT,
+  deriveBurstChangedTypes,
+  hasAddressContactChange,
+} from "../lib/ongoing/order-change-burst"
 
 type OngoingOrderSyncRow = {
   id: string
@@ -40,9 +35,13 @@ export default async function orderUpdatedHandler({
   try {
     const query = container.resolve(ContainerRegistrationKeys.QUERY)
 
-    // 1. Inspect the latest update_order order-change to see what changed.
-    //    Payload carries only { id }, so we re-query. We read the actions'
-    //    details.type and keep only address/contact/email changes.
+    // 1. Inspect all update_order order-changes from the burst that fired this
+    //    event. Payload carries only { id }, so we re-query. Medusa's
+    //    registerOrderChange_ inserts ONE order_change row per changed field
+    //    (never one row with multiple actions), so we union detail types across
+    //    every row within the burst window, not just the newest row — otherwise
+    //    an address change bundled with e.g. locale/metadata in the same
+    //    updateOrderWorkflow call is silently dropped (#110).
     const { data: changes } = await query.graph({
       entity: "order_change",
       fields: ["id", "change_type", "created_at", "actions.id", "actions.details"],
@@ -51,21 +50,14 @@ export default async function orderUpdatedHandler({
         change_type: "update_order",
       },
       pagination: {
-        take: 1,
+        take: ORDER_CHANGE_BURST_QUERY_LIMIT,
         order: { created_at: "DESC" },
       },
     })
 
-    const latestChange = changes?.[0]
-    const changedTypes: string[] = (latestChange?.actions ?? [])
-      .map((a: { details?: { type?: string } }) => a?.details?.type)
-      .filter((t: unknown): t is string => typeof t === "string")
+    const changedTypes = deriveBurstChangedTypes(changes)
 
-    const hasAddressContactChange = changedTypes.some((t) =>
-      ADDRESS_CONTACT_DETAIL_TYPES.has(t)
-    )
-
-    if (!hasAddressContactChange) {
+    if (!hasAddressContactChange(changedTypes)) {
       logger.info(
         `[ongoing] order.updated for ${orderId}: no address/contact/email change (types: ${changedTypes.join(", ") || "none"}), skipping`
       )
