@@ -94,7 +94,12 @@ describe("OngoingFulfillmentProviderService.cancelFulfillment", () => {
     expect((error as MedusaError).type).toBe(MedusaError.Types.NOT_ALLOWED)
   })
 
-  it.each(["already_cancelled", "no_sync_row", "no_ongoing_order_id"] as const)(
+  it.each([
+    "already_cancelled",
+    "no_sync_row",
+    "no_ongoing_order_id",
+    "status_unknown_attempt",
+  ] as const)(
     "resolves without throwing for the benign no-op reason %s (#109 boundary)",
     async (reason) => {
       run.mockResolvedValue({ result: { shouldCancel: false, reason } })
