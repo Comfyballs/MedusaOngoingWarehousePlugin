@@ -27,6 +27,40 @@ export type ApplyShipmentResult = {
 // is classified (MedusaError -> terminal; OngoingApiError -> its kind; else retryable),
 // recorded on the sync row, then re-thrown (record-then-rethrow, not compensation, since
 // a throwing step returns no StepResponse).
+//
+// Audit (#113): does an outer-workflow retry (syncOngoingShipmentWorkflow re-run after
+// this step already succeeded once, but markOrderSyncShippedStep then failed — see
+// src/jobs/status-poll.ts:120-129 and the webhook path in
+// src/api/ongoing/webhooks/[credentialKey]/dispatch-shipment.ts, both of which re-invoke
+// syncOngoingShipmentWorkflow whenever OngoingOrderSync.shipped_at is still null, i.e.
+// before markOrderSyncShippedStep has committed) re-fire any SHIPMENT_CREATED-driven
+// side effect (notification/webhook/analytics)? Audited and confirmed safe:
+//
+//  1. Emit gating: createOrderShipmentWorkflow's emitEventStep
+//     (@medusajs/core-flows/dist/order/workflows/create-shipment.js:150-156) reads
+//     `shipment.id`, the output of a parallel branch that includes
+//     createShipmentWorkflow.runAsStep. That inner workflow's first step,
+//     validateShipmentStep (@medusajs/core-flows/dist/fulfillment/steps/
+//     validate-shipment.js:12-19), throws the exact "Shipment has already been created"
+//     MedusaError caught above whenever `fulfillment.shipped_at` is already set — which
+//     it is on any retry, because the first successful run already set it via
+//     updateFulfillmentWorkflow. A failed step blocks every step that depends on its
+//     output, so emitEventStep never runs on retry. The sibling parallel step
+//     registerOrderShipmentStep (@medusajs/core-flows/dist/order/steps/
+//     register-shipment.js:10-20) carries a `revertLastVersion` compensation that the
+//     workflow engine runs automatically when its sibling fails, so even its transient
+//     write is reverted before `.run()` returns.
+//  2. No live consumer today: this plugin's subscribers (src/subscribers/
+//     order-canceled.ts, order-edit-confirmed.ts, order-updated.ts) don't reference
+//     shipment.created, and Medusa 2.16.0's only built-in notification subscriber
+//     (@medusajs/medusa/dist/subscribers/configurable-notifications.js) is hardcoded to
+//     "order.created" only.
+//  3. Guardrail for a future subscriber: NotificationModuleService.createNotifications
+//     (@medusajs/notification/dist/services/notification-module-service.js:39-55) only
+//     dedupes entries carrying an explicit `idempotency_key` — not automatic per-event.
+//     (1) already prevents a duplicate emit on retry, so this isn't a live gap, but any
+//     future shipment.created subscriber should still set an idempotency_key rather than
+//     rely on the module deduping for it.
 export const applyOrderShipmentHandler = async (
   input: ApplyShipmentInput,
   { container }: { container: any }
