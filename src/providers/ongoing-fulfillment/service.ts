@@ -223,11 +223,22 @@ class OngoingFulfillmentProviderService extends AbstractFulfillmentProviderServi
    * method receives ONLY the stashed `data` — no fulfillment row, items, or
    * location argument. It reads the order identifiers out of `data` and runs the
    * idempotent `cancelOngoingOrderWorkflow` (#28); all cancellation gating and
-   * already-cancelled handling lives in that workflow. This method is a thin,
-   * defensive adapter: it never throws on a benign already-cancelled or
-   * missing-identifier path, but it lets genuine retryable failures propagate so
-   * Medusa can surface a retry. Converges safely with the `order.canceled`
-   * subscriber (#32) because the workflow is idempotent.
+   * already-cancelled handling lives in that workflow. This method resolves
+   * (never throws) on a genuine no-op decision reason — `already_cancelled`,
+   * `no_sync_row`, `no_ongoing_order_id`, or a missing identifier — because none
+   * of those describe a real Ongoing order that is still shipping. It THROWS a
+   * `MedusaError(NOT_ALLOWED)` for `status_not_cancellable` (#109): that reason
+   * means the `OngoingOrderSync` row AND the Ongoing order both exist and
+   * Ongoing's own status says it can no longer be cancelled there, so this
+   * method must NOT resolve — Medusa's core `FulfillmentModuleService
+   * .cancelFulfillment` (verified against `@medusajs/fulfillment` 2.16.0,
+   * `fulfillment-module-service.js:711-728`) only inspects throw/no-throw and
+   * unconditionally sets `fulfillment.canceled_at` on any non-throwing return.
+   * It also lets genuine retryable failures propagate so Medusa can surface a
+   * retry. Converges safely with the `order.canceled` subscriber (#32) because
+   * that subscriber calls `cancelOngoingOrderWorkflow` directly (not through
+   * this method) and already never throws out of its own per-row try/catch —
+   * this method's new throw does not change that call site (#109).
    */
   async cancelFulfillment(
     data: Record<string, unknown>
@@ -277,9 +288,27 @@ class OngoingFulfillmentProviderService extends AbstractFulfillmentProviderServi
     }
 
     // The workflow is idempotent and status-gated (#28). A `retryable` error
-    // propagates here so Medusa surfaces a retry; benign already-cancelled
-    // outcomes resolve via the decision result (no throw).
+    // propagates here so Medusa surfaces a retry; benign no-op outcomes
+    // (already_cancelled / no_sync_row / no_ongoing_order_id) resolve via the
+    // decision result (no throw) because none of them describe a real Ongoing
+    // order that is still shipping.
     const { result } = await cancelOngoingOrderWorkflow(container).run({ input })
+
+    // status_not_cancellable is the one reason where a real Ongoing order is
+    // known to exist and Ongoing itself refuses the cancel because its status
+    // has moved past the integration's cancellable window. Resolving here
+    // would let Medusa's core module-service mark the fulfillment cancelled
+    // while Ongoing keeps shipping it (#109) — throw instead so canceled_at is
+    // never set.
+    if (result?.reason === "status_not_cancellable") {
+      throw new MedusaError(
+        MedusaError.Types.NOT_ALLOWED,
+        `[ongoing] cannot cancel fulfillment: Ongoing order ` +
+          `${ongoingOrderNumber ?? medusaFulfillmentId ?? medusaOrderId} has moved ` +
+          `past its integration's cancellable status window; Ongoing will ` +
+          `continue shipping it.`
+      )
+    }
 
     return {
       ...data,

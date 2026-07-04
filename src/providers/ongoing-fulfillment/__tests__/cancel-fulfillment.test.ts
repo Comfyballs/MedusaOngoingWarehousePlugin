@@ -1,4 +1,5 @@
 import { OngoingApiError } from "../../../lib/ongoing/errors"
+import { MedusaError } from "@medusajs/framework/utils"
 
 // Mock the workflows barrel so the provider's `cancelOngoingOrderWorkflow` import is a jest fn.
 const run = jest.fn()
@@ -74,6 +75,44 @@ describe("OngoingFulfillmentProviderService.cancelFulfillment", () => {
     expect(result.canceled).toBe(false)
     expect(result.reason).toBe("already_cancelled")
   })
+
+  it("throws a NOT_ALLOWED MedusaError when the workflow decides status_not_cancellable (#109)", async () => {
+    run.mockResolvedValue({
+      result: {
+        shouldCancel: false,
+        reason: "status_not_cancellable",
+        orderSyncId: "osync_1",
+      },
+    })
+    const { service } = makeService()
+
+    const error = await service
+      .cancelFulfillment({ ongoing_order_number: "1001-abc" })
+      .catch((e: unknown) => e)
+
+    expect(error).toBeInstanceOf(MedusaError)
+    expect((error as MedusaError).type).toBe(MedusaError.Types.NOT_ALLOWED)
+  })
+
+  it.each([
+    "already_cancelled",
+    "no_sync_row",
+    "no_ongoing_order_id",
+    "status_unknown_attempt",
+  ] as const)(
+    "resolves without throwing for the benign no-op reason %s (#109 boundary)",
+    async (reason) => {
+      run.mockResolvedValue({ result: { shouldCancel: false, reason } })
+      const { service } = makeService()
+
+      const result = await service.cancelFulfillment({
+        ongoing_order_number: "1001-abc",
+      })
+
+      expect(result.canceled).toBe(false)
+      expect(result.reason).toBe(reason)
+    }
+  )
 
   it("propagates a retryable error so Medusa can surface a retry", async () => {
     run.mockRejectedValue(new OngoingApiError("down", { status: 503, kind: "retryable" }))
