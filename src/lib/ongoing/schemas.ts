@@ -1,4 +1,4 @@
-import { z } from "zod"
+import { z } from "@medusajs/framework/zod"
 
 // Response shape parsed by mapInventoryRow (src/lib/ongoing/client.ts). Fields that
 // the downstream OngoingInventoryRow requires (articleNumber, articleSystemId) are
