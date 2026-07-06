@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "MedusaOngoingWarehousePlugin",
+  "project_id": "8b36772c-9359-4dd6-bbdb-4307c6875149"
+}

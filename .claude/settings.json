@@ -1,15 +1,14 @@
 {
-  "advisorModel": "opus",
   "hooks": {
-    "PreToolUse": [
+    "SessionStart": [
       {
-        "matcher": "Edit|Write",
         "hooks": [
           {
-            "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR\"/scripts/doc-status-guard-hook.mjs"
+            "command": "bd prime --hook-json",
+            "type": "command"
           }
-        ]
+        ],
+        "matcher": ""
       }
     ]
   },
@@ -25,11 +24,7 @@
       "Bash(gh pr list:*)",
       "Bash(gh pr diff:*)",
       "Bash(gh pr checks:*)",
-      "Bash(gh repo view:*)",
-      "Bash(bash scripts/ready-issues.sh:*)",
-      "Bash(bash scripts/status.sh:*)",
-      "Bash(bash scripts/milestone-status.sh:*)",
-      "Bash(bash scripts/verify-plan.sh:*)"
+      "Bash(gh repo view:*)"
     ]
   }
 }
