@@ -1,4 +1,8 @@
 import { OngoingApiError, classifyHttpStatus, classifyError } from "./errors"
+import {
+  OngoingInventoryRowResponseSchema,
+  OngoingTrackedOrderResponseSchema,
+} from "./schemas"
 import { Throttle } from "./throttle"
 import type { OngoingCredentials } from "./types"
 import type {
@@ -196,11 +200,23 @@ function mapStatus(raw: { number: number; text: string }): OngoingOrderStatus {
   return { number: raw.number, text: raw.text }
 }
 
-function mapInventoryRow(raw: any): OngoingInventoryRow {
-  const t = raw.totalItems ?? {}
+// #114-a: structurally validate the Ongoing 2xx body before mapping. A malformed
+// row (e.g. `article`/`orderInfo` omitted) must throw a terminal OngoingApiError
+// rather than flowing `undefined` required fields into the domain — matching the
+// `unexpected_body_shape` convention doFetch established for bad Content-Type / JSON (#107).
+function mapInventoryRow(raw: unknown): OngoingInventoryRow {
+  const parsed = OngoingInventoryRowResponseSchema.safeParse(raw)
+  if (!parsed.success) {
+    throw new OngoingApiError("Ongoing inventory row failed schema validation", {
+      kind: "terminal",
+      reason: "unexpected_body_shape",
+      body: parsed.error.issues,
+    })
+  }
+  const t = parsed.data.totalItems ?? {}
   return {
-    articleNumber: raw.article?.articleNumber,
-    articleSystemId: raw.article?.articleSystemId,
+    articleNumber: parsed.data.article.articleNumber,
+    articleSystemId: parsed.data.article.articleSystemId,
     numberOfItems: t.NumberOfItemsDecimal ?? 0,
     allocatedNumberOfItems: t.AllocatedNumberOfItems ?? 0,
     sellableNumberOfItems: t.SellableNumberOfItems ?? 0,
@@ -208,16 +224,24 @@ function mapInventoryRow(raw: any): OngoingInventoryRow {
   }
 }
 
-function mapTrackedOrder(raw: any): OngoingTrackedOrder {
-  const parcels: any[] = raw.parcels ?? []
+function mapTrackedOrder(raw: unknown): OngoingTrackedOrder {
+  const parsed = OngoingTrackedOrderResponseSchema.safeParse(raw)
+  if (!parsed.success) {
+    throw new OngoingApiError("Ongoing tracked-order row failed schema validation", {
+      kind: "terminal",
+      reason: "unexpected_body_shape",
+      body: parsed.error.issues,
+    })
+  }
+  const parcels = parsed.data.parcels ?? []
   const trackingNumbers = parcels
     .map((p) => p.parcelTracking?.code ?? p.trackingNumber)
-    .filter((c: unknown): c is string => typeof c === "string" && c.length > 0)
+    .filter((c): c is string => typeof c === "string" && c.length > 0)
   return {
-    ongoingOrderId: raw.orderInfo?.orderId,
-    orderNumber: raw.orderInfo?.orderNumber,
-    statusNumber: raw.orderInfo?.orderStatus?.number,
-    statusText: raw.orderInfo?.orderStatus?.text,
+    ongoingOrderId: parsed.data.orderInfo.orderId,
+    orderNumber: parsed.data.orderInfo.orderNumber,
+    statusNumber: parsed.data.orderInfo.orderStatus.number,
+    statusText: parsed.data.orderInfo.orderStatus.text,
     trackingNumbers,
   }
 }
