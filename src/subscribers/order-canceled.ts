@@ -1,9 +1,11 @@
 import { SubscriberArgs, type SubscriberConfig } from "@medusajs/framework"
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
+import type { IEventBusModuleService } from "@medusajs/types"
 import { ONGOING_MODULE } from "../modules/ongoing"
 import { cancelOngoingOrderWorkflow } from "../workflows/cancel-ongoing-order"
 import { ONGOING_EVENTS } from "../lib/ongoing/events"
 import type { OrderCancelledPayload } from "../lib/ongoing/events"
+import { emitDomainEvent } from "../lib/ongoing/emit-domain-event"
 
 type OrderSyncRow = {
   id: string
@@ -32,7 +34,7 @@ export default async function orderCanceledHandler({
   container,
 }: SubscriberArgs<{ id: string }>): Promise<void> {
   const logger = container.resolve(ContainerRegistrationKeys.LOGGER)
-  const eventBus = container.resolve(Modules.EVENT_BUS) as any
+  const eventBus = container.resolve<IEventBusModuleService>(Modules.EVENT_BUS)
   const orderId = data.id
 
   let rows: OrderSyncRow[]
@@ -73,15 +75,22 @@ export default async function orderCanceledHandler({
         }`
       )
       if (result?.shouldCancel === true) {
-        await eventBus.emit({
-          name: ONGOING_EVENTS.ORDER_CANCELLED,
-          data: {
+        // Persist-then-emit (#116): the workflow above already committed the
+        // cancel. Route the emit through the isolated helper so an event-bus
+        // outage here is not caught by this row's catch and mis-logged as
+        // "cancelOngoingOrderWorkflow failed".
+        await emitDomainEvent(
+          eventBus,
+          logger,
+          ONGOING_EVENTS.ORDER_CANCELLED,
+          {
             medusa_order_id: orderId,
             ongoing_order_number: row.ongoing_order_number,
             ongoing_order_sync_id: row.id,
             reason: result?.reason ?? "ok",
           } satisfies OrderCancelledPayload,
-        })
+          `order.canceled order=${orderId} sync=${row.id}`
+        )
       }
     } catch (error) {
       logger.error(
