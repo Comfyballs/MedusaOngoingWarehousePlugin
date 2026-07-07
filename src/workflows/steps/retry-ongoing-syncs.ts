@@ -1,4 +1,5 @@
 import { createStep, StepResponse } from "@medusajs/framework/workflows-sdk"
+import type { MedusaContainer } from "@medusajs/framework/types"
 import { ONGOING_MODULE } from "../../modules/ongoing"
 
 export type RetryOngoingSyncsInput = { sync_ids: string[] }
@@ -22,7 +23,7 @@ type OngoingServiceLike = {
 // the ONLY place that resets last_synced_at (do not duplicate elsewhere).
 export async function retryOngoingSyncsHandler(
   input: RetryOngoingSyncsInput,
-  { container }: { container: any }
+  { container }: { container: MedusaContainer }
 ): Promise<RetryOngoingSyncsOutput> {
   const service: OngoingServiceLike = container.resolve(ONGOING_MODULE)
 

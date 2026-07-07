@@ -1,5 +1,5 @@
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
-import type { MedusaContainer } from "@medusajs/framework/types"
+import type { MedusaContainer, IEventBusModuleService } from "@medusajs/framework/types"
 import { ONGOING_MODULE } from "../modules/ongoing"
 import { pushOrderToOngoing } from "../workflows"
 import {
@@ -64,7 +64,7 @@ async function processRow(
   logger: Logger,
   row: ErrorSyncRow
 ): Promise<void> {
-  const eventBus = (container as any).resolve(Modules.EVENT_BUS)
+  const eventBus = container.resolve<IEventBusModuleService>(Modules.EVENT_BUS)
 
   if (row.medusa_fulfillment_id == null) {
     logger.warn(

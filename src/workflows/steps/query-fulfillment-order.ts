@@ -1,5 +1,6 @@
 import { createStep, StepResponse } from "@medusajs/framework/workflows-sdk"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import type { MedusaContainer } from "@medusajs/framework/types"
 import {
   reQueryFulfillmentOrder,
   type QueriedFulfillmentOrder,
@@ -22,7 +23,7 @@ export type QueriedFulfillmentOrderWithLines = QueriedFulfillmentOrder & {
 // does not expose its invoke fn). Also exercised end-to-end by the workflow test.
 export async function queryFulfillmentOrderHandler(
   input: QueryFulfillmentOrderInput,
-  { container }: { container: any }
+  { container }: { container: MedusaContainer }
 ): Promise<QueriedFulfillmentOrderWithLines> {
   const query = container.resolve(ContainerRegistrationKeys.QUERY)
 

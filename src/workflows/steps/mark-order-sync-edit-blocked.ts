@@ -1,5 +1,7 @@
 import { createStep, StepResponse } from "@medusajs/framework/workflows-sdk"
+import type { MedusaContainer } from "@medusajs/framework/types"
 import { ONGOING_MODULE } from "../../modules/ongoing"
+import type OngoingModuleService from "../../modules/ongoing/service"
 import type { OrderEditCategory } from "./gate-order-edit"
 
 export type MarkEditBlockedInput = {
@@ -11,9 +13,9 @@ export type MarkEditBlockedInput = {
 
 export const markOrderSyncEditBlockedHandler = async (
   input: MarkEditBlockedInput,
-  { container }: { container: any }
+  { container }: { container: MedusaContainer }
 ): Promise<StepResponse<{ order_sync_id: string }>> => {
-  const ongoing = container.resolve(ONGOING_MODULE) as any
+  const ongoing = container.resolve(ONGOING_MODULE) as OngoingModuleService
 
   await ongoing.updateOngoingOrderSyncs({
     id: input.order_sync_id,
