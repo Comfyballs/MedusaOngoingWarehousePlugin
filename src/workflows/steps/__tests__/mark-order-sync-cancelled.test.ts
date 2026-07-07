@@ -1,7 +1,8 @@
+import type { MedusaContainer } from "@medusajs/framework/types"
 import { markOrderSyncCancelledHandler } from "../mark-order-sync-cancelled"
 
 const invoke = (input: any, service: any) => {
-  const container = { resolve: (_: string) => service }
+  const container = { resolve: (_: string) => service } as unknown as MedusaContainer
   return markOrderSyncCancelledHandler(input, { container })
 }
 

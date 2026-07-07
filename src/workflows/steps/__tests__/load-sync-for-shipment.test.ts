@@ -1,8 +1,9 @@
+import type { MedusaContainer } from "@medusajs/framework/types"
 import { loadSyncForShipmentHandler } from "../load-sync-for-shipment"
 
 const invoke = (rows: any[]) => {
   const service = { listOngoingOrderSyncs: jest.fn().mockResolvedValue(rows) }
-  const container = { resolve: (_: string) => service }
+  const container = { resolve: (_: string) => service } as unknown as MedusaContainer
   return loadSyncForShipmentHandler({ ongoing_order_number: "1001-abc" }, { container })
 }
 
@@ -41,7 +42,10 @@ describe("loadSyncForShipmentStep", () => {
 
   it("filters by ongoing_order_number", async () => {
     const service = { listOngoingOrderSyncs: jest.fn().mockResolvedValue([]) }
-    await loadSyncForShipmentHandler({ ongoing_order_number: "1001-abc" }, { container: { resolve: () => service } })
+    await loadSyncForShipmentHandler(
+      { ongoing_order_number: "1001-abc" },
+      { container: { resolve: () => service } as unknown as MedusaContainer }
+    )
     expect(service.listOngoingOrderSyncs).toHaveBeenCalledWith({ ongoing_order_number: "1001-abc" })
   })
 })

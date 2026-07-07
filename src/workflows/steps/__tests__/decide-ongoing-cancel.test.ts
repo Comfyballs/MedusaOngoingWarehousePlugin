@@ -1,10 +1,11 @@
+import type { MedusaContainer } from "@medusajs/framework/types"
 import { decideOngoingCancelHandler } from "../decide-ongoing-cancel"
 
 // Invoke the step's inner handler directly with a mocked container.
 // (@medusajs/framework 2.16.0 does not expose the handler on the step
 // function, so the step exports its handler for unit testing.)
 const invoke = (input: any, service: any) => {
-  const container = { resolve: (_: string) => service }
+  const container = { resolve: (_: string) => service } as unknown as MedusaContainer
   return decideOngoingCancelHandler(input, { container })
 }
 

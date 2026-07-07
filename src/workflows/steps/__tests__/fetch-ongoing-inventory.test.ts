@@ -1,3 +1,4 @@
+import type { MedusaContainer } from "@medusajs/framework/types"
 import { fetchOngoingInventoryHandler } from "../fetch-ongoing-inventory"
 import type { OngoingInventoryRow } from "../../../lib/ongoing/types"
 
@@ -13,7 +14,7 @@ const invoke = (rows: OngoingInventoryRow[]) => {
   const getInventory = jest.fn().mockResolvedValue(rows)
   const getClient = jest.fn().mockReturnValue({ getInventory })
   const service = { getClient }
-  const container = { resolve: () => service }
+  const container = { resolve: () => service } as unknown as MedusaContainer
   return fetchOngoingInventoryHandler({ credential_key: "wh1" }, { container })
 }
 
