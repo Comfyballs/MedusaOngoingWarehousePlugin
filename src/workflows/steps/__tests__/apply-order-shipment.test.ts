@@ -1,4 +1,5 @@
 import { MedusaError } from "@medusajs/framework/utils"
+import type { MedusaContainer } from "@medusajs/framework/types"
 import { OngoingApiError } from "../../../lib/ongoing/errors"
 
 const run = jest.fn()
@@ -10,7 +11,9 @@ import { applyOrderShipmentHandler } from "../apply-order-shipment"
 
 const makeService = () => ({ updateOngoingOrderSyncs: jest.fn().mockResolvedValue(undefined) })
 const invoke = (input: any, service: any) =>
-  applyOrderShipmentHandler(input, { container: { resolve: (_: string) => service } })
+  applyOrderShipmentHandler(input, {
+    container: { resolve: (_: string) => service } as unknown as MedusaContainer,
+  })
 
 const baseInput = {
   order_sync_id: "os_1",

@@ -1,4 +1,5 @@
 import { createStep, StepResponse } from "@medusajs/framework/workflows-sdk"
+import type { MedusaContainer } from "@medusajs/framework/types"
 import { ONGOING_MODULE } from "../../modules/ongoing"
 import type OngoingModuleService from "../../modules/ongoing/service"
 
@@ -7,7 +8,7 @@ export type DeleteOngoingIntegrationOutput = { id: string; object: "integration"
 
 export const deleteOngoingIntegrationHandler = async (
   input: DeleteOngoingIntegrationInput,
-  { container }: { container: any }
+  { container }: { container: MedusaContainer }
 ): Promise<StepResponse<DeleteOngoingIntegrationOutput>> => {
   const ongoing = container.resolve(ONGOING_MODULE) as OngoingModuleService
   await ongoing.deleteOngoingIntegrations(input.id)

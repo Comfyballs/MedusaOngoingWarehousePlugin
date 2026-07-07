@@ -1,5 +1,6 @@
 import { createStep, StepResponse } from "@medusajs/framework/workflows-sdk"
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
+import type { MedusaContainer, RemoteQueryFunction } from "@medusajs/framework/types"
 import { ONGOING_MODULE } from "../../modules/ongoing"
 import type { OngoingInventoryRow } from "../../lib/ongoing/types"
 
@@ -17,7 +18,7 @@ export type ReconcileInventoryOutput = {
 
 export async function reconcileInventoryLevelsHandler(
   input: ReconcileInventoryInput,
-  { container }: { container: any }
+  { container }: { container: MedusaContainer }
 ): Promise<StepResponse<ReconcileInventoryOutput>> {
   const { rows, integration_id, stock_location_id, stock_reconcile_mode } = input
   const logger: any = container.resolve(ContainerRegistrationKeys.LOGGER)
@@ -27,7 +28,7 @@ export async function reconcileInventoryLevelsHandler(
   // --- Precise mode: pre-fetch synced line-item ids once (not per row) ---
   let syncedLineItemIds: Set<string> = new Set()
   if (stock_reconcile_mode === "precise") {
-    const query: any = container.resolve(ContainerRegistrationKeys.QUERY)
+    const query = container.resolve<RemoteQueryFunction>(ContainerRegistrationKeys.QUERY)
     const syncs: Array<{ medusa_order_id: string }> = await ongoing.listOngoingOrderSyncs({
       integration_id,
       sync_state: "sent",

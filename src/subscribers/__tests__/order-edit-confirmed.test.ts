@@ -183,6 +183,34 @@ describe("order-edit.confirmed subscriber — line_items re-sync", () => {
     })
   })
 
+  it("#116: persists edit-blocked state even when the event emit fails, logging an emit failure not a workflow failure", async () => {
+    const { container, logger, emit } = makeContainer({
+      syncRows: [
+        { id: "oos_1", medusa_fulfillment_id: "ful_1", integration_id: "int_1", latest_status_code: 999 },
+      ],
+      editSyncRules: { int_1: { edit_sync_rules: { line_items: [100] } } }, // 999 blocked
+    })
+
+    // Event bus is down. The persist is reordered BEFORE the emit and the emit
+    // is isolated, so the edit_blocked_* fields must still be written and the
+    // failure must be swallowed + logged as an emit failure, never rethrown.
+    emit.mockRejectedValueOnce(new Error("bus down"))
+
+    await expect(
+      orderEditConfirmedHandler({ ...event("order_1", ["ITEM_ADD"]), container })
+    ).resolves.toBeUndefined()
+
+    expect(markBlockedRunMock).toHaveBeenCalledWith({
+      input: { order_sync_id: "oos_1", blocked: true, category: "line_items", reason: "status_blocked" },
+    })
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining("failed to emit ongoing.sync.edit_blocked")
+    )
+    expect(logger.error).not.toHaveBeenCalledWith(
+      expect.stringContaining("handler failed")
+    )
+  })
+
   it("no-ops when there are no sync rows for the order", async () => {
     const { container, emit } = makeContainer({
       syncRows: [],

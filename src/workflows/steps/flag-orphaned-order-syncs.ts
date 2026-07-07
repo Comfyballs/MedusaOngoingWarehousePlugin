@@ -1,4 +1,5 @@
 import { createStep, StepResponse } from "@medusajs/framework/workflows-sdk"
+import type { MedusaContainer } from "@medusajs/framework/types"
 import { ONGOING_MODULE } from "../../modules/ongoing"
 
 export type FlagOrphanedOrderSyncsInput = Record<string, never>
@@ -36,7 +37,7 @@ const ORPHANED_SYNC_ERROR_MESSAGE =
 // "sent" so a re-run finds nothing.
 export async function flagOrphanedOrderSyncsHandler(
   _input: FlagOrphanedOrderSyncsInput,
-  { container }: { container: any }
+  { container }: { container: MedusaContainer }
 ): Promise<FlagOrphanedOrderSyncsOutput> {
   const service: OngoingServiceLike = container.resolve(ONGOING_MODULE)
 

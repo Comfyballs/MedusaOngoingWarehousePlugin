@@ -1,6 +1,8 @@
 import { createStep, StepResponse } from "@medusajs/framework/workflows-sdk"
 import { MedusaError } from "@medusajs/framework/utils"
+import type { MedusaContainer } from "@medusajs/framework/types"
 import { ONGOING_MODULE } from "../../modules/ongoing"
+import type OngoingModuleService from "../../modules/ongoing/service"
 
 export type ResolveIntegrationContextInput = { location_id: string }
 export type ResolveIntegrationContextOutput = {
@@ -13,9 +15,9 @@ export type ResolveIntegrationContextOutput = {
 // does not expose its invoke fn).
 export async function resolveIntegrationContextHandler(
   input: ResolveIntegrationContextInput,
-  { container }: { container: any }
+  { container }: { container: MedusaContainer }
 ): Promise<ResolveIntegrationContextOutput> {
-  const service: any = container.resolve(ONGOING_MODULE)
+  const service = container.resolve(ONGOING_MODULE) as OngoingModuleService
 
   const integration = await service.getIntegrationByLocation(input.location_id)
   if (!integration) {

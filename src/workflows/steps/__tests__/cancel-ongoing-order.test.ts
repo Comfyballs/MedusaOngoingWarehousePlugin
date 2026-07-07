@@ -1,3 +1,4 @@
+import type { MedusaContainer } from "@medusajs/framework/types"
 import { cancelOngoingOrderHandler } from "../cancel-ongoing-order"
 import { OngoingApiError } from "../../../lib/ongoing/errors"
 
@@ -6,7 +7,7 @@ const invoke = (input: any, client: any) => {
   const logger = { info: jest.fn(), error: jest.fn() }
   const container = {
     resolve: jest.fn((key: string) => (key === "logger" ? logger : service)),
-  }
+  } as unknown as MedusaContainer
   return { result: cancelOngoingOrderHandler(input, { container }), logger }
 }
 

@@ -1,3 +1,4 @@
+import type { MedusaContainer } from "@medusajs/framework/types"
 import { markOrderSyncShippedHandler } from "../mark-order-sync-shipped"
 
 const baseInput = {
@@ -25,7 +26,7 @@ function makeContainer({ updateOngoingOrderSyncs }: { updateOngoingOrderSyncs: j
           return service
       }
     }),
-  }
+  } as unknown as MedusaContainer
   return { container, logger, emit }
 }
 

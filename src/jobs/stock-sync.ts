@@ -1,5 +1,5 @@
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
-import type { MedusaContainer } from "@medusajs/framework/types"
+import type { MedusaContainer, IEventBusModuleService } from "@medusajs/framework/types"
 import { ONGOING_MODULE } from "../modules/ongoing"
 import { syncOngoingInventoryWorkflow } from "../workflows"
 import { ONGOING_EVENTS } from "../lib/ongoing/events"
@@ -97,7 +97,7 @@ async function syncIntegration(
     logger.info(
       `[ongoing] stock-sync: integration ${integration.id} reconciled ${result.written} level(s), skipped ${result.skipped}`
     )
-    const eventBus: any = container.resolve(Modules.EVENT_BUS)
+    const eventBus = container.resolve<IEventBusModuleService>(Modules.EVENT_BUS)
     // Best-effort emit: the reconcile above already ran to completion — an
     // event-bus outage here must not surface as an "integration failed" log for
     // an integration that actually synced successfully.

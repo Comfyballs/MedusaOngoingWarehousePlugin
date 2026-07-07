@@ -1,8 +1,10 @@
 import { createStep, StepResponse } from "@medusajs/framework/workflows-sdk"
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
+import type { MedusaContainer, IEventBusModuleService } from "@medusajs/framework/types"
 import { classifyError } from "../../lib/ongoing/errors"
 import type { PostOrderModel } from "../../lib/ongoing/types"
 import { ONGOING_MODULE } from "../../modules/ongoing"
+import type OngoingModuleService from "../../modules/ongoing/service"
 import { ONGOING_EVENTS } from "../../lib/ongoing/events"
 import type { OrderPushedPayload, PushFailedPayload } from "../../lib/ongoing/events"
 
@@ -28,11 +30,11 @@ export type PushOrderOutput = { ongoingOrderId: number; orderNumber: string }
 // with error_class/last_error while still rejecting so the caller (#21) sees failure.
 export async function pushOrderRecordSyncHandler(
   input: PushOrderInput,
-  { container }: { container: any }
+  { container }: { container: MedusaContainer }
 ): Promise<PushOrderOutput> {
-  const service: any = container.resolve(ONGOING_MODULE)
+  const service = container.resolve(ONGOING_MODULE) as OngoingModuleService
   const logger: any = container.resolve(ContainerRegistrationKeys.LOGGER)
-  const eventBus: any = container.resolve(Modules.EVENT_BUS)
+  const eventBus = container.resolve<IEventBusModuleService>(Modules.EVENT_BUS)
 
   // Persist the order number BEFORE the PUT so a retry upserts the same Ongoing order.
   // Clear any error columns from a prior failed attempt so a retry starts clean.

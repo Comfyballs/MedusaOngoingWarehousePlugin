@@ -331,6 +331,33 @@ describe("order.updated subscriber — address/contact re-sync", () => {
     })
   })
 
+  it("#116: persists edit-blocked state even when the event emit fails, logging an emit failure not a workflow failure", async () => {
+    const { container, logger, emit } = makeContainer({
+      changeRows: [{ id: "ordch_1", created_at: "2026-06-28T10:00:00.000Z", type: "billing_address" }],
+      syncRows: [{ id: "oos_1", integration_id: "int_1", latest_status_code: 999, medusa_fulfillment_id: "ful_1" }],
+      editSyncRules: { int_1: { address_contact: [100, 110] } }, // 999 blocked
+    })
+
+    // Event bus is down. The persist is reordered BEFORE the emit and the emit
+    // is isolated, so edit_blocked_* must still be written and the failure must
+    // be swallowed + logged as an emit failure, never rethrown to the row catch.
+    emit.mockRejectedValueOnce(new Error("bus down"))
+
+    await expect(
+      orderUpdatedHandler({ ...event("order_1"), container })
+    ).resolves.toBeUndefined()
+
+    expect(markBlockedRunMock).toHaveBeenCalledWith({
+      input: { order_sync_id: "oos_1", blocked: true, category: "address_contact", reason: "status_blocked" },
+    })
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining("failed to emit ongoing.sync.edit_blocked")
+    )
+    expect(logger.error).not.toHaveBeenCalledWith(
+      expect.stringContaining("failed to process sync")
+    )
+  })
+
   it("blocks and emits a warning when latest_status_code is unknown (null)", async () => {
     // M2 default: latest_status_code is NULL until the status-poll milestone, so
     // the address_contact gate is closed by default. Pin that branch explicitly.

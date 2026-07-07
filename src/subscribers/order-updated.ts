@@ -1,9 +1,11 @@
 import { SubscriberArgs, type SubscriberConfig } from "@medusajs/framework"
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
+import type { IEventBusModuleService } from "@medusajs/types"
 import { ONGOING_MODULE } from "../modules/ongoing"
 import { syncOrderEditToOngoing } from "../workflows/sync-order-edit-to-ongoing"
 import { markOrderSyncEditBlockedWorkflow } from "../workflows/mark-order-sync-edit-blocked"
-import { ONGOING_EVENTS } from "../lib/ongoing/events"
+import { ONGOING_EVENTS, type EditBlockedPayload } from "../lib/ongoing/events"
+import { emitDomainEvent } from "../lib/ongoing/emit-domain-event"
 import {
   ORDER_CHANGE_BURST_QUERY_LIMIT,
   deriveBurstChangedTypes,
@@ -102,7 +104,7 @@ export default async function orderUpdatedHandler({
       )
     )
 
-    const eventBus = container.resolve(Modules.EVENT_BUS)
+    const eventBus = container.resolve<IEventBusModuleService>(Modules.EVENT_BUS)
 
     // 4. For each sync row, gate on edit_sync_rules.address_contact and re-sync.
     //    Each row is isolated in its own try/catch so one row's failure never
@@ -129,15 +131,8 @@ export default async function orderUpdatedHandler({
           logger.warn(
             `[ongoing] order.updated for ${orderId}: address_contact edit blocked for sync ${row.id} (status ${code ?? "unknown"} not in [${allowedCodes.join(", ")}])`
           )
-          await eventBus.emit({
-            name: ONGOING_EVENTS.EDIT_BLOCKED,
-            data: {
-              medusa_order_id: orderId,
-              ongoing_order_sync_id: row.id,
-              category: "address_contact",
-              latest_status_code: code,
-            },
-          })
+          // Persist first, then emit (#116): if the emit threw before the
+          // workflow ran, the edit_blocked_* fields would never be written.
           await markOrderSyncEditBlockedWorkflow(container).run({
             input: {
               order_sync_id: row.id,
@@ -146,6 +141,18 @@ export default async function orderUpdatedHandler({
               reason,
             },
           })
+          await emitDomainEvent(
+            eventBus,
+            logger,
+            ONGOING_EVENTS.EDIT_BLOCKED,
+            {
+              medusa_order_id: orderId,
+              ongoing_order_sync_id: row.id,
+              category: "address_contact",
+              latest_status_code: code,
+            } satisfies EditBlockedPayload,
+            `order.updated order=${orderId} sync=${row.id}`
+          )
           continue
         }
 
@@ -183,15 +190,7 @@ export default async function orderUpdatedHandler({
           logger.warn(
             `[ongoing] order.updated for ${orderId}: address_contact re-sync blocked by workflow for sync ${row.id} (reason: ${result.reason})`
           )
-          await eventBus.emit({
-            name: ONGOING_EVENTS.EDIT_BLOCKED,
-            data: {
-              medusa_order_id: orderId,
-              ongoing_order_sync_id: row.id,
-              category: "address_contact",
-              latest_status_code: code,
-            },
-          })
+          // Persist first, then emit (#116).
           await markOrderSyncEditBlockedWorkflow(container).run({
             input: {
               order_sync_id: row.id,
@@ -200,6 +199,18 @@ export default async function orderUpdatedHandler({
               reason: result.reason ?? "status_blocked",
             },
           })
+          await emitDomainEvent(
+            eventBus,
+            logger,
+            ONGOING_EVENTS.EDIT_BLOCKED,
+            {
+              medusa_order_id: orderId,
+              ongoing_order_sync_id: row.id,
+              category: "address_contact",
+              latest_status_code: code,
+            } satisfies EditBlockedPayload,
+            `order.updated order=${orderId} sync=${row.id}`
+          )
         } else {
           // Defensive fallback: result is present but neither synced nor
           // blocked (should not happen given SyncOrderEditResult's derivation

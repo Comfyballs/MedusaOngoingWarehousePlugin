@@ -1,7 +1,8 @@
+import type { MedusaContainer } from "@medusajs/framework/types"
 import { deleteOngoingIntegrationHandler } from "../delete-ongoing-integration"
 
 const makeContext = (service: Record<string, jest.Mock>) => ({
-  container: { resolve: jest.fn(() => service) },
+  container: { resolve: jest.fn(() => service) } as unknown as MedusaContainer,
 })
 
 describe("deleteOngoingIntegrationStep", () => {

@@ -1,5 +1,7 @@
 import { createStep, StepResponse } from "@medusajs/framework/workflows-sdk"
+import type { MedusaContainer } from "@medusajs/framework/types"
 import { ONGOING_MODULE } from "../../modules/ongoing"
+import type OngoingModuleService from "../../modules/ongoing/service"
 
 export type LoadSyncForShipmentInput = {
   ongoing_order_number: string
@@ -21,9 +23,9 @@ export type ShipmentDecision = {
 
 export const loadSyncForShipmentHandler = async (
   input: LoadSyncForShipmentInput,
-  { container }: { container: any }
+  { container }: { container: MedusaContainer }
 ): Promise<StepResponse<ShipmentDecision>> => {
-  const ongoing = container.resolve(ONGOING_MODULE) as any
+  const ongoing = container.resolve(ONGOING_MODULE) as OngoingModuleService
 
   const syncs = await ongoing.listOngoingOrderSyncs({
     ongoing_order_number: input.ongoing_order_number,

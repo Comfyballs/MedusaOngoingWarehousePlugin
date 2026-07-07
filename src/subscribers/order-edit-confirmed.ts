@@ -1,9 +1,11 @@
 import { SubscriberArgs, type SubscriberConfig } from "@medusajs/framework"
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
+import type { IEventBusModuleService } from "@medusajs/types"
 import { ONGOING_MODULE } from "../modules/ongoing"
 import { syncOrderEditToOngoing } from "../workflows/sync-order-edit-to-ongoing"
 import { markOrderSyncEditBlockedWorkflow } from "../workflows/mark-order-sync-edit-blocked"
-import { ONGOING_EVENTS } from "../lib/ongoing/events"
+import { ONGOING_EVENTS, type EditBlockedPayload } from "../lib/ongoing/events"
+import { emitDomainEvent } from "../lib/ongoing/emit-domain-event"
 
 // ChangeActionType values that order-edit.confirmed carries: only line-item /
 // shipping mutations appear on this event (address/contact/email go through
@@ -73,18 +75,24 @@ export default async function orderEditConfirmedHandler({
       return
     }
 
-    const eventBus = container.resolve(Modules.EVENT_BUS)
+    const eventBus = container.resolve<IEventBusModuleService>(Modules.EVENT_BUS)
 
+    // Isolated best-effort emit (#116): callers MUST persist the edit-blocked
+    // state (markOrderSyncEditBlockedWorkflow) BEFORE calling this, so a
+    // failing event bus can never skip the persist.
     const emitBlocked = (row: OngoingOrderSyncRow) =>
-      eventBus.emit({
-        name: ONGOING_EVENTS.EDIT_BLOCKED,
-        data: {
+      emitDomainEvent(
+        eventBus,
+        logger,
+        ONGOING_EVENTS.EDIT_BLOCKED,
+        {
           medusa_order_id: orderId,
           ongoing_order_sync_id: row.id,
           category: "line_items",
           latest_status_code: row.latest_status_code,
-        },
-      })
+        } satisfies EditBlockedPayload,
+        `order-edit.confirmed order=${orderId} sync=${row.id}`
+      )
 
     // 3. For each sync row, gate on edit_sync_rules.line_items and re-sync.
     //    Each row is isolated: a failure on one fulfillment never drops the
@@ -112,10 +120,12 @@ export default async function orderEditConfirmedHandler({
           logger.warn(
             `[ongoing] order-edit.confirmed for ${orderId}: line_items edit blocked for sync ${row.id} (status ${code ?? "unknown"} not in [${allowedCodes.join(", ")}])`
           )
-          await emitBlocked(row)
+          // Persist first, then emit (#116): if the emit threw before the
+          // workflow ran, the edit_blocked_* fields would never be written.
           await markOrderSyncEditBlockedWorkflow(container).run({
             input: { order_sync_id: row.id, blocked: true, category: "line_items", reason },
           })
+          await emitBlocked(row)
           continue
         }
 
@@ -135,7 +145,7 @@ export default async function orderEditConfirmedHandler({
           logger.warn(
             `[ongoing] order-edit.confirmed for ${orderId}: line_items re-sync blocked by workflow for sync ${row.id} (reason: ${result.reason})`
           )
-          await emitBlocked(row)
+          // Persist first, then emit (#116).
           await markOrderSyncEditBlockedWorkflow(container).run({
             input: {
               order_sync_id: row.id,
@@ -144,6 +154,7 @@ export default async function orderEditConfirmedHandler({
               reason: result.reason ?? "status_blocked",
             },
           })
+          await emitBlocked(row)
           continue
         }
 

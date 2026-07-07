@@ -1,3 +1,4 @@
+import type { MedusaContainer } from "@medusajs/framework/types"
 import { markOrderSyncEditBlockedHandler } from "../mark-order-sync-edit-blocked"
 
 describe("markOrderSyncEditBlockedStep", () => {
@@ -7,7 +8,7 @@ describe("markOrderSyncEditBlockedStep", () => {
 
     const res = await markOrderSyncEditBlockedHandler(
       { order_sync_id: "oos_1", blocked: true, category: "address_contact", reason: "status_blocked" },
-      { container: { resolve: (_: string) => service } }
+      { container: { resolve: (_: string) => service } as unknown as MedusaContainer }
     )
 
     expect(updateOngoingOrderSyncs).toHaveBeenCalledTimes(1)
@@ -25,7 +26,7 @@ describe("markOrderSyncEditBlockedStep", () => {
 
     await markOrderSyncEditBlockedHandler(
       { order_sync_id: "oos_1", blocked: false },
-      { container: { resolve: (_: string) => service } }
+      { container: { resolve: (_: string) => service } as unknown as MedusaContainer }
     )
 
     const arg = updateOngoingOrderSyncs.mock.calls[0][0]
@@ -40,7 +41,7 @@ describe("markOrderSyncEditBlockedStep", () => {
 
     await markOrderSyncEditBlockedHandler(
       { order_sync_id: "oos_1", blocked: true },
-      { container: { resolve: (_: string) => service } }
+      { container: { resolve: (_: string) => service } as unknown as MedusaContainer }
     )
 
     const arg = updateOngoingOrderSyncs.mock.calls[0][0]

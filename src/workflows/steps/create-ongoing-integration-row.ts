@@ -1,4 +1,5 @@
 import { createStep, StepResponse } from "@medusajs/framework/workflows-sdk"
+import type { MedusaContainer } from "@medusajs/framework/types"
 import { ONGOING_MODULE } from "../../modules/ongoing"
 import type OngoingModuleService from "../../modules/ongoing/service"
 import type { StockReconcileMode } from "../../lib/ongoing/types"
@@ -22,7 +23,7 @@ export type CreateOngoingIntegrationRowCompensation = { integrationId: string }
 
 export const createOngoingIntegrationRowHandler = async (
   input: CreateOngoingIntegrationRowInput,
-  { container }: { container: any }
+  { container }: { container: MedusaContainer }
 ): Promise<StepResponse<OngoingIntegrationRow, CreateOngoingIntegrationRowCompensation>> => {
   const ongoing = container.resolve(ONGOING_MODULE) as OngoingModuleService
 
@@ -43,7 +44,7 @@ export const createOngoingIntegrationRowHandler = async (
 
 export const compensateOngoingIntegrationRowHandler = async (
   compensation: CreateOngoingIntegrationRowCompensation | undefined,
-  { container }: { container: any }
+  { container }: { container: MedusaContainer }
 ): Promise<void> => {
   if (!compensation) {
     return

@@ -1,4 +1,5 @@
 import { createStep, StepResponse } from "@medusajs/framework/workflows-sdk"
+import type { MedusaContainer } from "@medusajs/framework/types"
 
 export type MarkCancelledInput = {
   orderSyncId: string
@@ -6,7 +7,7 @@ export type MarkCancelledInput = {
 
 export const markOrderSyncCancelledHandler = async (
   input: MarkCancelledInput,
-  { container }: { container: any }
+  { container }: { container: MedusaContainer }
 ): Promise<StepResponse<{ orderSyncId: string }>> => {
   const ongoing = container.resolve("ongoing") as any
 

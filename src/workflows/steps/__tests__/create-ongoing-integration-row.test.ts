@@ -1,4 +1,5 @@
 import { MedusaError } from "@medusajs/framework/utils"
+import type { MedusaContainer } from "@medusajs/framework/types"
 import {
   createOngoingIntegrationRowHandler,
   compensateOngoingIntegrationRowHandler,
@@ -19,7 +20,7 @@ const validInput: CreateOngoingIntegrationRowInput = {
 }
 
 const makeContext = (service: Record<string, jest.Mock>) => ({
-  container: { resolve: jest.fn(() => service) },
+  container: { resolve: jest.fn(() => service) } as unknown as MedusaContainer,
 })
 
 describe("createOngoingIntegrationRowStep", () => {

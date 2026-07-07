@@ -1,4 +1,5 @@
 import { MedusaError } from "@medusajs/framework/utils"
+import type { RemoteQueryFunction } from "@medusajs/framework/types"
 
 export type QueriedFulfillmentOrder = {
   fulfillment_id: string
@@ -30,8 +31,16 @@ export type QueriedFulfillmentOrder = {
 }
 
 // Shared helper OWNED by #26 and imported by #27. Plain async fn (not a step) so both can reuse it.
+// `Omit<RemoteQueryFunction, symbol>` (not the plain `RemoteQueryFunction`) — this is
+// the exact type Medusa's own container typing (@medusajs/framework's container.d.ts)
+// declares for `ContainerRegistrationKeys.QUERY`. `RemoteQueryFunction` itself is a
+// callable type (has call signatures), which `Omit` strips, so every real call site
+// (`container.resolve(ContainerRegistrationKeys.QUERY)` on a typed `MedusaContainer`,
+// e.g. query-fulfillment-order.ts and upsert-ongoing-order-edit.ts) produces exactly
+// this narrower type and would otherwise fail to satisfy a `RemoteQueryFunction`
+// parameter here.
 export async function reQueryFulfillmentOrder(
-  query: any,
+  query: Omit<RemoteQueryFunction, symbol>,
   fulfillmentId: string
 ): Promise<QueriedFulfillmentOrder> {
   const { data } = await query.graph({

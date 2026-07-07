@@ -1,9 +1,10 @@
 import { createStep, StepResponse } from "@medusajs/framework/workflows-sdk"
 import { MedusaError } from "@medusajs/framework/utils"
 import { createOrderShipmentWorkflow } from "@medusajs/core-flows"
-import type { OrderWorkflow } from "@medusajs/framework/types"
+import type { MedusaContainer, OrderWorkflow } from "@medusajs/framework/types"
 import { OngoingApiError } from "../../lib/ongoing/errors"
 import { ONGOING_MODULE } from "../../modules/ongoing"
+import type OngoingModuleService from "../../modules/ongoing/service"
 
 export type ApplyShipmentInput = {
   order_sync_id: string
@@ -63,9 +64,9 @@ export type ApplyShipmentResult = {
 //     rely on the module deduping for it.
 export const applyOrderShipmentHandler = async (
   input: ApplyShipmentInput,
-  { container }: { container: any }
+  { container }: { container: MedusaContainer }
 ): Promise<StepResponse<ApplyShipmentResult>> => {
-  const service: any = container.resolve(ONGOING_MODULE)
+  const service = container.resolve(ONGOING_MODULE) as OngoingModuleService
 
   const labels = input.tracking_numbers.map((tn) => ({
     tracking_number: tn,
