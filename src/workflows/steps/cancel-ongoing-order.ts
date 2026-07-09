@@ -32,6 +32,14 @@ export type CancelStepResult = {
 // The match is deliberately tight: `already <been> cancel...`. A looser
 // "mentions cancel" test would wrongly swallow "order already shipped and cannot
 // be cancelled" — a genuinely-uncancellable order — as a success.
+//
+// Known residual (accepted): the pattern is substring/positive-match only, so a
+// hypothetical negated phrasing that still places "already" directly before
+// "cancel" (e.g. "not already cancelled") would false-swallow. There is no
+// machine-readable Ongoing error code to key on instead, and no such phrasing is
+// known to be emitted; if one appears, tighten here. The inverse miss (a real
+// already-cancelled order phrased without the space, e.g. "already-cancelled")
+// fails SAFE — it re-throws into retryFailedSyncs rather than corrupting state.
 const ALREADY_CANCELLED_RE = /already\s+(?:been\s+)?cancel/i
 
 function messageText(err: OngoingApiError): string {
@@ -78,8 +86,14 @@ export const cancelOngoingOrderHandler = async (
       )
       return new StepResponse({ cancelled: false, swallowed: true })
     }
+    // Log Ongoing's OWN reason (which lives in err.body for a real client
+    // error), not just the generic `Ongoing DELETE /orders/{id} failed (4xx)`
+    // wrapper — otherwise the exact failure this PR stops swallowing (e.g.
+    // "already shipped and cannot be cancelled") is invisible to operators.
+    const detail =
+      err instanceof OngoingApiError ? messageText(err) : (err as Error).message
     logger.error(
-      `[ongoing] cancel-ongoing-order: failed ongoing_order_id=${input.ongoingOrderId} error=${(err as Error).message}`
+      `[ongoing] cancel-ongoing-order: failed ongoing_order_id=${input.ongoingOrderId} error=${detail}`
     )
     throw err
   }

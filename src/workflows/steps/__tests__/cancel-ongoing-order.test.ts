@@ -76,6 +76,27 @@ describe("cancelOngoingOrderStep", () => {
     expect(logger.error).toHaveBeenCalledWith(
       expect.stringContaining("cancel-ongoing-order: failed")
     )
+    // The failure log must surface Ongoing's OWN reason (from err.body), not
+    // just the generic wrapper string, so operators can see WHY it failed.
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining("already shipped and cannot be cancelled")
+    )
+  })
+
+  it("swallows an already-cancelled signal under an alternately-cased body key", async () => {
+    const cancelOrder = jest.fn().mockRejectedValue(
+      new OngoingApiError("Ongoing DELETE /orders/999 failed (400)", {
+        status: 400,
+        kind: "terminal",
+        body: { Message: "Order already cancelled" },
+      })
+    )
+    const { result } = invoke(
+      { ongoingOrderId: 999, credentialKey: "wh-a" },
+      { cancelOrder }
+    )
+    const res = await result
+    expect(res.output).toEqual({ cancelled: false, swallowed: true })
   })
 
   it("re-throws an unrelated terminal 4xx (bad id / auth) instead of swallowing it", async () => {
