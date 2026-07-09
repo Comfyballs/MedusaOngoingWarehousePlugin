@@ -26,7 +26,7 @@ describe("cancelOngoingOrderStep", () => {
     )
   })
 
-  it("swallows a terminal 4xx (already cancelled) as idempotent success", async () => {
+  it("swallows a terminal 4xx whose message says already cancelled (idempotent success)", async () => {
     const cancelOrder = jest.fn().mockRejectedValue(
       new OngoingApiError("already cancelled", { status: 400, kind: "terminal" })
     )
@@ -37,8 +37,60 @@ describe("cancelOngoingOrderStep", () => {
     const res = await result
     expect(res.output).toEqual({ cancelled: false, swallowed: true })
     expect(logger.info).toHaveBeenCalledWith(
-      expect.stringContaining("already cancelled/terminal")
+      expect.stringContaining("already cancelled")
     )
+  })
+
+  it("swallows an already-cancelled signal carried in the error body (real client shape)", async () => {
+    // doFetch puts Ongoing's own message in `body`, not in the wrapper `message`.
+    const cancelOrder = jest.fn().mockRejectedValue(
+      new OngoingApiError("Ongoing DELETE /orders/999 failed (400)", {
+        status: 400,
+        kind: "terminal",
+        body: { message: "Order has already been cancelled" },
+      })
+    )
+    const { result } = invoke(
+      { ongoingOrderId: 999, credentialKey: "wh-a" },
+      { cancelOrder }
+    )
+    const res = await result
+    expect(res.output).toEqual({ cancelled: false, swallowed: true })
+  })
+
+  it("re-throws a terminal 4xx that is NOT already-cancelled (#111: don't fake success)", async () => {
+    // Order can no longer be cancelled because the warehouse already started
+    // working on it — a REAL failure that must surface, not be swallowed.
+    const cancelOrder = jest.fn().mockRejectedValue(
+      new OngoingApiError("Ongoing DELETE /orders/999 failed (400)", {
+        status: 400,
+        kind: "terminal",
+        body: { message: "Order already shipped and cannot be cancelled" },
+      })
+    )
+    const { result, logger } = invoke(
+      { ongoingOrderId: 999, credentialKey: "wh-a" },
+      { cancelOrder }
+    )
+    await expect(result).rejects.toBeInstanceOf(OngoingApiError)
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining("cancel-ongoing-order: failed")
+    )
+  })
+
+  it("re-throws an unrelated terminal 4xx (bad id / auth) instead of swallowing it", async () => {
+    const cancelOrder = jest.fn().mockRejectedValue(
+      new OngoingApiError("Ongoing DELETE /orders/999 failed (404)", {
+        status: 404,
+        kind: "terminal",
+        body: { message: "Order not found" },
+      })
+    )
+    const { result } = invoke(
+      { ongoingOrderId: 999, credentialKey: "wh-a" },
+      { cancelOrder }
+    )
+    await expect(result).rejects.toBeInstanceOf(OngoingApiError)
   })
 
   it("re-throws a retryable error (429/5xx) so retryFailedSyncs can re-attempt", async () => {
