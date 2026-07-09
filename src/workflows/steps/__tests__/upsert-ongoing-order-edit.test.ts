@@ -152,6 +152,27 @@ describe("upsertOngoingOrderEditStep", () => {
     )
   })
 
+  it("records an error when getCredentials throws (misconfigured credential_key), then rethrows", async () => {
+    // The comment on the step notes getCredentials/getClient are INSIDE the try
+    // so a misconfigured credential_key is recorded as an error row too.
+    const putOrder = jest.fn()
+    const { container, service, updateOngoingOrderSyncs } = makeContext({ putOrder })
+    ;(service.getCredentials as jest.Mock).mockImplementation(() => {
+      throw new Error('no credentials configured for credential_key "wh-a"')
+    })
+
+    await expect(invoke({ container })).rejects.toThrow("no credentials configured")
+
+    expect(putOrder).not.toHaveBeenCalled()
+    expect(updateOngoingOrderSyncs).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "oos_1",
+        sync_state: "error",
+        error_class: "retryable",
+      })
+    )
+  })
+
   it("records an error (not left silently) when the integration lookup fails before putOrder", async () => {
     const putOrder = jest.fn()
     const { container, service, updateOngoingOrderSyncs } = makeContext({ putOrder })

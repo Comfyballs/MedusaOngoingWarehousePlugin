@@ -24,8 +24,10 @@ export type UpsertResult = {
 // pushOrderRecordSyncStep, which documents the same reasoning.
 //
 // Exported separately from createStep so unit tests can invoke the handler
-// directly — the createStep wrapper does not expose its invoke fn (same pattern
-// as pushOrderRecordSyncStep/pushOrderRecordSyncHandler).
+// directly — the createStep wrapper does not expose its invoke fn. Like
+// pushOrderRecordSyncStep/Handler, the invoke logic lives in a named export; here
+// the handler itself constructs the StepResponse (rather than returning raw
+// output for a thin createStep closure to wrap) since it already builds one.
 export const upsertOngoingOrderEditHandler = async (
   decision: GateDecision,
   { container }: { container: MedusaContainer }
