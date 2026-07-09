@@ -48,6 +48,30 @@ describe("createOngoingIntegrationRowStep", () => {
     await expect(createOngoingIntegrationRowHandler(validInput, context)).rejects.toThrow(MedusaError)
     expect(createOngoingIntegrations).not.toHaveBeenCalled()
   })
+
+  it("translates a DB unique-constraint violation into MedusaError(DUPLICATE_ERROR) (I6)", async () => {
+    const getCredentials = jest.fn().mockReturnValue({ key: "wh-1" })
+    // MikroORM surfaces the Postgres unique_violation SQLSTATE on the thrown error.
+    const createOngoingIntegrations = jest
+      .fn()
+      .mockRejectedValue(Object.assign(new Error("duplicate key"), { code: "23505" }))
+    const context = makeContext({ getCredentials, createOngoingIntegrations })
+
+    await expect(
+      createOngoingIntegrationRowHandler(validInput, context)
+    ).rejects.toMatchObject({ type: MedusaError.Types.DUPLICATE_ERROR })
+  })
+
+  it("re-throws a non-unique DB error unchanged (not masked as a duplicate)", async () => {
+    const getCredentials = jest.fn().mockReturnValue({ key: "wh-1" })
+    const boom = Object.assign(new Error("connection reset"), { code: "08006" })
+    const createOngoingIntegrations = jest.fn().mockRejectedValue(boom)
+    const context = makeContext({ getCredentials, createOngoingIntegrations })
+
+    await expect(
+      createOngoingIntegrationRowHandler(validInput, context)
+    ).rejects.toBe(boom)
+  })
 })
 
 describe("compensateOngoingIntegrationRowStep", () => {

@@ -54,7 +54,27 @@ export const updateOngoingIntegrationHandler = async (
     cancellable_status_codes: existing.cancellable_status_codes as unknown as number[] | null,
   }
 
-  const updated = await ongoing.updateOngoingIntegrations(input as any)
+  // Cast ONLY the two `model.json()` columns to the generated DTO's
+  // `Record<string, unknown> | null` shape (their runtime shape is
+  // `number[] | null`), preserving key presence so an omitted field stays a
+  // no-op update rather than being written as null. Replaces a blanket
+  // `input as any` that had silenced typos on `id`/every other column.
+  const { shipped_status_codes, cancellable_status_codes, ...restInput } = input
+  const updateInput = {
+    ...restInput,
+    ...(shipped_status_codes !== undefined && {
+      shipped_status_codes: shipped_status_codes as unknown as
+        | Record<string, unknown>
+        | null,
+    }),
+    ...(cancellable_status_codes !== undefined && {
+      cancellable_status_codes: cancellable_status_codes as unknown as
+        | Record<string, unknown>
+        | null,
+    }),
+  }
+
+  const updated = await ongoing.updateOngoingIntegrations(updateInput)
   return new StepResponse(updated, { id: input.id, previous })
 }
 
@@ -77,7 +97,18 @@ export const compensateOngoingIntegrationHandler = async (
     return
   }
   const ongoing = container.resolve(ONGOING_MODULE) as OngoingModuleService
-  await ongoing.updateOngoingIntegrations({ id: compensation.id, ...compensation.previous } as any)
+  const { shipped_status_codes, cancellable_status_codes, ...restPrevious } =
+    compensation.previous
+  await ongoing.updateOngoingIntegrations({
+    id: compensation.id,
+    ...restPrevious,
+    shipped_status_codes: shipped_status_codes as unknown as
+      | Record<string, unknown>
+      | null,
+    cancellable_status_codes: cancellable_status_codes as unknown as
+      | Record<string, unknown>
+      | null,
+  })
 }
 
 export const updateOngoingIntegrationStep = createStep(
