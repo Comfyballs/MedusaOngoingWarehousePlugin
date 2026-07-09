@@ -1,5 +1,6 @@
 import { createStep, StepResponse } from "@medusajs/framework/workflows-sdk"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import type { MedusaContainer } from "@medusajs/framework/types"
 import { ONGOING_MODULE } from "../../modules/ongoing"
 import { classifyError } from "../../lib/ongoing/errors"
 // Canonical #26 contract: the SHARED, EXPORTED re-query helper #26 owns.
@@ -21,9 +22,14 @@ export type UpsertResult = {
 // guarantees the OngoingOrderSync error row is written with error_class/last_error
 // while still rejecting so the caller (#31/#54) sees failure. This mirrors #26's
 // pushOrderRecordSyncStep, which documents the same reasoning.
-export const upsertOngoingOrderEditStep = createStep(
-  "ongoing-upsert-order-edit",
-  async (decision: GateDecision, { container }) => {
+//
+// Exported separately from createStep so unit tests can invoke the handler
+// directly — the createStep wrapper does not expose its invoke fn (same pattern
+// as pushOrderRecordSyncStep/pushOrderRecordSyncHandler).
+export const upsertOngoingOrderEditHandler = async (
+  decision: GateDecision,
+  { container }: { container: MedusaContainer }
+) => {
     const service = container.resolve(ONGOING_MODULE) as {
       retrieveOngoingIntegration: (id: string) => Promise<{ credential_key: string }>
       getCredentials: (credentialKey: string) => { goodsOwnerId: number }
@@ -101,5 +107,9 @@ export const upsertOngoingOrderEditStep = createStep(
       })
       throw err
     }
-  }
+}
+
+export const upsertOngoingOrderEditStep = createStep(
+  "ongoing-upsert-order-edit",
+  upsertOngoingOrderEditHandler
 )
