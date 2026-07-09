@@ -58,13 +58,17 @@ export const createOngoingIntegrationRowHandler = async (
     )) as OngoingIntegrationRow
   } catch (err) {
     // credential_key and stock_location_id are both UNIQUE (models/integration.ts).
-    // A DB-level unique violation would otherwise bubble up as an opaque 500;
-    // translate it to a typed MedusaError so the admin route returns 422 (I6).
+    // Medusa's repository layer already maps a Postgres unique violation to
+    // MedusaError(INVALID_DATA) → HTTP 400; re-tag it to DUPLICATE_ERROR so a
+    // duplicate returns the semantically-correct 422 (I6). Preserve Medusa's own
+    // per-column "… already exists." message when present (it names the exact
+    // violated column); fall back to naming both unique keys for the raw-error edge.
     if (isUniqueViolation(err)) {
-      throw new MedusaError(
-        MedusaError.Types.DUPLICATE_ERROR,
-        `An Ongoing integration already exists with credential_key "${input.credential_key}" or stock_location_id "${input.stock_location_id}".`
-      )
+      const message =
+        err instanceof MedusaError && /already exists/i.test(err.message)
+          ? err.message
+          : `An Ongoing integration already exists with credential_key "${input.credential_key}" or stock_location_id "${input.stock_location_id}".`
+      throw new MedusaError(MedusaError.Types.DUPLICATE_ERROR, message)
     }
     throw err
   }

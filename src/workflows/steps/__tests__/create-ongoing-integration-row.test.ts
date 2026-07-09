@@ -49,9 +49,29 @@ describe("createOngoingIntegrationRowStep", () => {
     expect(createOngoingIntegrations).not.toHaveBeenCalled()
   })
 
-  it("translates a DB unique-constraint violation into MedusaError(DUPLICATE_ERROR) (I6)", async () => {
+  it("re-tags Medusa's mapped INVALID_DATA duplicate to DUPLICATE_ERROR (422), keeping its message (I6)", async () => {
     const getCredentials = jest.fn().mockReturnValue({ key: "wh-1" })
-    // MikroORM surfaces the Postgres unique_violation SQLSTATE on the thrown error.
+    // Medusa's repository dbErrorMapper converts the Postgres 23505 to this
+    // BEFORE the step's catch sees it — the realistic mainline shape.
+    const mapped = new MedusaError(
+      MedusaError.Types.INVALID_DATA,
+      "Ongoing integration with credential_key: wh-1, already exists."
+    )
+    const createOngoingIntegrations = jest.fn().mockRejectedValue(mapped)
+    const context = makeContext({ getCredentials, createOngoingIntegrations })
+
+    await expect(
+      createOngoingIntegrationRowHandler(validInput, context)
+    ).rejects.toMatchObject({
+      type: MedusaError.Types.DUPLICATE_ERROR,
+      message: "Ongoing integration with credential_key: wh-1, already exists.",
+    })
+  })
+
+  it("translates a RAW unique violation (23505, unparseable detail) to DUPLICATE_ERROR", async () => {
+    const getCredentials = jest.fn().mockReturnValue({ key: "wh-1" })
+    // Edge: dbErrorMapper rethrows the raw MikroORM error when it can't parse a
+    // constraint detail, so the SQLSTATE reaches us on `.code`.
     const createOngoingIntegrations = jest
       .fn()
       .mockRejectedValue(Object.assign(new Error("duplicate key"), { code: "23505" }))
@@ -59,7 +79,24 @@ describe("createOngoingIntegrationRowStep", () => {
 
     await expect(
       createOngoingIntegrationRowHandler(validInput, context)
-    ).rejects.toMatchObject({ type: MedusaError.Types.DUPLICATE_ERROR })
+    ).rejects.toMatchObject({
+      type: MedusaError.Types.DUPLICATE_ERROR,
+      message: expect.stringContaining("credential_key"),
+    })
+  })
+
+  it("re-throws a non-duplicate MedusaError(INVALID_DATA) unchanged (e.g. NOT NULL)", async () => {
+    const getCredentials = jest.fn().mockReturnValue({ key: "wh-1" })
+    const notNull = new MedusaError(
+      MedusaError.Types.INVALID_DATA,
+      "Cannot set field 'credential_key' of Ongoing integration to null"
+    )
+    const createOngoingIntegrations = jest.fn().mockRejectedValue(notNull)
+    const context = makeContext({ getCredentials, createOngoingIntegrations })
+
+    await expect(
+      createOngoingIntegrationRowHandler(validInput, context)
+    ).rejects.toBe(notNull)
   })
 
   it("re-throws a non-unique DB error unchanged (not masked as a duplicate)", async () => {
