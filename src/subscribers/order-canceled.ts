@@ -1,6 +1,6 @@
 import { SubscriberArgs, type SubscriberConfig } from "@medusajs/framework"
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
-import type { IEventBusModuleService } from "@medusajs/types"
+import type { IEventBusModuleService } from "@medusajs/framework/types"
 import { ONGOING_MODULE } from "../modules/ongoing"
 import { cancelOngoingOrderWorkflow } from "../workflows/cancel-ongoing-order"
 import { ONGOING_EVENTS } from "../lib/ongoing/events"

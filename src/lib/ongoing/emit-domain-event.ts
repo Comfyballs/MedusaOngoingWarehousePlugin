@@ -1,4 +1,4 @@
-import type { IEventBusModuleService } from "@medusajs/types"
+import type { IEventBusModuleService } from "@medusajs/framework/types"
 import type { OngoingEventName } from "./events"
 
 /**

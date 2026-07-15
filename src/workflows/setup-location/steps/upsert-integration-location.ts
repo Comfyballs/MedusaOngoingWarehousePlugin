@@ -8,6 +8,7 @@ type Input = {
 }
 
 export const upsertIntegrationLocationStep = createStep(
+  // eslint-disable-next-line @medusajs/step-id-kebab-case -- `ongoing-` prefix namespaces plugin step ids in the host app's shared workflow registry to avoid collisions; the id is also a persisted idempotency/retry key and must not be renamed.
   "ongoing-upsert-integration-location",
   async (input: Input, { container }) => {
     const ongoing = container.resolve<OngoingModuleService>(ONGOING_MODULE)

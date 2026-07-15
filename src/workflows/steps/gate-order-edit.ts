@@ -87,6 +87,7 @@ export function decideOrderEditGate(args: {
 }
 
 export const gateOrderEditStep = createStep(
+  // eslint-disable-next-line @medusajs/step-id-kebab-case -- `ongoing-` prefix namespaces plugin step ids in the host app's shared workflow registry to avoid collisions; the id is also a persisted idempotency/retry key and must not be renamed.
   "ongoing-gate-order-edit",
   async (input: GateInput, { container }) => {
     const service = container.resolve(ONGOING_MODULE) as {
