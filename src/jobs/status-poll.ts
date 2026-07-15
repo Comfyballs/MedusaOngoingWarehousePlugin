@@ -19,6 +19,7 @@ type TrackedOrder = {
   statusNumber: number
   statusText: string
   trackingNumbers: string[]
+  tracking: { number: string; url?: string }[]
 }
 
 type OngoingClientLike = {
@@ -125,6 +126,7 @@ async function pollAndApply(
           status_code: order.statusNumber,
           status_text: order.statusText,
           tracking_numbers: order.trackingNumbers,
+          tracking: order.tracking,
         },
       })
     }

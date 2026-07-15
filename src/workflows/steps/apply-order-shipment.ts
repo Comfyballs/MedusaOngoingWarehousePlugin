@@ -11,6 +11,9 @@ export type ApplyShipmentInput = {
   medusa_order_id: string
   medusa_fulfillment_id: string
   tracking_numbers: string[]
+  // Optional waybill+URL pairs (bead 5vu). When present, labels carry the real carrier
+  // tracking URL; otherwise we fall back to tracking_numbers with an empty URL.
+  tracking?: Array<{ number: string; url?: string }>
 }
 
 export type ApplyShipmentResult = {
@@ -68,11 +71,12 @@ export const applyOrderShipmentHandler = async (
 ): Promise<StepResponse<ApplyShipmentResult>> => {
   const service = container.resolve(ONGOING_MODULE) as OngoingModuleService
 
-  const labels = input.tracking_numbers.map((tn) => ({
-    tracking_number: tn,
-    tracking_url: "",
-    label_url: "",
-  }))
+  // Prefer the enriched waybill+URL pairs (bead 5vu) so labels carry the carrier tracking
+  // URL; fall back to the bare waybill list (URL unknown) when tracking isn't supplied.
+  const labels = (input.tracking?.length
+    ? input.tracking.map((t) => ({ tracking_number: t.number, tracking_url: t.url ?? "" }))
+    : input.tracking_numbers.map((tn) => ({ tracking_number: tn, tracking_url: "" }))
+  ).map((l) => ({ ...l, label_url: "" }))
 
   const shipmentInput: OrderWorkflow.CreateOrderShipmentWorkflowInput = {
     order_id: input.medusa_order_id,

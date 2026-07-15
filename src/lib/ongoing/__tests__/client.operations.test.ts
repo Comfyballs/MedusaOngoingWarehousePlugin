@@ -14,24 +14,26 @@ const json = (body: unknown) =>
   new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } })
 
 describe("OngoingClient operations", () => {
-  it("maps inventory fields and stops paginating on a short page", async () => {
+  it("hits GET /articles (not /articles/inventory) with cursor params and maps inventoryInfo (beads dtw/ji6)", async () => {
     const page1 = Array.from({ length: 50 }, (_, i) => ({
-      article: { articleNumber: `A${i}`, articleSystemId: i },
-      totalItems: {
-        NumberOfItemsDecimal: 10,
-        AllocatedNumberOfItems: 2,
-        SellableNumberOfItems: 8,
-        ToReceiveNumberOfItems: 3,
+      articleNumber: `A${i}`,
+      articleSystemId: i,
+      inventoryInfo: {
+        numberOfItems: 10,
+        allocatedNumberOfItems: 2,
+        sellableNumberOfItems: 8,
+        toReceiveNumberOfItems: 3,
       },
     }))
     const page2 = [
       {
-        article: { articleNumber: "A50", articleSystemId: 50 },
-        totalItems: {
-          NumberOfItemsDecimal: 1,
-          AllocatedNumberOfItems: 0,
-          SellableNumberOfItems: 1,
-          ToReceiveNumberOfItems: 0,
+        articleNumber: "A50",
+        articleSystemId: 50,
+        inventoryInfo: {
+          numberOfItems: 1,
+          allocatedNumberOfItems: 0,
+          sellableNumberOfItems: 1,
+          toReceiveNumberOfItems: 0,
         },
       },
     ]
@@ -44,6 +46,13 @@ describe("OngoingClient operations", () => {
     const rows = await client.getInventory()
 
     expect(fetchImpl).toHaveBeenCalledTimes(2)
+    const [url1] = fetchImpl.mock.calls[0]
+    expect(url1).toContain("/articles?goodsOwnerId=7")
+    expect(url1).not.toContain("/articles/inventory")
+    expect(url1).toContain("articleSystemIdFrom=0")
+    expect(url1).toContain("maxArticlesToGet=50")
+    expect(url1).not.toContain("pageSize=")
+    expect(fetchImpl.mock.calls[1][0]).toContain("articleSystemIdFrom=50")
     expect(rows).toHaveLength(51)
     expect(rows[0]).toEqual({
       articleNumber: "A0",
@@ -53,6 +62,17 @@ describe("OngoingClient operations", () => {
       sellableNumberOfItems: 8,
       toReceiveNumberOfItems: 3,
     })
+  })
+
+  it("sends the articleNumbers (plural) CSV filter when article numbers are given (bead dtw)", async () => {
+    const fetchImpl = jest.fn().mockResolvedValue(json([]))
+    const client = new OngoingClient(creds, { fetchImpl })
+
+    await client.getInventory(["SKU-1", "SKU-2"])
+
+    const [url] = fetchImpl.mock.calls[0]
+    expect(url).toContain("articleNumbers=SKU-1,SKU-2")
+    expect(url).not.toContain("articleNumber=SKU-1")
   })
 
   it("maps order statuses from the wrapped GetOrderStatusesModel envelope", async () => {

@@ -1,35 +1,51 @@
 import { OngoingClient } from "../client"
+import type { OngoingCredentials } from "../types"
 
-describe("OngoingClient.getInventory — pageSize", () => {
-  it("passes pageSize=50 on every inventory page request", async () => {
-    const fullPage = Array.from({ length: 50 }, (_, i) => ({
-      article: { articleNumber: `SKU-${i}`, articleSystemId: i },
-      totalItems: {
-        NumberOfItemsDecimal: 10,
-        AllocatedNumberOfItems: 0,
-        SellableNumberOfItems: 10,
-        ToReceiveNumberOfItems: 0,
-      },
-    }))
-    const fetchImpl = jest.fn()
-      .mockResolvedValueOnce({
-        ok: true,
-        text: async () => JSON.stringify(fullPage),
-        headers: { get: (name: string) => (name.toLowerCase() === "content-type" ? "application/json" : null) },
+const creds: OngoingCredentials = {
+  key: "k",
+  baseUrl: "https://api.example.com/api/v1",
+  username: "u",
+  password: "p",
+  goodsOwnerId: 42,
+}
+
+describe("OngoingClient request timeout (bead 4s4)", () => {
+  it("aborts a hung request after timeoutMs and surfaces it (retryable path)", async () => {
+    // fetch hangs until the AbortController fires, then rejects like a real AbortError.
+    const fetchImpl = jest.fn((_url: string, init: { signal: AbortSignal }) =>
+      new Promise((_resolve, reject) => {
+        init.signal.addEventListener("abort", () => {
+          const err = new Error("The operation was aborted")
+          err.name = "AbortError"
+          reject(err)
+        })
       })
-      .mockResolvedValueOnce({
-        ok: true,
-        text: async () => JSON.stringify([]),
-        headers: { get: (name: string) => (name.toLowerCase() === "content-type" ? "application/json" : null) },
-      })
-    const client = new OngoingClient(
-      { key: "k", baseUrl: "https://api.example.com/api/v1", username: "u", password: "p", goodsOwnerId: 42 },
-      { fetchImpl: fetchImpl as unknown as typeof fetch }
     )
-    await client.getInventory()
-    const allUrls: string[] = (fetchImpl as jest.Mock).mock.calls.map(([url]: [string]) => url)
-    for (const url of allUrls) {
-      expect(url).toContain("pageSize=50")
-    }
+    const client = new OngoingClient(creds, {
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      timeoutMs: 5,
+      maxRetries: 0,
+    })
+
+    await expect(client.getOrderStatuses()).rejects.toThrow(/abort/i)
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+    expect(fetchImpl.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal)
+  })
+
+  it("does not abort a request that resolves before the timeout", async () => {
+    const fetchImpl = jest.fn().mockResolvedValue(
+      new Response(JSON.stringify({ orderStatuses: [{ number: 200, text: "Open" }] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      })
+    )
+    const client = new OngoingClient(creds, {
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      timeoutMs: 10_000,
+    })
+
+    await expect(client.getOrderStatuses()).resolves.toEqual([{ number: 200, text: "Open" }])
+    // Signal was passed but never aborted (request completed in time).
+    expect(fetchImpl.mock.calls[0][1].signal.aborted).toBe(false)
   })
 })
