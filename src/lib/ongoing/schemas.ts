@@ -46,6 +46,8 @@ export const OngoingTrackedOrderResponseSchema = z.object({
   parcels: z
     .array(
       z.object({
+        // GetOrderParcel.isReturnParcel — return parcels are excluded from outbound tracking.
+        isReturnParcel: z.boolean().optional(),
         tracking: OngoingTrackingSchema.optional(),
       })
     )

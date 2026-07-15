@@ -155,10 +155,13 @@ export class OngoingClient {
 
   async getInventory(articleNumbers?: string[]): Promise<OngoingInventoryRow[]> {
     // Inventory comes from GET /api/v1/articles (inventoryInfo per GetArticleModel);
-    // the old /articles/inventory path does not exist in the spec. The CSV filter param
-    // is `articleNumbers` (plural), not `articleNumber` (bead dtw).
+    // the old /articles/inventory path does not exist in the spec. The filter param is
+    // `articleNumbers` (plural), not `articleNumber` (bead dtw). The spec declares it
+    // `style: form, explode: true`, so it must be serialized as repeated keys
+    // (`articleNumbers=A&articleNumbers=B`), NOT a comma-joined value — a CSV binds as a
+    // single array element on the server and would match no article.
     const filter = articleNumbers?.length
-      ? `&articleNumbers=${articleNumbers.map(encodeURIComponent).join(",")}`
+      ? articleNumbers.map((n) => `&articleNumbers=${encodeURIComponent(n)}`).join("")
       : ""
     const rows = await this.paginateByCursor(
       (cursorFrom) =>
@@ -300,9 +303,13 @@ function mapTrackedOrder(raw: unknown): OngoingTrackedOrder {
   }
   // Tracking lives in two spec locations: each parcel's `tracking` and the order-level
   // `tracking[]` — both GetOrderParcelTracking/GetOrderTracking { waybill, trackingUrl }.
-  // Collect waybills from both, deduped, keeping the first trackingUrl seen per waybill.
+  // Exclude return parcels (GetOrderParcel.isReturnParcel) so an RMA waybill never surfaces
+  // as an outbound shipment label — mirroring the webhook path's !isReturn filter. The
+  // order-level `tracking[]` is already outbound-only (returns live in the separate
+  // `returnTracking[]`, which we don't read). Collect waybills from both, deduped, keeping
+  // the first trackingUrl seen per waybill.
   const sources = [
-    ...(parsed.data.parcels ?? []).map((p) => p.tracking),
+    ...(parsed.data.parcels ?? []).filter((p) => !p.isReturnParcel).map((p) => p.tracking),
     ...(parsed.data.tracking ?? []),
   ]
   const tracking: OngoingTrackingRef[] = []

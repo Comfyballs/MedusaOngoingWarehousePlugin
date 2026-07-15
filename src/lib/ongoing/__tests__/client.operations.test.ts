@@ -64,15 +64,17 @@ describe("OngoingClient operations", () => {
     })
   })
 
-  it("sends the articleNumbers (plural) CSV filter when article numbers are given (bead dtw)", async () => {
+  it("sends articleNumbers as repeated keys (explode:true), not a CSV, when article numbers are given (bead dtw)", async () => {
     const fetchImpl = jest.fn().mockResolvedValue(json([]))
     const client = new OngoingClient(creds, { fetchImpl })
 
     await client.getInventory(["SKU-1", "SKU-2"])
 
     const [url] = fetchImpl.mock.calls[0]
-    expect(url).toContain("articleNumbers=SKU-1,SKU-2")
-    expect(url).not.toContain("articleNumber=SKU-1")
+    // Spec declares articleNumbers as style:form explode:true → repeated keys, not CSV.
+    expect(url).toContain("articleNumbers=SKU-1")
+    expect(url).toContain("articleNumbers=SKU-2")
+    expect(url).not.toContain("articleNumbers=SKU-1,SKU-2")
   })
 
   it("maps order statuses from the wrapped GetOrderStatusesModel envelope", async () => {

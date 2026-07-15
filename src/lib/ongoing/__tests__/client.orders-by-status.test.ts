@@ -70,6 +70,24 @@ describe("OngoingClient.getOrdersByStatus", () => {
     ])
   })
 
+  it("excludes return parcels so an RMA waybill never becomes an outbound label (PR#133 review)", async () => {
+    const fetchImpl = jest.fn().mockResolvedValue(
+      json([
+        order(1, {
+          parcels: [
+            { isReturnParcel: true, tracking: { waybill: "RMA-1", trackingUrl: "https://return/1" } },
+            { isReturnParcel: false, tracking: { waybill: "WB-OUT", trackingUrl: "https://out/1" } },
+          ],
+        }),
+      ])
+    )
+    const client = new OngoingClient(creds, { fetchImpl })
+
+    const [o] = await client.getOrdersByStatus(100, 999)
+    expect(o.tracking).toEqual([{ number: "WB-OUT", url: "https://out/1" }])
+    expect(o.trackingNumbers).toEqual(["WB-OUT"])
+  })
+
   it("dedupes a waybill that appears in both a parcel and order-level tracking", async () => {
     const fetchImpl = jest.fn().mockResolvedValue(
       json([
