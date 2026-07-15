@@ -12,6 +12,8 @@ type IntegrationRow = {
   stock_location_id: string
   stock_sync_interval: string | null
   last_stock_sync_at: Date | string | null
+  last_stock_delta_cursor: string | null
+  last_full_stock_sync_at: Date | string | null
   stock_reconcile_mode: "sellable_plus_reserved" | "precise" | "onhand"
 }
 
@@ -26,9 +28,16 @@ type OngoingServiceLike = {
   releaseSyncLock: (integrationId: string) => Promise<void>
   updateOngoingIntegrations: (data: {
     id: string
-    last_stock_sync_at: Date
+    last_stock_sync_at?: Date
+    last_stock_delta_cursor?: string
+    last_full_stock_sync_at?: Date
   }) => Promise<unknown>
 }
+
+// How often to run a FULL (non-delta) sweep as a reconciliation fallback, so any stock
+// change a delta tick might have missed (clock skew, a dropped webhook on Ongoing's side)
+// self-heals. Between full sweeps, ticks pull only stockInfoChangedFrom deltas (bead sw8).
+const FULL_SWEEP_INTERVAL_MS = 6 * 60 * 60 * 1000 // 6 hours
 
 type Logger = {
   info: (message: string) => void
@@ -62,6 +71,16 @@ function isStockSyncDue(
   return now - last >= intervalMs
 }
 
+// A full sweep runs when we've never delta-synced (no cursor), never full-swept, or the
+// last full sweep is older than FULL_SWEEP_INTERVAL_MS; otherwise the tick pulls deltas.
+function isFullSweepDue(integration: IntegrationRow, now: number): boolean {
+  if (integration.last_stock_delta_cursor == null || integration.last_full_stock_sync_at == null) {
+    return true
+  }
+  const lastFull = new Date(integration.last_full_stock_sync_at).getTime()
+  return now - lastFull >= FULL_SWEEP_INTERVAL_MS
+}
+
 async function syncIntegration(
   container: MedusaContainer,
   service: OngoingServiceLike,
@@ -82,6 +101,12 @@ async function syncIntegration(
     return
   }
 
+  const doFullSweep = isFullSweepDue(integration, now)
+  // Anchor the next delta cursor to the instant BEFORE the fetch so any stock change during
+  // the sync is re-caught next tick (at-least-once; reconcile is idempotent). Advanced only
+  // on success below — never in the finally — so a failed tick can't skip changes.
+  const syncStartedAt = new Date(now).toISOString()
+
   try {
     const { goodsOwnerId } = service.getCredentials(integration.credential_key)
     const { result } = await syncOngoingInventoryWorkflow(container).run({
@@ -91,12 +116,28 @@ async function syncIntegration(
         stock_location_id: integration.stock_location_id,
         goods_owner_id: goodsOwnerId,
         stock_reconcile_mode: integration.stock_reconcile_mode,
+        changed_since: doFullSweep ? null : integration.last_stock_delta_cursor,
       },
     })
     // #37 returns { written, skipped } expressly for the dispatcher to log (operational visibility).
     logger.info(
-      `[ongoing] stock-sync: integration ${integration.id} reconciled ${result.written} level(s), skipped ${result.skipped}`
+      `[ongoing] stock-sync: integration ${integration.id} ${doFullSweep ? "full" : "delta"} sync reconciled ${result.written} level(s), skipped ${result.skipped}`
     )
+    // Advance the delta cursor (and, on a full sweep, the full-sweep clock) only now that the
+    // sync succeeded. Separate from the finally's last_stock_sync_at stamp, which records the
+    // attempt regardless of outcome. A cursor-write failure is logged, not fatal — next tick
+    // re-syncs from the old cursor (idempotent), so no stock change is lost.
+    try {
+      await service.updateOngoingIntegrations({
+        id: integration.id,
+        last_stock_delta_cursor: syncStartedAt,
+        ...(doFullSweep ? { last_full_stock_sync_at: new Date() } : {}),
+      })
+    } catch (cursorErr) {
+      logger.error(
+        `[ongoing] stock-sync: failed to advance delta cursor for ${integration.id}: ${(cursorErr as Error).message}`
+      )
+    }
     const eventBus = container.resolve<IEventBusModuleService>(Modules.EVENT_BUS)
     // Best-effort emit: the reconcile above already ran to completion — an
     // event-bus outage here must not surface as an "integration failed" log for

@@ -4,14 +4,20 @@ import { ONGOING_MODULE } from "../../modules/ongoing"
 import type OngoingModuleService from "../../modules/ongoing/service"
 import type { OngoingInventoryRow } from "../../lib/ongoing/types"
 
-export type FetchOngoingInventoryInput = { credential_key: string }
+export type FetchOngoingInventoryInput = {
+  credential_key: string
+  // ISO timestamp for a delta sync (stockInfoChangedFrom); null/undefined → full sweep (bead sw8).
+  changed_since?: string | null
+}
 
 export async function fetchOngoingInventoryHandler(
   input: FetchOngoingInventoryInput,
   { container }: { container: MedusaContainer }
 ): Promise<StepResponse<OngoingInventoryRow[]>> {
   const service = container.resolve(ONGOING_MODULE) as OngoingModuleService
-  const rows: OngoingInventoryRow[] = await service.getClient(input.credential_key).getInventory()
+  const rows: OngoingInventoryRow[] = await service
+    .getClient(input.credential_key)
+    .getInventory(undefined, input.changed_since ?? undefined)
   return new StepResponse(rows)
 }
 

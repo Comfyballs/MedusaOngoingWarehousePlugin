@@ -18,6 +18,8 @@ type Integration = {
   stock_location_id: string
   stock_sync_interval: string | null
   last_stock_sync_at: Date | null
+  last_stock_delta_cursor: string | null
+  last_full_stock_sync_at: Date | null
   stock_reconcile_mode: "sellable_plus_reserved" | "precise" | "onhand"
 }
 
@@ -59,6 +61,8 @@ const integ = (over: Partial<Integration> = {}): Integration => ({
   stock_location_id: "sloc_1",
   stock_sync_interval: "600000",
   last_stock_sync_at: null,
+  last_stock_delta_cursor: null,
+  last_full_stock_sync_at: null,
   stock_reconcile_mode: "sellable_plus_reserved",
   ...over,
 })
@@ -106,6 +110,7 @@ describe("ongoing stock-sync job", () => {
   })
 
   it("dispatches syncOngoingInventoryWorkflow with the correct input for a due integration", async () => {
+    // Fresh integration (no delta cursor) → first run is a full sweep (changed_since: null).
     const due = integ({ last_stock_sync_at: new Date(Date.now() - 700000) })
     const h = makeHarness({
       integrations: [due],
@@ -122,6 +127,7 @@ describe("ongoing stock-sync job", () => {
         stock_location_id: "sloc_1",
         goods_owner_id: 42,
         stock_reconcile_mode: "sellable_plus_reserved",
+        changed_since: null,
       },
     })
     expect(h.service.updateOngoingIntegrations).toHaveBeenCalledWith({
@@ -134,6 +140,67 @@ describe("ongoing stock-sync job", () => {
       name: "ongoing.sync.inventory_synced",
       data: { integration_id: "int_1", credential_key: "wh-a", stock_location_id: "sloc_1", written: 0, skipped: 0 },
     })
+  })
+
+  it("runs a delta sync (changed_since = cursor) when a recent full sweep exists (bead sw8)", async () => {
+    const cursor = "2026-07-15T00:00:00.000Z"
+    const due = integ({
+      last_stock_sync_at: new Date(Date.now() - 700000),
+      last_stock_delta_cursor: cursor,
+      last_full_stock_sync_at: new Date(Date.now() - 60000), // 1 min ago → full sweep NOT due
+    })
+    const h = makeHarness({ integrations: [due] })
+
+    await ongoingStockSyncJob(h.container)
+
+    expect(run).toHaveBeenCalledWith(
+      expect.objectContaining({ input: expect.objectContaining({ changed_since: cursor }) })
+    )
+    // Cursor advances on success; full-sweep clock is NOT touched on a delta tick.
+    const calls = h.service.updateOngoingIntegrations.mock.calls as unknown as Array<
+      [Record<string, unknown>]
+    >
+    const cursorCall = calls.find((c) => c[0].last_stock_delta_cursor !== undefined)
+    expect(cursorCall).toBeDefined()
+    expect(cursorCall![0].last_full_stock_sync_at).toBeUndefined()
+  })
+
+  it("runs a full sweep and advances the full-sweep clock when the last full sweep is stale (bead sw8)", async () => {
+    const due = integ({
+      last_stock_sync_at: new Date(Date.now() - 700000),
+      last_stock_delta_cursor: "2026-07-15T00:00:00.000Z",
+      last_full_stock_sync_at: new Date(Date.now() - 7 * 60 * 60 * 1000), // 7h ago → full sweep due
+    })
+    const h = makeHarness({ integrations: [due] })
+
+    await ongoingStockSyncJob(h.container)
+
+    expect(run).toHaveBeenCalledWith(
+      expect.objectContaining({ input: expect.objectContaining({ changed_since: null }) })
+    )
+    expect(h.service.updateOngoingIntegrations).toHaveBeenCalledWith(
+      expect.objectContaining({
+        last_stock_delta_cursor: expect.any(String),
+        last_full_stock_sync_at: expect.any(Date),
+      })
+    )
+  })
+
+  it("does NOT advance the delta cursor when the workflow throws (bead sw8)", async () => {
+    const due = integ({
+      last_stock_sync_at: new Date(Date.now() - 700000),
+      last_stock_delta_cursor: "2026-07-15T00:00:00.000Z",
+      last_full_stock_sync_at: new Date(Date.now() - 60000),
+    })
+    const h = makeHarness({ integrations: [due] })
+    run.mockRejectedValueOnce(new Error("sync failed"))
+
+    await expect(ongoingStockSyncJob(h.container)).resolves.toBeUndefined()
+
+    // Only the finally's last_stock_sync_at stamp — never a cursor advance on failure.
+    expect(h.service.updateOngoingIntegrations).not.toHaveBeenCalledWith(
+      expect.objectContaining({ last_stock_delta_cursor: expect.anything() })
+    )
   })
 
   it("uses the default interval when stock_sync_interval is null", async () => {
