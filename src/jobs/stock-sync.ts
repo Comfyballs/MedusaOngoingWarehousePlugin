@@ -39,6 +39,14 @@ type OngoingServiceLike = {
 // self-heals. Between full sweeps, ticks pull only stockInfoChangedFrom deltas (bead sw8).
 const FULL_SWEEP_INTERVAL_MS = 6 * 60 * 60 * 1000 // 6 hours
 
+// stockInfoChangedFrom is evaluated by Ongoing against OUR timestamp, but the change times
+// it compares against are stamped by ONGOING's clock. If our host clock runs ahead of
+// Ongoing's, a change could fall just before the cursor we store and be skipped until the
+// next full sweep. Rewinding the stored cursor by this buffer creates deliberate overlap
+// that absorbs clock skew + in-flight latency; the reconcile is idempotent, so re-reading a
+// few already-seen articles each tick is harmless (PR#135 review).
+const DELTA_CURSOR_OVERLAP_MS = 120 * 1000 // 2 minutes
+
 type Logger = {
   info: (message: string) => void
   warn?: (message: string) => void
@@ -102,10 +110,12 @@ async function syncIntegration(
   }
 
   const doFullSweep = isFullSweepDue(integration, now)
-  // Anchor the next delta cursor to the instant BEFORE the fetch so any stock change during
-  // the sync is re-caught next tick (at-least-once; reconcile is idempotent). Advanced only
-  // on success below — never in the finally — so a failed tick can't skip changes.
-  const syncStartedAt = new Date(now).toISOString()
+  // Anchor the next delta cursor to just BEFORE the fetch, minus an overlap buffer for clock
+  // skew (see DELTA_CURSOR_OVERLAP_MS), so any stock change during the sync — or stamped by
+  // Ongoing's slightly-behind clock — is re-caught next tick (at-least-once; reconcile is
+  // idempotent). Advanced only on success below — never in the finally — so a failed tick
+  // can't skip changes.
+  const syncStartedAt = new Date(now - DELTA_CURSOR_OVERLAP_MS).toISOString()
 
   try {
     const { goodsOwnerId } = service.getCredentials(integration.credential_key)

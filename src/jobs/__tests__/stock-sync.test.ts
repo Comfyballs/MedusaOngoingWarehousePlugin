@@ -163,6 +163,9 @@ describe("ongoing stock-sync job", () => {
     const cursorCall = calls.find((c) => c[0].last_stock_delta_cursor !== undefined)
     expect(cursorCall).toBeDefined()
     expect(cursorCall![0].last_full_stock_sync_at).toBeUndefined()
+    // Stored cursor is rewound by the ~2min overlap buffer to absorb clock skew (PR#135 review).
+    const storedCursor = Date.parse(cursorCall![0].last_stock_delta_cursor as string)
+    expect(Date.now() - storedCursor).toBeGreaterThanOrEqual(110_000)
   })
 
   it("runs a full sweep and advances the full-sweep clock when the last full sweep is stale (bead sw8)", async () => {
