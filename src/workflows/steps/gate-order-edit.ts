@@ -87,7 +87,7 @@ export function decideOrderEditGate(args: {
 }
 
 export const gateOrderEditStep = createStep(
-  // eslint-disable-next-line @medusajs/step-id-kebab-case -- `ongoing-` prefix namespaces plugin step ids in the host app's shared workflow registry to avoid collisions; the id is also a persisted idempotency/retry key and must not be renamed.
+  // eslint-disable-next-line @medusajs/step-id-kebab-case -- the rule wants the id to match the exported step's kebab-cased name; we keep the explicit `ongoing-` prefix so this plugin's steps stay greppable in the host app's combined workflow-execution logs. Renaming is safe (these steps use no async/compensation/persisted transaction state), but the prefix is kept intentionally.
   "ongoing-gate-order-edit",
   async (input: GateInput, { container }) => {
     const service = container.resolve(ONGOING_MODULE) as {
