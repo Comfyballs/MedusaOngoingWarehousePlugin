@@ -331,10 +331,8 @@ function OngoingSyncsTable() {
         <QueryStateView
           isLoading={false}
           isError={isError}
-          isEmpty={false}
           error={error}
           errorMessage="Failed to load syncs"
-          emptyMessage=""
         >
           <DataTable instance={table}>
             <DataTable.Table />

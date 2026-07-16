@@ -82,4 +82,27 @@ describe("assertValidOngoingCarrierConfig", () => {
   it("throws INVALID_DATA when transporter is not an object", () => {
     expect(() => assertValidOngoingCarrierConfig({ transporter: "DHL" })).toThrow(MedusaError)
   })
+
+  it("throws INVALID_DATA when a transporter code is present but not a non-empty string", () => {
+    expect(() =>
+      assertValidOngoingCarrierConfig({ transporter: { transporterCode: 123 } })
+    ).toThrow(MedusaError)
+    expect(() =>
+      assertValidOngoingCarrierConfig({ transporter: { transporterServiceCode: "  " } })
+    ).toThrow(MedusaError)
+  })
+
+  it("throws INVALID_DATA when paymentAdvanced is present but not a boolean", () => {
+    expect(() =>
+      assertValidOngoingCarrierConfig({ transporter: { paymentAdvanced: "yes" } })
+    ).toThrow(MedusaError)
+  })
+
+  it("accepts a fully-specified valid transporter", () => {
+    expect(() =>
+      assertValidOngoingCarrierConfig({
+        transporter: { transporterCode: "DHL", transporterServiceCode: "EXP", paymentAdvanced: true },
+      })
+    ).not.toThrow()
+  })
 })

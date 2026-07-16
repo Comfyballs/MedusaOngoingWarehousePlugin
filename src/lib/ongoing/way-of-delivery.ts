@@ -91,11 +91,34 @@ export function assertValidOngoingCarrierConfig(data: unknown): void {
     }
   }
 
-  if ("transporter" in d && d.transporter != null && typeof d.transporter !== "object") {
-    throw new MedusaError(
-      MedusaError.Types.INVALID_DATA,
-      `[ongoing] shipping option "transporter" must be an object with transporterCode / ` +
-        `transporterServiceCode / paymentAdvanced (got ${JSON.stringify(d.transporter)})`
-    )
+  if ("transporter" in d && d.transporter != null) {
+    const tr = d.transporter
+    if (typeof tr !== "object") {
+      throw new MedusaError(
+        MedusaError.Types.INVALID_DATA,
+        `[ongoing] shipping option "transporter" must be an object with transporterCode / ` +
+          `transporterServiceCode / paymentAdvanced (got ${JSON.stringify(tr)})`
+      )
+    }
+    const t = tr as Record<string, unknown>
+    // Match the way_of_delivery branch's strictness: a present code that isn't a
+    // non-empty string passes here but is silently dropped by the lenient
+    // extractOngoingCarrier at push time — catch it at config time instead.
+    for (const key of ["transporterCode", "transporterServiceCode"] as const) {
+      if (key in t && t[key] != null && !nonEmptyString(t[key])) {
+        throw new MedusaError(
+          MedusaError.Types.INVALID_DATA,
+          `[ongoing] shipping option "transporter.${key}" must be a non-empty string ` +
+            `(got ${JSON.stringify(t[key])})`
+        )
+      }
+    }
+    if ("paymentAdvanced" in t && t.paymentAdvanced != null && typeof t.paymentAdvanced !== "boolean") {
+      throw new MedusaError(
+        MedusaError.Types.INVALID_DATA,
+        `[ongoing] shipping option "transporter.paymentAdvanced" must be a boolean ` +
+          `(got ${JSON.stringify(t.paymentAdvanced)})`
+      )
+    }
   }
 }

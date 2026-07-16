@@ -48,10 +48,13 @@ export function useOngoingQuery<TData>(
 type QueryStateViewProps = {
   isLoading: boolean
   isError: boolean
-  isEmpty: boolean
+  // Optional: surfaces that delegate the empty state to a child (e.g. a DataTable
+  // with its own "no records" row) simply omit it.
+  isEmpty?: boolean
   error?: unknown
   errorMessage: string
-  emptyMessage: string
+  // Required only when isEmpty can be true.
+  emptyMessage?: string
   children: ReactNode
   // Padding wrapper for the loading/error/empty placeholders. Defaults to the
   // standard section padding used across the dashboard.
