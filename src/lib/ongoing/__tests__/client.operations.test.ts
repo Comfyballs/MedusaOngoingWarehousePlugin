@@ -77,6 +77,25 @@ describe("OngoingClient operations", () => {
     expect(url).not.toContain("articleNumbers=SKU-1,SKU-2")
   })
 
+  it("appends stockInfoChangedFrom for a delta sync (bead sw8)", async () => {
+    const fetchImpl = jest.fn().mockResolvedValue(json([]))
+    const client = new OngoingClient(creds, { fetchImpl })
+
+    await client.getInventory(undefined, "2026-07-15T00:00:00.000Z")
+
+    const [url] = fetchImpl.mock.calls[0]
+    expect(url).toContain("stockInfoChangedFrom=2026-07-15T00%3A00%3A00.000Z")
+  })
+
+  it("omits stockInfoChangedFrom for a full sweep (bead sw8)", async () => {
+    const fetchImpl = jest.fn().mockResolvedValue(json([]))
+    const client = new OngoingClient(creds, { fetchImpl })
+
+    await client.getInventory()
+
+    expect(fetchImpl.mock.calls[0][0]).not.toContain("stockInfoChangedFrom")
+  })
+
   it("maps order statuses from the wrapped GetOrderStatusesModel envelope", async () => {
     const fetchImpl = jest.fn().mockResolvedValue(
       json({

@@ -153,22 +153,25 @@ export class OngoingClient {
     return (raw?.orderStatuses ?? []).map(mapStatus)
   }
 
-  async getInventory(articleNumbers?: string[]): Promise<OngoingInventoryRow[]> {
+  async getInventory(articleNumbers?: string[], changedSince?: string): Promise<OngoingInventoryRow[]> {
     // Inventory comes from GET /api/v1/articles (inventoryInfo per GetArticleModel);
-    // the old /articles/inventory path does not exist in the spec. The filter param is
-    // `articleNumbers` (plural), not `articleNumber` (bead dtw). The spec declares it
-    // `style: form, explode: true`, so it must be serialized as repeated keys
-    // (`articleNumbers=A&articleNumbers=B`), NOT a comma-joined value — a CSV binds as a
-    // single array element on the server and would match no article.
-    const filter = articleNumbers?.length
-      ? articleNumbers.map((n) => `&articleNumbers=${encodeURIComponent(n)}`).join("")
-      : ""
+    // the old /articles/inventory path does not exist in the spec. `articleNumbers` (plural,
+    // not `articleNumber` — bead dtw) is declared style:form explode:true, so it must be
+    // serialized as repeated keys (`articleNumbers=A&articleNumbers=B`), NOT a comma-joined
+    // value — a CSV binds as a single array element server-side and matches no article
+    // (PR#133 review). `changedSince` maps to stockInfoChangedFrom for delta syncs — only
+    // articles whose stock changed since then (bead sw8); omitted → full catalogue sweep.
+    const filters =
+      (articleNumbers?.length
+        ? articleNumbers.map((n) => `&articleNumbers=${encodeURIComponent(n)}`).join("")
+        : "") +
+      (changedSince ? `&stockInfoChangedFrom=${encodeURIComponent(changedSince)}` : "")
     const rows = await this.paginateByCursor(
       (cursorFrom) =>
         this.request<any[]>(
           "GET",
           `/articles?goodsOwnerId=${this.creds.goodsOwnerId}` +
-            `&articleSystemIdFrom=${cursorFrom}&maxArticlesToGet=${ONGOING_PAGE_SIZE}${filter}`
+            `&articleSystemIdFrom=${cursorFrom}&maxArticlesToGet=${ONGOING_PAGE_SIZE}${filters}`
         ),
       (raw) => Number(raw?.articleSystemId)
     )

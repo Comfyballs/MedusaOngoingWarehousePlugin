@@ -202,6 +202,38 @@
           "enumItems": [],
           "mappedType": "datetime"
         },
+        "last_stock_delta_cursor": {
+          "name": "last_stock_delta_cursor",
+          "type": "text",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "text"
+        },
+        "last_full_stock_sync_at": {
+          "name": "last_full_stock_sync_at",
+          "type": "timestamptz",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": 6,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "datetime"
+        },
         "last_status_poll_at": {
           "name": "last_status_poll_at",
           "type": "timestamptz",
