@@ -44,7 +44,10 @@ function buildContainer({ putOrder, recordSync }: { putOrder: jest.Mock; recordS
   const service = {
     getIntegrationByLocation: jest.fn().mockResolvedValue({ id: "int_1", credential_key: "wh-a" }),
     getCredentials: jest.fn().mockReturnValue({ goodsOwnerId: 7 }),
-    getClient: jest.fn().mockReturnValue({ putOrder }),
+    getClient: jest.fn().mockReturnValue({
+      putOrder,
+      putArticle: jest.fn().mockResolvedValue({ articleSystemId: 1 }),
+    }),
     recordSync,
   }
   const container: any = createMedusaContainer()

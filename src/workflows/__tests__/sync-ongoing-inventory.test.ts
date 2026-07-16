@@ -28,9 +28,15 @@ describe("syncOngoingInventoryWorkflow", () => {
     // complete row set in a single call (pagination is internal to OngoingClient).
     const allRows = Array.from({ length: 51 }, (_, i) => makeRow(`SKU-${i}`))
     const getInventory = jest.fn().mockResolvedValue(allRows)
+    // Batched reconcile prefetches ALL items in one listInventoryItems call and
+    // ALL levels in one listInventoryLevels call, keyed by sku / inventory_item_id.
+    const allItems = allRows.map((r, i) => ({ id: `inv_${i}`, sku: r.articleNumber }))
+    const allLevels = allItems.map((it) =>
+      makeLevel({ id: `lvl_${it.id}`, inventory_item_id: it.id })
+    )
     const inventoryService = {
-      listInventoryItems: jest.fn().mockResolvedValue([{ id: "inv_1", sku: "SKU-0" }]),
-      listInventoryLevels: jest.fn().mockResolvedValue([makeLevel()]),
+      listInventoryItems: jest.fn().mockResolvedValue(allItems),
+      listInventoryLevels: jest.fn().mockResolvedValue(allLevels),
       listReservationItems: jest.fn().mockResolvedValue([]),
       updateInventoryLevels: jest.fn().mockResolvedValue(undefined),
     }
@@ -55,7 +61,7 @@ describe("syncOngoingInventoryWorkflow", () => {
       },
     })
 
-    // All 51 rows write because listInventoryItems always returns a match.
+    // All 51 rows write because each SKU prefetches a matching item + level.
     expect(result.written).toBe(51)
     expect(result.skipped).toBe(0)
     // Mode A: sellable=10, alloc=5, M_res=2 → 10 + min(2,5) = 12
@@ -64,7 +70,11 @@ describe("syncOngoingInventoryWorkflow", () => {
         expect.objectContaining({ stocked_quantity: 12, incoming_quantity: 3 }),
       ])
     )
-    expect(inventoryService.updateInventoryLevels).toHaveBeenCalledTimes(51)
+    // Batched: one prefetch each, and a single bulk write (51 < chunk size 100).
+    expect(inventoryService.listInventoryItems).toHaveBeenCalledTimes(1)
+    expect(inventoryService.listInventoryLevels).toHaveBeenCalledTimes(1)
+    expect(inventoryService.updateInventoryLevels).toHaveBeenCalledTimes(1)
+    expect(inventoryService.updateInventoryLevels.mock.calls[0][0]).toHaveLength(51)
     expect(getInventory).toHaveBeenCalledTimes(1)
   })
 

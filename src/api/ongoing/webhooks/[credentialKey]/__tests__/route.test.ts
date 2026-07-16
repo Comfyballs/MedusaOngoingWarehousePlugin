@@ -8,14 +8,28 @@ jest.mock("../dispatch-shipment", () => ({
   __esModule: true,
   dispatchVerifiedShipment: jest.fn().mockResolvedValue(undefined),
 }))
+jest.mock("../dispatch-status-refresh", () => ({
+  __esModule: true,
+  dispatchStatusRefresh: jest.fn().mockResolvedValue(undefined),
+}))
 
 import { POST } from "../route"
 import { dispatchVerifiedShipment as dispatchVerifiedShipmentImport } from "../dispatch-shipment"
+import { dispatchStatusRefresh as dispatchStatusRefreshImport } from "../dispatch-status-refresh"
 
 const dispatchVerifiedShipment =
   dispatchVerifiedShipmentImport as jest.MockedFunction<
     typeof dispatchVerifiedShipmentImport
   >
+const dispatchStatusRefresh =
+  dispatchStatusRefreshImport as jest.MockedFunction<
+    typeof dispatchStatusRefreshImport
+  >
+
+beforeEach(() => {
+  dispatchVerifiedShipment.mockClear()
+  dispatchStatusRefresh.mockClear()
+})
 
 const SECRET = "s3cret-token"
 const GOODS_OWNER = 42
@@ -137,7 +151,7 @@ describe("POST /ongoing/webhooks/:credentialKey", () => {
     expect(dispatchVerifiedShipment).not.toHaveBeenCalled()
   })
 
-  it("returns 200 no-op when the status is out of band (not in shipped_status_codes)", async () => {
+  it("returns 200 and refreshes latest_status_code when the status is out of band", async () => {
     const service = makeService({
       credentials: makeCreds(),
       integrations: [{ id: "int_1", shipped_status_codes: [320] }],
@@ -147,6 +161,28 @@ describe("POST /ongoing/webhooks/:credentialKey", () => {
     await POST(makeReq({ token: SECRET, body, service }), res)
     expect(res.sendStatus).toHaveBeenCalledWith(200)
     expect(dispatchVerifiedShipment).not.toHaveBeenCalled()
+    expect(dispatchStatusRefresh).toHaveBeenCalledTimes(1)
+    expect(dispatchStatusRefresh).toHaveBeenCalledWith(expect.anything(), {
+      payload: expect.objectContaining({
+        goodsOwnerId: GOODS_OWNER,
+        orderStatus: { number: 210, text: "Picking" },
+      }),
+      integrationId: "int_1",
+      credentialKey: "wh-1",
+    })
+  })
+
+  it("returns 200 no-op (no refresh) when no integration exists for the credential", async () => {
+    const service = makeService({
+      credentials: makeCreds(),
+      integrations: [],
+    })
+    const res = makeRes()
+    const body = { ...validBody(), orderStatus: { number: 210, text: "Picking" } }
+    await POST(makeReq({ token: SECRET, body, service }), res)
+    expect(res.sendStatus).toHaveBeenCalledWith(200)
+    expect(dispatchVerifiedShipment).not.toHaveBeenCalled()
+    expect(dispatchStatusRefresh).not.toHaveBeenCalled()
   })
 
   it("returns 200 and reaches the #36 seam for a valid, in-band webhook", async () => {
@@ -158,6 +194,7 @@ describe("POST /ongoing/webhooks/:credentialKey", () => {
     await POST(makeReq({ token: SECRET, service }), res)
     expect(res.sendStatus).toHaveBeenCalledWith(200)
     expect(dispatchVerifiedShipment).toHaveBeenCalledTimes(1)
+    expect(dispatchStatusRefresh).not.toHaveBeenCalled()
     expect(dispatchVerifiedShipment).toHaveBeenCalledWith(expect.anything(), {
       payload: expect.objectContaining({
         goodsOwnerId: GOODS_OWNER,

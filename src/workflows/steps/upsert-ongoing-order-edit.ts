@@ -7,7 +7,8 @@ import { classifyError } from "../../lib/ongoing/errors"
 import { reQueryFulfillmentOrder } from "../../lib/ongoing/re-query-fulfillment-order"
 import { resolveArticleNumber } from "../../lib/ongoing/resolve-article-number"
 import { mapOrderToPostOrderModel } from "../../lib/ongoing/order-mapper"
-import type { PostOrderModel } from "../../lib/ongoing/types"
+import { ensureArticlesExist } from "../../lib/ongoing/ensure-articles"
+import type { PostArticleModel, PostOrderModel } from "../../lib/ongoing/types"
 import type { GateDecision } from "./gate-order-edit"
 
 export type UpsertResult = {
@@ -37,6 +38,7 @@ export const upsertOngoingOrderEditHandler = async (
       getCredentials: (credentialKey: string) => { goodsOwnerId: number }
       getClient: (credentialKey: string) => {
         putOrder: (order: PostOrderModel) => Promise<{ ongoingOrderId: number }>
+        putArticle: (article: PostArticleModel) => Promise<{ articleSystemId?: number }>
       }
       updateOngoingOrderSyncs: (data: Record<string, unknown>) => Promise<unknown>
     }
@@ -67,6 +69,19 @@ export const upsertOngoingOrderEditHandler = async (
           quantity: item.quantity,
         }))
       )
+
+      // A line-item edit can introduce a new SKU; ensure the (possibly new) order
+      // SKUs exist as Ongoing articles before the re-PUT (R7), same as the initial
+      // push. Runs inside the try so a failure is recorded/retried by the ledger.
+      await ensureArticlesExist(
+        client,
+        goodsOwnerId,
+        lines.map((l, i) => ({
+          articleNumber: l.article_number,
+          articleName: result.items[i]?.title ?? l.article_number,
+        }))
+      )
+
       const model = mapOrderToPostOrderModel({
         goods_owner_id: goodsOwnerId,
         order_number: decision.ongoing_order_number as string,
@@ -75,6 +90,10 @@ export const upsertOngoingOrderEditHandler = async (
         currency_code: result.order.currency_code,
         email: result.order.email,
         shipping_address: result.order.shipping_address,
+        // Re-PUT is a full upsert — carry the carrier (R6) so an edit doesn't drop
+        // wayOfDelivery/transporter from the Ongoing order.
+        way_of_delivery: result.way_of_delivery ?? null,
+        transporter: result.transporter ?? null,
         lines,
       })
 

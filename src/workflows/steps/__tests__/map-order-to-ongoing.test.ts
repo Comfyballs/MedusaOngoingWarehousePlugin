@@ -64,6 +64,33 @@ describe("mapOrderToOngoingStep", () => {
     expect(output.model).toMatchObject({ orderNumber: "1001-ful1", goodsOwnerId: 7 })
   })
 
+  it("threads way_of_delivery/transporter from the queried order into MapOrderInput", async () => {
+    ;(buildOngoingOrderNumber as jest.Mock).mockReturnValue("1001-ful1")
+    ;(mapOrderToPostOrderModel as jest.Mock).mockReturnValue({
+      orderNumber: "1001-ful1", goodsOwnerId: 7, consignee: {}, orderLines: [],
+    })
+    const withCarrier = {
+      ...queried,
+      way_of_delivery: { code: "dhl", name: "DHL" },
+      transporter: { transporterCode: "DHL" },
+    }
+    await run({ queried: withCarrier, goods_owner_id: 7 })
+    const mapInput = (mapOrderToPostOrderModel as jest.Mock).mock.calls[0][0]
+    expect(mapInput.way_of_delivery).toEqual({ code: "dhl", name: "DHL" })
+    expect(mapInput.transporter).toEqual({ transporterCode: "DHL" })
+  })
+
+  it("passes null carrier fields when the queried order has none", async () => {
+    ;(buildOngoingOrderNumber as jest.Mock).mockReturnValue("1001-ful1")
+    ;(mapOrderToPostOrderModel as jest.Mock).mockReturnValue({
+      orderNumber: "1001-ful1", goodsOwnerId: 7, consignee: {}, orderLines: [],
+    })
+    await run({ queried, goods_owner_id: 7 })
+    const mapInput = (mapOrderToPostOrderModel as jest.Mock).mock.calls[0][0]
+    expect(mapInput.way_of_delivery).toBeNull()
+    expect(mapInput.transporter).toBeNull()
+  })
+
   it("propagates a terminal mapper error", async () => {
     ;(buildOngoingOrderNumber as jest.Mock).mockReturnValue("1001-ful1")
     ;(mapOrderToPostOrderModel as jest.Mock).mockImplementation(() => {

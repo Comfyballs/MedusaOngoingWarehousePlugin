@@ -27,6 +27,7 @@ jest.mock("../../lib/ongoing/order-mapper", () => ({
 }))
 
 const putOrder = jest.fn().mockResolvedValue({ ongoingOrderId: 999 })
+const putArticle = jest.fn().mockResolvedValue({ articleSystemId: 1 })
 
 const makeService = (overrides: Record<string, unknown> = {}) => ({
   listOngoingOrderSyncs: jest.fn().mockResolvedValue([
@@ -45,7 +46,7 @@ const makeService = (overrides: Record<string, unknown> = {}) => ({
   // goods_owner_id lives on the credentials (in-memory plugin options), not the
   // integration DB row — sourced the same way #26 does.
   getCredentials: jest.fn().mockReturnValue({ goodsOwnerId: 7 }),
-  getClient: jest.fn().mockReturnValue({ putOrder }),
+  getClient: jest.fn().mockReturnValue({ putOrder, putArticle }),
   updateOngoingOrderSyncs: jest.fn().mockResolvedValue(undefined),
   ...overrides,
 })
@@ -126,7 +127,7 @@ describe("syncOrderEditToOngoing workflow", () => {
 
   it("records an error row and rethrows when putOrder fails (spec §6 error capture)", async () => {
     const failingPut = jest.fn().mockRejectedValue(new OngoingApiError("boom", { kind: "retryable" }))
-    const service = makeService({ getClient: jest.fn().mockReturnValue({ putOrder: failingPut }) })
+    const service = makeService({ getClient: jest.fn().mockReturnValue({ putOrder: failingPut, putArticle }) })
 
     // The orchestrator's run() returns a thenable that rejects on step failure; the
     // jest `.rejects` matcher mis-detects it, so assert the throw via try/catch.
@@ -159,7 +160,7 @@ describe("syncOrderEditToOngoing workflow", () => {
     // A raw network error (ECONNRESET / timeout / DNS / fetch TypeError) is NOT an
     // OngoingApiError; it must be recorded retryable, not dead-lettered as terminal.
     const failingPut = jest.fn().mockRejectedValue(new TypeError("fetch failed"))
-    const service = makeService({ getClient: jest.fn().mockReturnValue({ putOrder: failingPut }) })
+    const service = makeService({ getClient: jest.fn().mockReturnValue({ putOrder: failingPut, putArticle }) })
 
     let thrown: Error | undefined
     try {

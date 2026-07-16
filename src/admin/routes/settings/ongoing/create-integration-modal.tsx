@@ -35,13 +35,21 @@ export function CreateIntegrationModal({ open, onClose }: Props) {
   // Modal-only data (credential keys, stock locations) — gated on the modal
   // being open, per the separate display/modal query pattern. Neither has a
   // display-query counterpart on this page.
-  const { data: credentialKeysData } = useQuery({
+  const {
+    data: credentialKeysData,
+    isLoading: credentialKeysLoading,
+    isError: credentialKeysError,
+  } = useQuery({
     queryFn: () => sdk.client.fetch<{ credential_keys: string[] }>("/admin/ongoing/credential-keys"),
     queryKey: ["ongoing-credential-keys"],
     enabled: open,
   })
 
-  const { data: stockLocationsData } = useQuery({
+  const {
+    data: stockLocationsData,
+    isLoading: stockLocationsLoading,
+    isError: stockLocationsError,
+  } = useQuery({
     queryFn: () => sdk.admin.stockLocation.list({ limit: 100 }),
     queryKey: ["ongoing-stock-locations-for-create"],
     enabled: open,
@@ -117,7 +125,11 @@ export function CreateIntegrationModal({ open, onClose }: Props) {
               setForm={setForm}
               isEdit={false}
               credentialKeysData={credentialKeysData}
+              credentialKeysLoading={credentialKeysLoading}
+              credentialKeysError={credentialKeysError}
               stockLocationsData={stockLocationsData}
+              stockLocationsLoading={stockLocationsLoading}
+              stockLocationsError={stockLocationsError}
               testConnection={testConnection}
               testResult={testResult}
               error={error}

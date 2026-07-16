@@ -33,6 +33,13 @@ export const pushOrderToOngoing = createWorkflow(
         goods_owner_id: d.ctx.goods_owner_id,
         medusa_order_id: d.queried.order.id,
         medusa_fulfillment_id: d.queried.fulfillment_id,
+        // ProcessArticle inputs (R7): each resolved SKU + its line title as the
+        // article name (resolvedLines is index-aligned with items). Deduped in the
+        // ensure step. Falls back to the article number when a title is absent.
+        articles: d.queried.resolvedLines.map((l, i) => ({
+          articleNumber: l.article_number,
+          articleName: d.queried.items[i]?.title ?? l.article_number,
+        })),
       }))
     )
 

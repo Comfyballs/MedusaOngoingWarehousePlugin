@@ -120,6 +120,19 @@ export interface PostOrderModel {
   telephoneNotification?: PostOrderNotification
 }
 
+// --- Ongoing PostArticleModel (ProcessArticle body, PUT /api/v1/articles) ---
+// Step 1 of Ongoing's webshop flow. Upsert by articleNumber. Minimal shape;
+// extend against the ProcessArticle schema (verify live per ym3) if richer
+// article data (dimensions, extra codes) is synced later.
+export interface PostArticleModel {
+  goodsOwnerId: number
+  articleNumber: string
+  articleName: string
+  barCode?: string
+  productCode?: string
+  weight?: number
+}
+
 // --- Mapper input (Medusa-shaped subset hydrated by the push/edit workflows) ---
 
 export interface MapOrderInputAddress {
@@ -155,6 +168,12 @@ export interface MapOrderInput {
   email?: string | null
   shipping_address?: MapOrderInputAddress | null
   lines: MapOrderInputLine[]
+  // Optional Ongoing carrier assignment, resolved by the CALLER from the
+  // fulfillment's shipping_option.data (see lib/ongoing/way-of-delivery.ts). A
+  // missing value maps to no wayOfDelivery/transporter — warehouse staff pick the
+  // carrier manually.
+  way_of_delivery?: CodeNamePair | null
+  transporter?: PostOrderTransporter | null
 }
 
 // --- Inbound webhook payload (Ongoing -> POST /ongoing/webhooks/:credentialKey) ---

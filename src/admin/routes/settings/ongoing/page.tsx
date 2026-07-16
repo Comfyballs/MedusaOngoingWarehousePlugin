@@ -1,6 +1,6 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { useState } from "react"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useQueryClient } from "@tanstack/react-query"
 import {
   Container,
   Heading,
@@ -15,6 +15,7 @@ import {
 } from "@medusajs/ui"
 import { EllipsisHorizontal, PencilSquare, Plus, Trash } from "@medusajs/icons"
 import { sdk } from "../../../lib/sdk"
+import { useOngoingQuery, QueryStateView } from "../../../lib/use-ongoing-query"
 import { CreateIntegrationModal } from "./create-integration-modal"
 import { EditIntegrationDrawer, type OngoingIntegration } from "./edit-integration-drawer"
 
@@ -25,10 +26,13 @@ const IntegrationsSettingsPage = () => {
   const prompt = usePrompt()
 
   // Display query — loads on mount, no `enabled` gate.
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, isEmpty, error } = useOngoingQuery<{
+    integrations: OngoingIntegration[]
+  }>({
     queryFn: () =>
       sdk.client.fetch<{ integrations: OngoingIntegration[] }>("/admin/ongoing/integrations"),
     queryKey: ["ongoing-integrations"],
+    isEmpty: (d) => (d.integrations ?? []).length === 0,
   })
 
   const handleDelete = async (integration: OngoingIntegration) => {
@@ -71,11 +75,14 @@ const IntegrationsSettingsPage = () => {
         </Button>
       </div>
 
-      {isLoading ? (
-        <div className="px-6 py-4">
-          <Text size="small">Loading...</Text>
-        </div>
-      ) : (
+      <QueryStateView
+        isLoading={isLoading}
+        isError={isError}
+        isEmpty={isEmpty}
+        error={error}
+        errorMessage="Failed to load integrations"
+        emptyMessage="No Ongoing integrations configured yet."
+      >
         <Table>
           <Table.Header>
             <Table.Row>
@@ -124,7 +131,7 @@ const IntegrationsSettingsPage = () => {
             ))}
           </Table.Body>
         </Table>
-      )}
+      </QueryStateView>
 
       <CreateIntegrationModal open={createOpen} onClose={() => setCreateOpen(false)} />
       <EditIntegrationDrawer integration={editing} onClose={() => setEditing(null)} />

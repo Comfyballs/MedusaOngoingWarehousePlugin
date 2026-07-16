@@ -13,6 +13,7 @@ import {
   ONGOING_STANDARD_OPTION_ID,
 } from "./constants"
 import { cancelOngoingOrderWorkflow, pushOrderToOngoing } from "../../workflows"
+import { assertValidOngoingCarrierConfig } from "../../lib/ongoing/way-of-delivery"
 
 /**
  * Shape `createFulfillment` (#21) stashes as the fulfillment `data`. Medusa hands
@@ -79,15 +80,21 @@ class OngoingFulfillmentProviderService extends AbstractFulfillmentProviderServi
   }
 
   /**
-   * Return value is stored as the shipping method's `data`. For now we pass the
-   * caller's data through unchanged (mirrors the manual provider). Real
-   * way-of-delivery resolution happens at order-payload time in a later milestone.
+   * Return value is stored as the shipping method's `data` (passed through
+   * unchanged, mirroring the manual provider). This is also the config-time seam
+   * (R6) that validates the optional Ongoing carrier config an admin sets on the
+   * shipping option's `data` (`way_of_delivery` / `transporter`): a malformed
+   * value fails here at shipping-option creation instead of being silently
+   * dropped at order-push time. The value actually mapped into the Ongoing order
+   * is read at push time from the persisted `shipping_option.data`
+   * (query-fulfillment-order → order-mapper), which is durable across retries.
    */
   async validateFulfillmentData(
-    _optionData: Record<string, unknown>,
+    optionData: Record<string, unknown>,
     data: Record<string, unknown>,
     _context: ValidateFulfillmentDataContext
   ): Promise<Record<string, unknown>> {
+    assertValidOngoingCarrierConfig(optionData)
     return data
   }
 
