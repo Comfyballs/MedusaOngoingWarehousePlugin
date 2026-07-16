@@ -8,6 +8,7 @@ type Input = {
 }
 
 export const upsertIntegrationLocationStep = createStep(
+  // eslint-disable-next-line @medusajs/step-id-kebab-case -- the rule wants the id to match the exported step's kebab-cased name; we keep the explicit `ongoing-` prefix so this plugin's steps stay greppable in the host app's combined workflow-execution logs. Renaming is safe (these steps use no async/compensation/persisted transaction state), but the prefix is kept intentionally.
   "ongoing-upsert-integration-location",
   async (input: Input, { container }) => {
     const ongoing = container.resolve<OngoingModuleService>(ONGOING_MODULE)

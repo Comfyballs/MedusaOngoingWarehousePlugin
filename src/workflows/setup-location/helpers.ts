@@ -1,3 +1,4 @@
+import { MedusaError } from "@medusajs/framework/utils"
 import {
   ONGOING_SHIPPING_OPTION_NAME,
   ONGOING_SEED_PRICE_AMOUNT,
@@ -40,7 +41,8 @@ export function decideReuse(
 export function extractFulfillmentSetId(location: QueriedLocation): string {
   const sets = location.fulfillment_sets || []
   if (sets.length === 0) {
-    throw new Error(
+    throw new MedusaError(
+      MedusaError.Types.UNEXPECTED_STATE,
       `[ongoing] expected a fulfillment set on location "${location.id}" after creation, found none`
     )
   }

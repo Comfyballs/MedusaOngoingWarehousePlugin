@@ -1,6 +1,6 @@
 import { SubscriberArgs, type SubscriberConfig } from "@medusajs/framework"
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
-import type { IEventBusModuleService } from "@medusajs/types"
+import type { IEventBusModuleService } from "@medusajs/framework/types"
 import { ONGOING_MODULE } from "../modules/ongoing"
 import { syncOrderEditToOngoing } from "../workflows/sync-order-edit-to-ongoing"
 import { markOrderSyncEditBlockedWorkflow } from "../workflows/mark-order-sync-edit-blocked"
