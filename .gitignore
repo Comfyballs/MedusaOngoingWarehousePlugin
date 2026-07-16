@@ -1,5 +1,7 @@
 /dist
 .env
+# Live integration-test secrets (Ongoing sandbox creds). The *.example is committed.
+.env.integration
 .DS_Store
 /uploads
 /node_modules
