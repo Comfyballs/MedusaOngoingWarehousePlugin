@@ -7,6 +7,7 @@ import type {
   WebhookOrderPayload,
 } from "../../../../lib/ongoing/types"
 import { dispatchVerifiedShipment } from "./dispatch-shipment"
+import { dispatchStatusRefresh } from "./dispatch-status-refresh"
 
 // Timing-safe equality. timingSafeEqual throws on unequal-length buffers, so we
 // guard byteLength first; an early length-difference return is acceptable here
@@ -95,16 +96,35 @@ export async function POST(
     return
   }
 
-  // --- Status gate: only in-band statuses proceed; everything else acks 200 ---
+  // --- Status gate: in-band (shipped) statuses run the shipment-sync seam;
+  // every other status refreshes latest_status_code so edit/cancel gating is
+  // near-real-time rather than poll-interval-stale (R9). Both ack 200.
+  //
+  // NOTE: the value of the out-of-band branch depends on the webhook being
+  // registered in Ongoing for ALL selected status changes, not shipped-only —
+  // Ongoing order webhooks fire on any selected status change
+  // (https://developer.ongoingwarehouse.com/webhook-order). Register the webhook
+  // for the full active-status range the poll job covers.
   const [integration] = await ongoing.listOngoingIntegrations({
     credential_key: credentialKey,
   })
-  const shippedCodes = (integration?.shipped_status_codes ?? []) as number[]
-  if (!integration || !shippedCodes.includes(payload.orderStatus.number)) {
+
+  if (!integration) {
     logger.debug(
-      `[ongoing] webhook: status ${payload.orderStatus.number} not in ` +
-        `shipped_status_codes for "${credentialKey}"; acknowledging no-op`
+      `[ongoing] webhook: no integration for "${credentialKey}"; acknowledging no-op`
     )
+    res.sendStatus(200)
+    return
+  }
+
+  const shippedCodes = (integration.shipped_status_codes ?? []) as number[]
+  if (!shippedCodes.includes(payload.orderStatus.number)) {
+    // Out-of-band status: refresh the sync row's status, then ack 200.
+    await dispatchStatusRefresh(req.scope, {
+      payload,
+      integrationId: integration.id,
+      credentialKey,
+    })
     res.sendStatus(200)
     return
   }

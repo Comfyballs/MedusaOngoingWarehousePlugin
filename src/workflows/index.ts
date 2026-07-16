@@ -37,3 +37,8 @@ export type {
 } from "./steps/retry-ongoing-syncs"
 export { flagOrphanedOrderSyncsWorkflow } from "./flag-orphaned-order-syncs"
 export type { FlagOrphanedOrderSyncsOutput } from "./steps/flag-orphaned-order-syncs"
+export { refreshOngoingOrderStatusWorkflow } from "./refresh-ongoing-order-status"
+export type {
+  RefreshOrderSyncStatusInput,
+  RefreshOrderSyncStatusOutput,
+} from "./steps/refresh-order-sync-status"
