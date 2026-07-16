@@ -1,4 +1,5 @@
 import { OngoingApiError, classifyHttpStatus, classifyError } from "./errors"
+import { nodeHttpsFetch } from "./http-transport"
 import {
   OngoingInventoryRowResponseSchema,
   OngoingTrackedOrderResponseSchema,
@@ -46,7 +47,10 @@ export class OngoingClient {
     this.throttle = new Throttle(opts.concurrency ?? DEFAULT_CONCURRENCY)
     this.maxRetries = opts.maxRetries ?? 3
     this.timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS
-    this.fetchImpl = opts.fetchImpl ?? fetch
+    // Default to the Node http/https transport, NOT global fetch: Ongoing's server 500s
+    // on undici fetch's request signature (see http-transport.ts / bead 9sp). Tests still
+    // inject their own fetchImpl.
+    this.fetchImpl = opts.fetchImpl ?? nodeHttpsFetch
     this.sleep = opts.sleep ?? defaultSleep
   }
 

@@ -1,5 +1,7 @@
 /dist
 .env
+# Live integration-test secrets (Ongoing sandbox creds). The *.example is committed.
+.env.integration
 .DS_Store
 /uploads
 /node_modules
@@ -36,3 +38,6 @@ build
 *.db
 .beads-credential-key
 .beads/proxieddb/
+
+# Local superpowers uninstall backups
+.superpowers-uninstall-backup-*.tar.gz
