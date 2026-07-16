@@ -15,6 +15,7 @@ type TrackedOrder = {
   statusNumber: number
   statusText: string
   trackingNumbers: string[]
+  tracking?: { number: string; url?: string }[]
 }
 
 type Integration = {
@@ -125,7 +126,7 @@ describe("ongoing status-poll job", () => {
     ]
     const orders: TrackedOrder[] = [
       { ongoingOrderId: 1, orderNumber: "1001-aaa", statusNumber: 200, statusText: "Open", trackingNumbers: [] },
-      { ongoingOrderId: 2, orderNumber: "1001-bbb", statusNumber: 400, statusText: "Sent", trackingNumbers: ["T1", "T2"] },
+      { ongoingOrderId: 2, orderNumber: "1001-bbb", statusNumber: 400, statusText: "Sent", trackingNumbers: ["T1", "T2"], tracking: [{ number: "T1", url: "https://t/1" }, { number: "T2" }] },
       { ongoingOrderId: 3, orderNumber: "1001-ccc", statusNumber: 400, statusText: "Sent", trackingNumbers: ["T3"] },
       { ongoingOrderId: 4, orderNumber: "1001-ddd", statusNumber: 400, statusText: "Sent", trackingNumbers: ["T4"] },
       { ongoingOrderId: 9, orderNumber: "9999-zzz", statusNumber: 400, statusText: "Sent", trackingNumbers: ["T9"] },
@@ -163,6 +164,8 @@ describe("ongoing status-poll job", () => {
         status_code: 400,
         status_text: "Sent",
         tracking_numbers: ["T1", "T2"],
+        // Enriched tracking (waybill + URL) now flows to the shipment workflow (bead 5vu).
+        tracking: [{ number: "T1", url: "https://t/1" }, { number: "T2" }],
       },
     })
 

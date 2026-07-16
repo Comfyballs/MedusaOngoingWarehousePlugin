@@ -20,7 +20,25 @@ describe("mapWebhookPayloadToShipmentInput", () => {
       status_code: 200,
       status_text: "",
       tracking_numbers: ["WB-1", "WB-2"],
+      tracking: [
+        { number: "WB-1", url: undefined },
+        { number: "WB-2", url: undefined },
+      ],
     })
+  })
+
+  it("carries trackingUrl through the structured tracking pairs (bead 5vu)", () => {
+    const payload: WebhookShipmentSource = {
+      goodsOwnerOrderId: "1001-abc",
+      orderStatus: { number: 200 },
+      tracking: [
+        { waybill: "WB-1", trackingUrl: "https://carrier/track/WB-1", isReturn: false },
+        { waybill: "WB-RET", trackingUrl: "https://carrier/track/ret", isReturn: true },
+      ],
+    }
+    expect(mapWebhookPayloadToShipmentInput(payload).tracking).toEqual([
+      { number: "WB-1", url: "https://carrier/track/WB-1" },
+    ])
   })
 
   it("always sets status_text to '' (webhook payload has no status text)", () => {

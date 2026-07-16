@@ -3,39 +3,41 @@ import {
   OngoingTrackedOrderResponseSchema,
 } from "../schemas"
 
-describe("OngoingInventoryRowResponseSchema", () => {
-  it("accepts a fully populated inventory row", () => {
+// Shapes below mirror Ongoing OpenAPI v57 (GetArticleModel / GetOrderModel). The prior
+// `{ article, totalItems }` / `parcelTracking.code` shapes came from endpoints/fields
+// that don't exist in the spec (beads dtw, 5vu).
+describe("OngoingInventoryRowResponseSchema (GetArticleModel subset)", () => {
+  it("accepts a fully populated article with inventoryInfo", () => {
     const raw = {
-      article: { articleNumber: "SKU-1", articleSystemId: 42 },
-      totalItems: {
-        NumberOfItemsDecimal: 10,
-        AllocatedNumberOfItems: 2,
-        SellableNumberOfItems: 8,
-        ToReceiveNumberOfItems: 5,
+      articleNumber: "SKU-1",
+      articleSystemId: 42,
+      inventoryInfo: {
+        numberOfItems: 10,
+        allocatedNumberOfItems: 2,
+        sellableNumberOfItems: 8,
+        toReceiveNumberOfItems: 5,
       },
     }
-    const parsed = OngoingInventoryRowResponseSchema.safeParse(raw)
-    expect(parsed.success).toBe(true)
-  })
-
-  it("accepts a row with omitted optional counts (defaults to zeros downstream)", () => {
-    const raw = { article: { articleNumber: "SKU-1", articleSystemId: 42 }, totalItems: {} }
     expect(OngoingInventoryRowResponseSchema.safeParse(raw).success).toBe(true)
   })
 
-  it("accepts a row with totalItems omitted entirely", () => {
-    const raw = { article: { articleNumber: "SKU-1", articleSystemId: 42 } }
+  it("accepts an article with omitted optional counts (defaults to zeros downstream)", () => {
+    const raw = { articleNumber: "SKU-1", articleSystemId: 42, inventoryInfo: {} }
     expect(OngoingInventoryRowResponseSchema.safeParse(raw).success).toBe(true)
   })
 
-  it("rejects a row where article is omitted entirely", () => {
-    const raw = { totalItems: { NumberOfItemsDecimal: 1 } }
-    const parsed = OngoingInventoryRowResponseSchema.safeParse(raw)
-    expect(parsed.success).toBe(false)
+  it("accepts an article with inventoryInfo omitted entirely", () => {
+    const raw = { articleNumber: "SKU-1", articleSystemId: 42 }
+    expect(OngoingInventoryRowResponseSchema.safeParse(raw).success).toBe(true)
   })
 
-  it("rejects a row where article.articleNumber is not a string", () => {
-    const raw = { article: { articleNumber: 42, articleSystemId: 1 }, totalItems: {} }
+  it("rejects an article missing articleNumber", () => {
+    const raw = { articleSystemId: 42, inventoryInfo: {} }
+    expect(OngoingInventoryRowResponseSchema.safeParse(raw).success).toBe(false)
+  })
+
+  it("rejects an article whose articleSystemId is not a number", () => {
+    const raw = { articleNumber: "SKU-1", articleSystemId: "42", inventoryInfo: {} }
     expect(OngoingInventoryRowResponseSchema.safeParse(raw).success).toBe(false)
   })
 
@@ -44,20 +46,21 @@ describe("OngoingInventoryRowResponseSchema", () => {
   })
 })
 
-describe("OngoingTrackedOrderResponseSchema", () => {
-  it("accepts a fully populated tracked order", () => {
+describe("OngoingTrackedOrderResponseSchema (GetOrderModel subset)", () => {
+  it("accepts an order with parcel-level and order-level tracking", () => {
     const raw = {
       orderInfo: {
         orderId: 100,
         orderNumber: "ORD-1",
         orderStatus: { number: 300, text: "Sent" },
       },
-      parcels: [{ parcelTracking: { code: "ABC" } }, { trackingNumber: "XYZ" }],
+      parcels: [{ tracking: { waybill: "WB-1", trackingUrl: "https://t/1" } }],
+      tracking: [{ waybill: "WB-2", trackingUrl: "https://t/2" }],
     }
     expect(OngoingTrackedOrderResponseSchema.safeParse(raw).success).toBe(true)
   })
 
-  it("accepts an order with parcels omitted", () => {
+  it("accepts an order with parcels and tracking omitted", () => {
     const raw = {
       orderInfo: {
         orderId: 100,

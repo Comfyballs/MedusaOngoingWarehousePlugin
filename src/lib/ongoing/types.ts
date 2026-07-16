@@ -28,9 +28,11 @@ export interface OngoingOrderStatus {
   text: string
 }
 
-export interface OngoingParcelTracking {
-  code?: string
-  carrier?: string
+// A single shipment tracking reference (waybill + optional carrier tracking URL),
+// as extracted from an Ongoing order's parcels[].tracking and top-level tracking[]
+// (OpenAPI v57: GetOrderParcelTracking / GetOrderTracking { waybill, trackingUrl }).
+export interface OngoingTrackingRef {
+  number: string
   url?: string
 }
 
@@ -39,7 +41,10 @@ export interface OngoingTrackedOrder {
   orderNumber: string
   statusNumber: number
   statusText: string
+  // Waybills only, kept for existing consumers (logging / SHIPMENT_APPLIED event).
   trackingNumbers: string[]
+  // Waybill + trackingUrl pairs, so shipment labels can carry the real carrier URL.
+  tracking: OngoingTrackingRef[]
 }
 
 // --- Ongoing PostOrderModel (ProcessOrder body, OpenAPI v57) ---
