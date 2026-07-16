@@ -30,6 +30,12 @@ class OngoingModuleService extends MedusaService({
   OngoingOrderSync,
 }) {
   protected readonly options_: OngoingPluginOptions
+  // One OngoingClient (hence one Throttle) per credential_key, cached for the life of
+  // this singleton module service. Ongoing processes calls sequentially per goods owner,
+  // so a fresh client per getClient() call (each with its own throttle) left process-wide
+  // concurrency toward one goods owner effectively unbounded across the cron jobs, retry
+  // sweeps and webhook workflows (bead 4s4).
+  private readonly clients_ = new Map<string, OngoingClient>()
 
   // Medusa injects (container, moduleOptions) into the module service constructor.
   constructor(_: unknown, options: OngoingPluginOptions) {
@@ -52,13 +58,20 @@ class OngoingModuleService extends MedusaService({
     return found
   }
 
-  // Pure synchronous factory (constructs a client from in-memory config) — see
-  // getCredentials above for why this is intentionally not async.
+  // Pure synchronous factory/cache (constructs a client from in-memory config, then
+  // reuses it) — see getCredentials above for why this is intentionally not async. The
+  // shared client means one Throttle governs all concurrent calls to a given goods owner.
   // eslint-disable-next-line @medusajs/service-methods-must-be-async
   getClient(credentialKey: string): OngoingClient {
-    return new OngoingClient(this.getCredentials(credentialKey), {
-      concurrency: this.options_.rateLimitConcurrency ?? 2,
+    const cached = this.clients_.get(credentialKey)
+    if (cached) {
+      return cached
+    }
+    const client = new OngoingClient(this.getCredentials(credentialKey), {
+      concurrency: this.options_.rateLimitConcurrency ?? 1,
     })
+    this.clients_.set(credentialKey, client)
+    return client
   }
 
   // Pure synchronous config accessor (no I/O) — same rationale as getCredentials

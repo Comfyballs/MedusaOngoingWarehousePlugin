@@ -14,13 +14,18 @@ export type SyncOngoingInventoryInput = {
   // contract (#38) so all integration fields are co-located on the input type.
   goods_owner_id: number
   stock_reconcile_mode: "sellable_plus_reserved" | "precise" | "onhand"
+  // ISO timestamp for a delta sync (stockInfoChangedFrom); null → full sweep (bead sw8).
+  changed_since?: string | null
 }
 
 export const syncOngoingInventoryWorkflow = createWorkflow(
   "sync-ongoing-inventory",
   function (input: SyncOngoingInventoryInput) {
     const rows = fetchOngoingInventoryStep(
-      transform({ input }, (data) => ({ credential_key: data.input.credential_key }))
+      transform({ input }, (data) => ({
+        credential_key: data.input.credential_key,
+        changed_since: data.input.changed_since,
+      }))
     )
 
     const result = reconcileInventoryLevelsStep(

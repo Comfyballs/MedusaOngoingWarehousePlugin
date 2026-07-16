@@ -49,6 +49,33 @@ describe("applyOrderShipmentStep", () => {
     expect(service.updateOngoingOrderSyncs).not.toHaveBeenCalled()
   })
 
+  it("builds labels from the enriched tracking pairs, carrying the carrier URL (bead 5vu)", async () => {
+    run.mockResolvedValue({ result: undefined })
+    const service = makeService()
+    await invoke(
+      {
+        ...baseInput,
+        tracking: [
+          { number: "TRK1", url: "https://carrier/track/TRK1" },
+          { number: "TRK2" },
+        ],
+      },
+      service
+    )
+    expect(run).toHaveBeenCalledWith({
+      input: {
+        order_id: "order_1",
+        fulfillment_id: "ful_1",
+        items: [],
+        labels: [
+          { tracking_number: "TRK1", tracking_url: "https://carrier/track/TRK1", label_url: "" },
+          { tracking_number: "TRK2", tracking_url: "", label_url: "" },
+        ],
+        no_notification: false,
+      },
+    })
+  })
+
   it("swallows the already-created MedusaError as idempotent success without writing an error row", async () => {
     run.mockRejectedValue(
       new MedusaError(MedusaError.Types.NOT_ALLOWED, "Shipment has already been created")

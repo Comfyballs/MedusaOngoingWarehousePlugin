@@ -9,6 +9,7 @@ import type {
   OngoingInventoryRow,
   OngoingOrderStatus,
   OngoingTrackedOrder,
+  OngoingTrackingRef,
   PostArticleModel,
   PostOrderModel,
 } from "./types"
@@ -16,24 +17,35 @@ import type {
 type ClientOpts = {
   concurrency?: number
   maxRetries?: number
+  timeoutMs?: number
   fetchImpl?: typeof fetch
   sleep?: (ms: number) => Promise<void>
 }
 
 const defaultSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 
+// Ongoing processes writes sequentially per goods owner and recommends making ALL
+// API calls sequentially (https://developer.ongoingwarehouse.com/parallel-requests) —
+// so the client defaults to concurrency 1 (bead 4s4).
+const DEFAULT_CONCURRENCY = 1
+// Bound a hung socket so one stalled call can't freeze a whole cron tick (bead 4s4;
+// Medusa third-party-sync best practice: always set request timeouts).
+const DEFAULT_TIMEOUT_MS = 30_000
+
 export class OngoingClient {
   private readonly authHeader: string
   private readonly throttle: Throttle
   private readonly maxRetries: number
+  private readonly timeoutMs: number
   private readonly fetchImpl: typeof fetch
   private readonly sleep: (ms: number) => Promise<void>
 
   constructor(private readonly creds: OngoingCredentials, opts: ClientOpts = {}) {
     this.authHeader =
       "Basic " + Buffer.from(`${creds.username}:${creds.password}`).toString("base64")
-    this.throttle = new Throttle(opts.concurrency ?? 2)
+    this.throttle = new Throttle(opts.concurrency ?? DEFAULT_CONCURRENCY)
     this.maxRetries = opts.maxRetries ?? 3
+    this.timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS
     this.fetchImpl = opts.fetchImpl ?? fetch
     this.sleep = opts.sleep ?? defaultSleep
   }
@@ -62,15 +74,26 @@ export class OngoingClient {
   }
 
   private async doFetch<T>(method: "GET" | "PUT" | "DELETE", path: string, body?: unknown): Promise<T> {
-    const res = await this.fetchImpl(`${this.creds.baseUrl}${path}`, {
-      method,
-      headers: {
-        Authorization: this.authHeader,
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    })
+    // Abort a hung request after timeoutMs. The resulting abort rejects fetch with a
+    // non-OngoingApiError, which classifyError treats as retryable, so the request()
+    // loop retries it (bounded by maxRetries) exactly like any transient network error.
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs)
+    let res: Response
+    try {
+      res = await this.fetchImpl(`${this.creds.baseUrl}${path}`, {
+        method,
+        headers: {
+          Authorization: this.authHeader,
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
+        signal: controller.signal,
+      })
+    } finally {
+      clearTimeout(timer)
+    }
 
     const text = await res.text()
 
@@ -131,19 +154,41 @@ export class OngoingClient {
     return (raw?.orderStatuses ?? []).map(mapStatus)
   }
 
-  async getInventory(articleNumbers?: string[]): Promise<OngoingInventoryRow[]> {
-    const filter = articleNumbers?.length ? `&articleNumber=${articleNumbers.map(encodeURIComponent).join(",")}` : ""
-    return this.paginate((page) =>
-      this.request<any[]>("GET", `/articles/inventory?goodsOwnerId=${this.creds.goodsOwnerId}&page=${page}&pageSize=${ONGOING_PAGE_SIZE}${filter}`)
-    ).then((rows) => rows.map(mapInventoryRow))
+  async getInventory(articleNumbers?: string[], changedSince?: string): Promise<OngoingInventoryRow[]> {
+    // Inventory comes from GET /api/v1/articles (inventoryInfo per GetArticleModel);
+    // the old /articles/inventory path does not exist in the spec. `articleNumbers` (plural,
+    // not `articleNumber` — bead dtw) is declared style:form explode:true, so it must be
+    // serialized as repeated keys (`articleNumbers=A&articleNumbers=B`), NOT a comma-joined
+    // value — a CSV binds as a single array element server-side and matches no article
+    // (PR#133 review). `changedSince` maps to stockInfoChangedFrom for delta syncs — only
+    // articles whose stock changed since then (bead sw8); omitted → full catalogue sweep.
+    const filters =
+      (articleNumbers?.length
+        ? articleNumbers.map((n) => `&articleNumbers=${encodeURIComponent(n)}`).join("")
+        : "") +
+      (changedSince ? `&stockInfoChangedFrom=${encodeURIComponent(changedSince)}` : "")
+    const rows = await this.paginateByCursor(
+      (cursorFrom) =>
+        this.request<any[]>(
+          "GET",
+          `/articles?goodsOwnerId=${this.creds.goodsOwnerId}` +
+            `&articleSystemIdFrom=${cursorFrom}&maxArticlesToGet=${ONGOING_PAGE_SIZE}${filters}`
+        ),
+      (raw) => Number(raw?.articleSystemId)
+    )
+    return rows.map(mapInventoryRow)
   }
 
   async getOrdersByStatus(from: number, to: number): Promise<OngoingTrackedOrder[]> {
-    const rows = await this.paginate((page) =>
-      this.request<any[]>(
-        "GET",
-        `/orders?goodsOwnerId=${this.creds.goodsOwnerId}&orderStatusFrom=${from}&orderStatusTo=${to}&page=${page}&pageSize=${ONGOING_PAGE_SIZE}`
-      )
+    const rows = await this.paginateByCursor(
+      (cursorFrom) =>
+        this.request<any[]>(
+          "GET",
+          `/orders?goodsOwnerId=${this.creds.goodsOwnerId}` +
+            `&orderStatusFrom=${from}&orderStatusTo=${to}` +
+            `&orderIdFrom=${cursorFrom}&maxOrdersToGet=${ONGOING_PAGE_SIZE}`
+        ),
+      (raw) => Number(raw?.orderInfo?.orderId)
     )
     return rows.map(mapTrackedOrder)
   }
@@ -197,16 +242,42 @@ export class OngoingClient {
     return true
   }
 
-  private async paginate<T>(fetchPage: (page: number) => Promise<T[]>): Promise<T[]> {
+  // Ongoing paginates by ascending ID cursor, not page number: pass the highest ID seen
+  // + 1 as the next `...IdFrom`, and stop when a page is empty or short
+  // (https://developer.ongoingwarehouse.com/paginating-responses). Results come back in
+  // ID order, so advancing past the batch max never skips a row. The non-advance guard is
+  // a belt-and-suspenders stop so a server that ignores the cursor can't loop forever —
+  // the old page/pageSize scheme (params that don't exist in the spec) did exactly that,
+  // re-fetching the identical full result every iteration (bead ji6).
+  private async paginateByCursor<T>(
+    fetchPage: (cursorFrom: number) => Promise<T[]>,
+    cursorOf: (row: T) => number
+  ): Promise<T[]> {
     const all: T[] = []
-    let page = 1
+    let cursorFrom = 0
     for (;;) {
-      const batch = (await fetchPage(page)) ?? []
+      const batch = (await fetchPage(cursorFrom)) ?? []
+      if (batch.length === 0) {
+        return all
+      }
       all.push(...batch)
       if (batch.length < ONGOING_PAGE_SIZE) {
         return all
       }
-      page++
+      let maxId = -Infinity
+      for (const row of batch) {
+        const id = cursorOf(row)
+        if (Number.isFinite(id) && id > maxId) {
+          maxId = id
+        }
+      }
+      const nextCursor = maxId + 1
+      // Stop if no row carried a parseable id, or the cursor didn't move past where we
+      // asked (a server ignoring the cursor / returning stale rows) — never loop.
+      if (!Number.isFinite(maxId) || nextCursor <= cursorFrom) {
+        return all
+      }
+      cursorFrom = nextCursor
     }
   }
 }
@@ -230,14 +301,14 @@ function mapInventoryRow(raw: unknown): OngoingInventoryRow {
       body: parsed.error.issues,
     })
   }
-  const t = parsed.data.totalItems ?? {}
+  const inv = parsed.data.inventoryInfo ?? {}
   return {
-    articleNumber: parsed.data.article.articleNumber,
-    articleSystemId: parsed.data.article.articleSystemId,
-    numberOfItems: t.NumberOfItemsDecimal ?? 0,
-    allocatedNumberOfItems: t.AllocatedNumberOfItems ?? 0,
-    sellableNumberOfItems: t.SellableNumberOfItems ?? 0,
-    toReceiveNumberOfItems: t.ToReceiveNumberOfItems ?? 0,
+    articleNumber: parsed.data.articleNumber,
+    articleSystemId: parsed.data.articleSystemId,
+    numberOfItems: inv.numberOfItems ?? 0,
+    allocatedNumberOfItems: inv.allocatedNumberOfItems ?? 0,
+    sellableNumberOfItems: inv.sellableNumberOfItems ?? 0,
+    toReceiveNumberOfItems: inv.toReceiveNumberOfItems ?? 0,
   }
 }
 
@@ -250,16 +321,33 @@ function mapTrackedOrder(raw: unknown): OngoingTrackedOrder {
       body: parsed.error.issues,
     })
   }
-  const parcels = parsed.data.parcels ?? []
-  const trackingNumbers = parcels
-    .map((p) => p.parcelTracking?.code ?? p.trackingNumber)
-    .filter((c): c is string => typeof c === "string" && c.length > 0)
+  // Tracking lives in two spec locations: each parcel's `tracking` and the order-level
+  // `tracking[]` — both GetOrderParcelTracking/GetOrderTracking { waybill, trackingUrl }.
+  // Exclude return parcels (GetOrderParcel.isReturnParcel) so an RMA waybill never surfaces
+  // as an outbound shipment label — mirroring the webhook path's !isReturn filter. The
+  // order-level `tracking[]` is already outbound-only (returns live in the separate
+  // `returnTracking[]`, which we don't read). Collect waybills from both, deduped, keeping
+  // the first trackingUrl seen per waybill.
+  const sources = [
+    ...(parsed.data.parcels ?? []).filter((p) => !p.isReturnParcel).map((p) => p.tracking),
+    ...(parsed.data.tracking ?? []),
+  ]
+  const tracking: OngoingTrackingRef[] = []
+  const seen = new Set<string>()
+  for (const t of sources) {
+    const number = t?.waybill
+    if (typeof number === "string" && number.length > 0 && !seen.has(number)) {
+      seen.add(number)
+      tracking.push({ number, url: t?.trackingUrl || undefined })
+    }
+  }
   return {
     ongoingOrderId: parsed.data.orderInfo.orderId,
     orderNumber: parsed.data.orderInfo.orderNumber,
     statusNumber: parsed.data.orderInfo.orderStatus.number,
     statusText: parsed.data.orderInfo.orderStatus.text,
-    trackingNumbers,
+    trackingNumbers: tracking.map((t) => t.number),
+    tracking,
   }
 }
 

@@ -18,6 +18,10 @@ export type SyncOngoingShipmentInput = {
   status_code: number
   status_text: string
   tracking_numbers: string[]
+  // Optional waybill+URL pairs so shipment labels can carry the real carrier tracking
+  // URL (bead 5vu). `tracking_numbers` stays the canonical waybill list for logging and
+  // the SHIPMENT_APPLIED event; `tracking` enriches only the label build.
+  tracking?: Array<{ number: string; url?: string }>
 }
 
 export const syncOngoingShipmentWorkflow = createWorkflow(
@@ -35,6 +39,7 @@ export const syncOngoingShipmentWorkflow = createWorkflow(
         medusa_order_id: data.decision.medusa_order_id as string,
         medusa_fulfillment_id: data.decision.medusa_fulfillment_id as string,
         tracking_numbers: data.input.tracking_numbers,
+        tracking: data.input.tracking,
       }))
 
       applyOrderShipmentStep(applyInput)

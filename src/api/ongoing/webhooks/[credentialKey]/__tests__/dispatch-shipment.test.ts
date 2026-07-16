@@ -74,6 +74,10 @@ describe("dispatchVerifiedShipment -> syncOngoingShipmentWorkflow wiring", () =>
         status_code: 200,
         status_text: "",
         tracking_numbers: ["WB-1", "WB-2"],
+        tracking: [
+          { number: "WB-1", url: undefined },
+          { number: "WB-2", url: undefined },
+        ],
       },
     })
   })

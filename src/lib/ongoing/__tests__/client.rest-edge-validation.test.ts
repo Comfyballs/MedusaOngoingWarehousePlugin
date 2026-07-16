@@ -17,8 +17,8 @@ const json = (body: unknown) =>
   })
 
 describe("client REST-edge validation (#114-a)", () => {
-  it("throws terminal OngoingApiError when an inventory row lacks article", async () => {
-    const fetchImpl = jest.fn().mockResolvedValue(json([{ totalItems: {} }]))
+  it("throws terminal OngoingApiError when an inventory row lacks articleNumber", async () => {
+    const fetchImpl = jest.fn().mockResolvedValue(json([{ articleSystemId: 1, inventoryInfo: {} }]))
     const client = new OngoingClient(creds, { fetchImpl })
 
     await expect(client.getInventory()).rejects.toMatchObject({
@@ -30,16 +30,16 @@ describe("client REST-edge validation (#114-a)", () => {
 
   it("throws terminal OngoingApiError when an inventory row's articleNumber is not a string", async () => {
     const fetchImpl = jest.fn().mockResolvedValue(
-      json([{ article: { articleNumber: 42, articleSystemId: 1 }, totalItems: {} }])
+      json([{ articleNumber: 42, articleSystemId: 1, inventoryInfo: {} }])
     )
     const client = new OngoingClient(creds, { fetchImpl })
 
     await expect(client.getInventory()).rejects.toBeInstanceOf(OngoingApiError)
   })
 
-  it("accepts an inventory row with omitted totalItems (defaults zeros)", async () => {
+  it("accepts an inventory row with omitted inventoryInfo (defaults zeros)", async () => {
     const fetchImpl = jest.fn().mockResolvedValue(
-      json([{ article: { articleNumber: "SKU-1", articleSystemId: 1 } }])
+      json([{ articleNumber: "SKU-1", articleSystemId: 1 }])
     )
     const client = new OngoingClient(creds, { fetchImpl })
 
@@ -106,6 +106,7 @@ describe("client REST-edge validation (#114-a)", () => {
         statusNumber: 300,
         statusText: "Sent",
         trackingNumbers: [],
+        tracking: [],
       },
     ])
   })
