@@ -79,10 +79,32 @@ type Props = {
   // after creation and always render as disabled Inputs there instead).
   isEdit: boolean
   credentialKeysData?: { credential_keys: string[] }
+  credentialKeysLoading?: boolean
+  credentialKeysError?: boolean
   stockLocationsData?: { stock_locations: { id: string; name: string }[] }
+  stockLocationsLoading?: boolean
+  stockLocationsError?: boolean
   testConnection: UseMutationResult<TestConnectionResult, Error, string>
   testResult: string | null
   error: string | null
+}
+
+// Placeholder that distinguishes "loading" and "fetch failed" from a genuinely
+// empty option list, so an empty Select is never mistaken for "server has none".
+function selectPlaceholder(
+  loading: boolean | undefined,
+  errored: boolean | undefined,
+  defaultLabel: string,
+  loadingLabel: string,
+  errorLabel: string
+): string {
+  if (loading) {
+    return loadingLabel
+  }
+  if (errored) {
+    return errorLabel
+  }
+  return defaultLabel
 }
 
 // Shared field set rendered inside both CreateIntegrationModal's FocusModal.Body
@@ -94,7 +116,11 @@ export function IntegrationFormFields({
   setForm,
   isEdit,
   credentialKeysData,
+  credentialKeysLoading,
+  credentialKeysError,
   stockLocationsData,
+  stockLocationsLoading,
+  stockLocationsError,
   testConnection,
   testResult,
   error,
@@ -108,10 +134,19 @@ export function IntegrationFormFields({
         ) : (
           <Select
             value={form.credential_key}
+            disabled={credentialKeysLoading || credentialKeysError}
             onValueChange={(value) => setForm({ ...form, credential_key: value })}
           >
             <Select.Trigger>
-              <Select.Value placeholder="Select a credential key" />
+              <Select.Value
+                placeholder={selectPlaceholder(
+                  credentialKeysLoading,
+                  credentialKeysError,
+                  "Select a credential key",
+                  "Loading credential keys…",
+                  "Failed to load credential keys"
+                )}
+              />
             </Select.Trigger>
             <Select.Content>
               {(credentialKeysData?.credential_keys ?? []).map((key) => (
@@ -122,6 +157,11 @@ export function IntegrationFormFields({
             </Select.Content>
           </Select>
         )}
+        {!isEdit && credentialKeysError && (
+          <Text size="small" className="text-ui-fg-error">
+            Failed to load credential keys. Check the plugin configuration and retry.
+          </Text>
+        )}
       </div>
 
       <div className="flex flex-col gap-y-2">
@@ -131,10 +171,19 @@ export function IntegrationFormFields({
         ) : (
           <Select
             value={form.stock_location_id}
+            disabled={stockLocationsLoading || stockLocationsError}
             onValueChange={(value) => setForm({ ...form, stock_location_id: value })}
           >
             <Select.Trigger>
-              <Select.Value placeholder="Select a stock location" />
+              <Select.Value
+                placeholder={selectPlaceholder(
+                  stockLocationsLoading,
+                  stockLocationsError,
+                  "Select a stock location",
+                  "Loading stock locations…",
+                  "Failed to load stock locations"
+                )}
+              />
             </Select.Trigger>
             <Select.Content>
               {(stockLocationsData?.stock_locations ?? []).map((loc) => (
@@ -144,6 +193,11 @@ export function IntegrationFormFields({
               ))}
             </Select.Content>
           </Select>
+        )}
+        {!isEdit && stockLocationsError && (
+          <Text size="small" className="text-ui-fg-error">
+            Failed to load stock locations. Check your connection and retry.
+          </Text>
         )}
         {!isEdit && (
           <Text size="small" className="text-ui-fg-subtle">

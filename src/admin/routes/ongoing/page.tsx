@@ -15,8 +15,9 @@ import {
   useDataTable,
 } from "@medusajs/ui"
 import { useMemo, useState } from "react"
-import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query"
+import { keepPreviousData, useQueryClient } from "@tanstack/react-query"
 import { sdk } from "../../lib/sdk"
+import { useOngoingQuery, QueryStateView } from "../../lib/use-ongoing-query"
 import {
   deriveConnectionHealth,
   type OngoingIntegrationHealth,
@@ -174,14 +175,20 @@ const commandHelper = createDataTableCommandHelper()
 function SyncStateSummaryStrip({
   summary,
   isLoading,
+  isError,
 }: {
   summary: OngoingSyncStateSummary | undefined
   isLoading: boolean
+  isError: boolean
 }) {
   return (
     <Container className="flex items-center gap-x-6 px-6 py-4">
-      {isLoading || !summary ? (
+      {isLoading || (!isError && !summary) ? (
         <Spinner className="animate-spin" />
+      ) : isError || !summary ? (
+        <Text size="small" className="text-ui-fg-error">
+          Failed to load sync summary
+        </Text>
       ) : (
         SUMMARY_STATE_ORDER.map((state) => (
           <div key={state} className="flex items-center gap-x-2">
@@ -197,11 +204,13 @@ function SyncStateSummaryStrip({
 }
 
 function ConnectionHealthPanel() {
-  const { data, isLoading } = useQuery({
-    queryFn: () =>
-      sdk.client.fetch<OngoingIntegrationsListResponse>("/admin/ongoing/integrations"),
-    queryKey: ["ongoing-integrations-health"],
-  })
+  const { data, isLoading, isError, isEmpty, error } =
+    useOngoingQuery<OngoingIntegrationsListResponse>({
+      queryFn: () =>
+        sdk.client.fetch<OngoingIntegrationsListResponse>("/admin/ongoing/integrations"),
+      queryKey: ["ongoing-integrations-health"],
+      isEmpty: (d) => (d.integrations ?? []).length === 0,
+    })
 
   const integrations = data?.integrations ?? []
 
@@ -210,31 +219,28 @@ function ConnectionHealthPanel() {
       <div className="flex items-center justify-between px-6 py-4">
         <Heading level="h2">Connection health</Heading>
       </div>
-      <div className="px-6 py-4">
-        {isLoading ? (
-          <div className="flex items-center justify-center p-8">
-            <Spinner className="animate-spin" />
-          </div>
-        ) : integrations.length === 0 ? (
-          <Text size="small" className="text-ui-fg-subtle">
-            No Ongoing integrations configured yet.
-          </Text>
-        ) : (
-          <div className="flex flex-col gap-y-2">
-            {integrations.map((integration) => {
-              const health = deriveConnectionHealth(integration)
-              return (
-                <div key={integration.id} className="flex items-center justify-between">
-                  <Text size="small" weight="plus">
-                    {integration.credential_key}
-                  </Text>
-                  <Badge color={HEALTH_BADGE_COLOR[health]}>{health}</Badge>
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </div>
+      <QueryStateView
+        isLoading={isLoading}
+        isError={isError}
+        isEmpty={isEmpty}
+        error={error}
+        errorMessage="Failed to load connection health"
+        emptyMessage="No Ongoing integrations configured yet."
+      >
+        <div className="flex flex-col gap-y-2 px-6 py-4">
+          {integrations.map((integration) => {
+            const health = deriveConnectionHealth(integration)
+            return (
+              <div key={integration.id} className="flex items-center justify-between">
+                <Text size="small" weight="plus">
+                  {integration.credential_key}
+                </Text>
+                <Badge color={HEALTH_BADGE_COLOR[health]}>{health}</Badge>
+              </div>
+            )
+          })}
+        </div>
+      </QueryStateView>
     </Container>
   )
 }
@@ -250,7 +256,7 @@ function OngoingSyncsTable() {
   const limit = pagination.pageSize
   const offset = pagination.pageIndex * limit
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error } = useOngoingQuery<ListSyncsResponse>({
     queryFn: () =>
       sdk.client.fetch<ListSyncsResponse>("/admin/ongoing/syncs", {
         query: { limit, offset },
@@ -314,16 +320,28 @@ function OngoingSyncsTable() {
 
   return (
     <>
-      <SyncStateSummaryStrip summary={data?.summary} isLoading={isLoading} />
+      <SyncStateSummaryStrip summary={data?.summary} isLoading={isLoading} isError={isError} />
       <Container className="divide-y p-0">
         <div className="flex items-center justify-between px-6 py-4">
           <Heading level="h2">Failed &amp; pending syncs</Heading>
         </div>
-        <DataTable instance={table}>
-          <DataTable.Table />
-          <DataTable.Pagination />
-          <DataTable.CommandBar selectedLabel={(count) => `${count} selected`} />
-        </DataTable>
+        {/* A failed fetch must not render as an empty "0 syncs" table. Loading and
+            empty are handled by the DataTable itself; QueryStateView only injects
+            the error banner in place of the table. */}
+        <QueryStateView
+          isLoading={false}
+          isError={isError}
+          isEmpty={false}
+          error={error}
+          errorMessage="Failed to load syncs"
+          emptyMessage=""
+        >
+          <DataTable instance={table}>
+            <DataTable.Table />
+            <DataTable.Pagination />
+            <DataTable.CommandBar selectedLabel={(count) => `${count} selected`} />
+          </DataTable>
+        </QueryStateView>
       </Container>
     </>
   )
