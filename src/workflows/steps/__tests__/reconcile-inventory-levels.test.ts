@@ -132,6 +132,39 @@ describe("reconcileInventoryLevelsStep — mode A (sellable_plus_reserved)", () 
       expect.objectContaining({ incoming_quantity: 42 }),
     ])
   })
+
+  it("batches: one listInventoryItems + one listInventoryLevels + one bulk update for many rows", async () => {
+    const { container, inventoryService } = makeContainer({
+      items: [
+        { id: "inv_1", sku: "SKU-A" },
+        { id: "inv_2", sku: "SKU-B" },
+      ],
+      levels: [
+        makeLevel({ id: "lvl_1", inventory_item_id: "inv_1" }),
+        makeLevel({ id: "lvl_2", inventory_item_id: "inv_2" }),
+      ],
+    })
+    const res = await reconcileInventoryLevelsHandler(
+      {
+        rows: [makeRow({ articleNumber: "SKU-A" }), makeRow({ articleNumber: "SKU-B" })],
+        ...BASE_A,
+      },
+      { container } as any
+    )
+    expect(inventoryService.listInventoryItems).toHaveBeenCalledTimes(1)
+    expect(inventoryService.listInventoryItems).toHaveBeenCalledWith({ sku: ["SKU-A", "SKU-B"] })
+    expect(inventoryService.listInventoryLevels).toHaveBeenCalledTimes(1)
+    expect(inventoryService.listInventoryLevels).toHaveBeenCalledWith({
+      inventory_item_id: ["inv_1", "inv_2"],
+      location_id: "loc_1",
+    })
+    expect(inventoryService.updateInventoryLevels).toHaveBeenCalledTimes(1)
+    expect(inventoryService.updateInventoryLevels).toHaveBeenCalledWith([
+      expect.objectContaining({ id: "lvl_1", inventory_item_id: "inv_1" }),
+      expect.objectContaining({ id: "lvl_2", inventory_item_id: "inv_2" }),
+    ])
+    expect(res.output).toEqual({ written: 2, skipped: 0 })
+  })
 })
 
 describe("reconcileInventoryLevelsStep — mode C (onhand)", () => {
@@ -176,8 +209,8 @@ describe("reconcileInventoryLevelsStep — mode B (precise)", () => {
       syncs: [{ medusa_order_id: "order_1" }],
       orderGraph: [{ id: "order_1", items: [{ id: "li_synced" }] }],
       reservations: [
-        { line_item_id: "li_synced", quantity: 3 },
-        { line_item_id: "li_unsynced", quantity: 5 },
+        { inventory_item_id: "inv_1", line_item_id: "li_synced", quantity: 3 },
+        { inventory_item_id: "inv_1", line_item_id: "li_unsynced", quantity: 5 },
       ],
     })
     await reconcileInventoryLevelsHandler(
@@ -187,6 +220,23 @@ describe("reconcileInventoryLevelsStep — mode B (precise)", () => {
     expect(inventoryService.updateInventoryLevels).toHaveBeenCalledWith([
       expect.objectContaining({ stocked_quantity: 17 }),
     ])
+  })
+
+  it("prefetches reservations for the matched items in one call", async () => {
+    const { container, inventoryService } = makeContainer({
+      syncs: [{ medusa_order_id: "order_1" }],
+      orderGraph: [{ id: "order_1", items: [{ id: "li_synced" }] }],
+      reservations: [{ inventory_item_id: "inv_1", line_item_id: "li_synced", quantity: 3 }],
+    })
+    await reconcileInventoryLevelsHandler(
+      { rows: [makeRow()], ...BASE_B },
+      { container } as any
+    )
+    expect(inventoryService.listReservationItems).toHaveBeenCalledTimes(1)
+    expect(inventoryService.listReservationItems).toHaveBeenCalledWith({
+      inventory_item_id: ["inv_1"],
+      location_id: "loc_1",
+    })
   })
 
   it("clamps precise to 0 when sellable is negative and no synced reservations", async () => {
@@ -208,7 +258,7 @@ describe("reconcileInventoryLevelsStep — mode B (precise)", () => {
     // sellable=14 → stocked=14
     const { container, inventoryService } = makeContainer({
       syncs: [],
-      reservations: [{ line_item_id: "li_1", quantity: 10 }],
+      reservations: [{ inventory_item_id: "inv_1", line_item_id: "li_1", quantity: 10 }],
     })
     await reconcileInventoryLevelsHandler(
       { rows: [makeRow()], ...BASE_B },
@@ -257,22 +307,16 @@ describe("reconcileInventoryLevelsStep — skip scenarios", () => {
   })
 
   it("correctly mixes written and skipped across multiple rows", async () => {
-    const inventoryService = {
-      listInventoryItems: jest.fn()
-        .mockResolvedValueOnce([{ id: "inv_1", sku: "SKU-A" }])
-        .mockResolvedValueOnce([])
-        .mockResolvedValueOnce([{ id: "inv_2", sku: "SKU-C" }]),
-      listInventoryLevels: jest.fn().mockResolvedValue([makeLevel()]),
-      listReservationItems: jest.fn().mockResolvedValue([]),
-      updateInventoryLevels: jest.fn().mockResolvedValue(undefined),
-    }
-    const serviceMap: Record<string, unknown> = {
-      [Modules.INVENTORY]: inventoryService,
-      [ContainerRegistrationKeys.QUERY]: { graph: jest.fn().mockResolvedValue({ data: [] }) },
-      [ContainerRegistrationKeys.LOGGER]: { warn: jest.fn(), info: jest.fn(), debug: jest.fn() },
-      ongoing: { listOngoingOrderSyncs: jest.fn().mockResolvedValue([]) },
-    }
-    const container = { resolve: jest.fn((key: string) => serviceMap[key]) }
+    const { container, inventoryService } = makeContainer({
+      items: [
+        { id: "inv_1", sku: "SKU-A" },
+        { id: "inv_2", sku: "SKU-C" },
+      ],
+      levels: [
+        makeLevel({ id: "lvl_1", inventory_item_id: "inv_1" }),
+        makeLevel({ id: "lvl_2", inventory_item_id: "inv_2" }),
+      ],
+    })
 
     const res = await reconcileInventoryLevelsHandler(
       {
@@ -285,6 +329,7 @@ describe("reconcileInventoryLevelsStep — skip scenarios", () => {
       },
       { container } as any
     )
+    expect(inventoryService.updateInventoryLevels).toHaveBeenCalledTimes(1)
     expect(res.output).toEqual({ written: 2, skipped: 1 })
   })
 })

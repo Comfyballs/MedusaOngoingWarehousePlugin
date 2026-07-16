@@ -16,6 +16,29 @@ export type ReconcileInventoryOutput = {
   skipped: number
 }
 
+type InventoryItem = { id: string; sku: string }
+type InventoryLevel = {
+  id: string
+  inventory_item_id: string
+  location_id: string
+  stocked_quantity: number
+  reserved_quantity: number
+  incoming_quantity: number
+  available_quantity: number
+}
+type ReservationItem = { line_item_id?: string | null; quantity: number; inventory_item_id?: string }
+type LevelUpdate = {
+  id: string
+  inventory_item_id: string
+  location_id: string
+  stocked_quantity: number
+  incoming_quantity: number
+}
+
+// updateInventoryLevels accepts an array; chunk the bulk write so a very large
+// catalogue doesn't build one unbounded payload (third-party-sync best practice).
+const LEVEL_WRITE_CHUNK = 100
+
 export async function reconcileInventoryLevelsHandler(
   input: ReconcileInventoryInput,
   { container }: { container: MedusaContainer }
@@ -25,8 +48,43 @@ export async function reconcileInventoryLevelsHandler(
   const inventoryService: any = container.resolve(Modules.INVENTORY)
   const ongoing: any = container.resolve(ONGOING_MODULE)
 
-  // --- Precise mode: pre-fetch synced line-item ids once (not per row) ---
-  let syncedLineItemIds: Set<string> = new Set()
+  if (rows.length === 0) {
+    return new StepResponse({ written: 0, skipped: 0 })
+  }
+
+  // --- Batch 1: resolve every Ongoing SKU to a Medusa inventory item in ONE
+  // query, grouped by sku so a collision (SKU → >1 item) is still detectable. ---
+  const skus = Array.from(new Set(rows.map((r) => r.articleNumber)))
+  const items: InventoryItem[] = await inventoryService.listInventoryItems({ sku: skus })
+  const itemsBySku = new Map<string, InventoryItem[]>()
+  for (const item of items) {
+    const bucket = itemsBySku.get(item.sku)
+    if (bucket) {
+      bucket.push(item)
+    } else {
+      itemsBySku.set(item.sku, [item])
+    }
+  }
+
+  // --- Batch 2: prefetch every level at this location for the matched items in
+  // ONE query → O(1) lookup by inventory_item_id (no per-row listInventoryLevels). ---
+  const itemIds = items.map((i) => i.id)
+  const levels: InventoryLevel[] =
+    itemIds.length > 0
+      ? await inventoryService.listInventoryLevels({
+          inventory_item_id: itemIds,
+          location_id: stock_location_id,
+        })
+      : []
+  const levelByItemId = new Map<string, InventoryLevel>()
+  for (const level of levels) {
+    levelByItemId.set(level.inventory_item_id, level)
+  }
+
+  // --- Batch 3 (precise mode only): prefetch synced line-item ids once, and all
+  // reservations at this location for the matched items in ONE query. ---
+  const syncedLineItemIds = new Set<string>()
+  const reservationsByItemId = new Map<string, ReservationItem[]>()
   if (stock_reconcile_mode === "precise") {
     const query = container.resolve<RemoteQueryFunction>(ContainerRegistrationKeys.QUERY)
     const syncs: Array<{ medusa_order_id: string }> = await ongoing.listOngoingOrderSyncs({
@@ -41,58 +99,64 @@ export async function reconcileInventoryLevelsHandler(
         filters: { id: syncedOrderIds },
       })
       for (const order of orders) {
-        for (const item of (order.items ?? [])) {
+        for (const item of order.items ?? []) {
           syncedLineItemIds.add(item.id)
         }
       }
     }
+
+    const reservations: ReservationItem[] =
+      itemIds.length > 0
+        ? await inventoryService.listReservationItems({
+            inventory_item_id: itemIds,
+            location_id: stock_location_id,
+          })
+        : []
+    for (const reservation of reservations) {
+      const key = reservation.inventory_item_id
+      if (!key) {
+        continue
+      }
+      const bucket = reservationsByItemId.get(key)
+      if (bucket) {
+        bucket.push(reservation)
+      } else {
+        reservationsByItemId.set(key, [reservation])
+      }
+    }
   }
 
+  // --- In-memory reconcile: accumulate all writes, no per-row DB round-trips. ---
+  const updates: LevelUpdate[] = []
   let written = 0
   let skipped = 0
 
   for (const row of rows) {
-    // --- SKU match ---
-    const items: Array<{ id: string; sku: string }> =
-      await inventoryService.listInventoryItems({ sku: row.articleNumber })
-
-    if (items.length === 0) {
+    const matched = itemsBySku.get(row.articleNumber) ?? []
+    if (matched.length === 0) {
       logger.warn(
         `[ongoing] inventory-sync: SKU "${row.articleNumber}" matched 0 Medusa inventory items — skipping`
       )
       skipped++
       continue
     }
-    if (items.length > 1) {
+    if (matched.length > 1) {
       logger.warn(
-        `[ongoing] inventory-sync: SKU "${row.articleNumber}" matched ${items.length} Medusa inventory items (collision) — skipping`
+        `[ongoing] inventory-sync: SKU "${row.articleNumber}" matched ${matched.length} Medusa inventory items (collision) — skipping`
       )
       skipped++
       continue
     }
-    const item = items[0]
+    const item = matched[0]
 
-    // --- Level lookup ---
-    const levels: Array<{
-      id: string
-      inventory_item_id: string
-      location_id: string
-      stocked_quantity: number
-      reserved_quantity: number
-      incoming_quantity: number
-      available_quantity: number
-    }> = await inventoryService.listInventoryLevels({
-      inventory_item_id: item.id,
-      location_id: stock_location_id,
-    })
-    if (levels.length === 0) {
+    const level = levelByItemId.get(item.id)
+    if (!level) {
       logger.warn(
         `[ongoing] inventory-sync: no inventory level for item "${item.id}" at location "${stock_location_id}" — skipping`
       )
       skipped++
       continue
     }
-    const level = levels[0]
     const M_res: number = level.reserved_quantity ?? 0
 
     // --- Compute stocked_quantity per mode ---
@@ -103,11 +167,7 @@ export async function reconcileInventoryLevelsHandler(
         row.sellableNumberOfItems + Math.min(M_res, row.allocatedNumberOfItems)
       )
     } else if (stock_reconcile_mode === "precise") {
-      const reservations: Array<{ line_item_id?: string | null; quantity: number }> =
-        await inventoryService.listReservationItems({
-          inventory_item_id: item.id,
-          location_id: stock_location_id,
-        })
+      const reservations = reservationsByItemId.get(item.id) ?? []
       const M_res_synced = reservations
         .filter((r) => r.line_item_id != null && syncedLineItemIds.has(r.line_item_id as string))
         .reduce((sum, r) => sum + (r.quantity ?? 0), 0)
@@ -117,15 +177,19 @@ export async function reconcileInventoryLevelsHandler(
       stocked_quantity = Math.max(0, row.numberOfItems)
     }
 
-    // --- Write both stocked_quantity and incoming_quantity in one call ---
-    await inventoryService.updateInventoryLevels([{
+    updates.push({
       id: level.id,
       inventory_item_id: item.id,
       location_id: stock_location_id,
       stocked_quantity,
       incoming_quantity: row.toReceiveNumberOfItems,
-    }])
+    })
     written++
+  }
+
+  // --- One bulk updateInventoryLevels per chunk (API accepts an array). ---
+  for (let i = 0; i < updates.length; i += LEVEL_WRITE_CHUNK) {
+    await inventoryService.updateInventoryLevels(updates.slice(i, i + LEVEL_WRITE_CHUNK))
   }
 
   return new StepResponse({ written, skipped })
