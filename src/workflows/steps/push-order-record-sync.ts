@@ -3,6 +3,7 @@ import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 import type { MedusaContainer, IEventBusModuleService } from "@medusajs/framework/types"
 import { classifyError } from "../../lib/ongoing/errors"
 import type { PostOrderModel } from "../../lib/ongoing/types"
+import { ensureArticlesExist, type EnsureArticleInput } from "../../lib/ongoing/ensure-articles"
 import { ONGOING_MODULE } from "../../modules/ongoing"
 import type OngoingModuleService from "../../modules/ongoing/service"
 import { ONGOING_EVENTS } from "../../lib/ongoing/events"
@@ -16,6 +17,9 @@ export type PushOrderInput = {
   goods_owner_id: number
   medusa_order_id: string
   medusa_fulfillment_id: string
+  // Order SKUs to ensure exist in Ongoing (ProcessArticle) before the order PUT
+  // (R7). Optional/defaulted so existing callers and tests stay valid.
+  articles?: EnsureArticleInput[]
 }
 
 export type PushOrderOutput = { ongoingOrderId: number; orderNumber: string }
@@ -53,6 +57,10 @@ export async function pushOrderRecordSyncHandler(
     // getClient() is inside the try so a misconfigured credential_key is also
     // recorded as an error row (it never leaves the sync stuck in "pending").
     const client = service.getClient(input.credential_key)
+    // Step 1 of Ongoing's webshop flow: ensure the order's SKUs exist as articles
+    // BEFORE the order PUT (R7). Runs inside the try so an article-sync failure is
+    // classified/recorded/retried by the same ledger as a putOrder failure.
+    await ensureArticlesExist(client, input.goods_owner_id, input.articles ?? [], logger)
     const res = await client.putOrder(input.model)
     ongoingOrderId = res.ongoingOrderId
   } catch (err) {

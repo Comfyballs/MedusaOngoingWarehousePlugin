@@ -31,6 +31,7 @@ jest.mock("../../../lib/ongoing/order-mapper", () => ({
 }))
 
 const putOrder = jest.fn().mockResolvedValue({ ongoingOrderId: 999 })
+const putArticle = jest.fn().mockResolvedValue({ articleSystemId: 1 })
 
 const makeService = (overrides: Record<string, unknown> = {}) => ({
   listOngoingOrderSyncs: jest.fn().mockResolvedValue([
@@ -47,7 +48,7 @@ const makeService = (overrides: Record<string, unknown> = {}) => ({
     credential_key: "wh-a",
   }),
   getCredentials: jest.fn().mockReturnValue({ goodsOwnerId: 7 }),
-  getClient: jest.fn().mockReturnValue({ putOrder }),
+  getClient: jest.fn().mockReturnValue({ putOrder, putArticle }),
   updateOngoingOrderSyncs: jest.fn().mockResolvedValue(undefined),
   ...overrides,
 })

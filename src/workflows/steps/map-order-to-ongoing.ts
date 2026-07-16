@@ -29,6 +29,9 @@ export async function mapOrderToOngoingHandler(input: MapOrderStepInput): Promis
     currency_code: queried.order.currency_code,
     email: queried.order.email ?? undefined,
     shipping_address: queried.order.shipping_address,
+    // Carrier resolved by query-fulfillment-order from shipping_option.data (R6).
+    way_of_delivery: queried.way_of_delivery ?? null,
+    transporter: queried.transporter ?? null,
     lines: queried.resolvedLines.map((l) => ({
       article_number: l.article_number,
       quantity: l.quantity,

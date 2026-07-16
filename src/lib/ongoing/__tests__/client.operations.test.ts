@@ -115,6 +115,33 @@ describe("OngoingClient operations", () => {
     ).rejects.toBeInstanceOf(OngoingApiError)
   })
 
+  it("upserts an article via PUT /articles and returns the articleSystemId", async () => {
+    const fetchImpl = jest.fn().mockResolvedValue(json({ articleSystemId: 555, message: "ok" }))
+    const client = new OngoingClient(creds, { fetchImpl })
+    const result = await client.putArticle({
+      goodsOwnerId: 7,
+      articleNumber: "SKU-1",
+      articleName: "Tee",
+    })
+    expect(result).toEqual({ articleSystemId: 555 })
+    const [url, init] = fetchImpl.mock.calls[0]
+    expect(url).toBe("https://api.example.test/api/v1/articles")
+    expect(init.method).toBe("PUT")
+    expect(JSON.parse(init.body)).toEqual({
+      goodsOwnerId: 7,
+      articleNumber: "SKU-1",
+      articleName: "Tee",
+    })
+  })
+
+  it("putArticle resolves (undefined id) on a 2xx that omits articleSystemId", async () => {
+    const fetchImpl = jest.fn().mockResolvedValue(json({ message: "upserted" }))
+    const client = new OngoingClient(creds, { fetchImpl })
+    await expect(
+      client.putArticle({ goodsOwnerId: 7, articleNumber: "SKU-1", articleName: "Tee" })
+    ).resolves.toEqual({ articleSystemId: undefined })
+  })
+
   it("testConnection returns true when statuses load", async () => {
     const fetchImpl = jest.fn().mockResolvedValue(json({ orderStatuses: [{ number: 200, text: "Open" }] }))
     const client = new OngoingClient(creds, { fetchImpl })

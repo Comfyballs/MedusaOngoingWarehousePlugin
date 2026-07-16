@@ -148,6 +148,18 @@ export function mapOrderToPostOrderModel(input: MapOrderInput): PostOrderModel {
     model.telephoneNotification = { value: phone, toBeNotified: true }
   }
 
-  // wayOfDelivery / transporter intentionally omitted in the M2 baseline.
+  // wayOfDelivery / transporter: assigned upstream so Ongoing's transport-system
+  // integration can key transport bookings/webhook filters off them (R6). The
+  // caller resolves these from the shipping option's data; the mapper only emits
+  // a wayOfDelivery when a non-empty code is present.
+  const wayCode = trimOrUndefined(input.way_of_delivery?.code)
+  if (wayCode) {
+    const wayName = trimOrUndefined(input.way_of_delivery?.name)
+    model.wayOfDelivery = wayName ? { code: wayCode, name: wayName } : { code: wayCode }
+  }
+  if (input.transporter && Object.keys(input.transporter).length > 0) {
+    model.transporter = input.transporter
+  }
+
   return model
 }

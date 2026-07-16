@@ -1,9 +1,16 @@
 import { MedusaError } from "@medusajs/framework/utils"
 import type { RemoteQueryFunction } from "@medusajs/framework/types"
+import type { CodeNamePair, PostOrderTransporter } from "./types"
+import { extractOngoingCarrier } from "./way-of-delivery"
 
 export type QueriedFulfillmentOrder = {
   fulfillment_id: string
   location_id: string
+  // Ongoing carrier assignment resolved from the fulfillment's
+  // shipping_option.data (static, durable across retries). Undefined when the
+  // option carries no carrier config.
+  way_of_delivery?: CodeNamePair
+  transporter?: PostOrderTransporter
   items: Array<{
     quantity: number
     sku: string | null
@@ -48,6 +55,7 @@ export async function reQueryFulfillmentOrder(
     fields: [
       "id",
       "location_id",
+      "shipping_option.data",
       "items.quantity",
       "items.sku",
       "items.barcode",
@@ -86,9 +94,13 @@ export async function reQueryFulfillmentOrder(
     )
   }
 
+  const carrier = extractOngoingCarrier(fulfillment.shipping_option?.data)
+
   return {
     fulfillment_id: fulfillment.id,
     location_id: fulfillment.location_id,
+    way_of_delivery: carrier.wayOfDelivery,
+    transporter: carrier.transporter,
     items: (fulfillment.items ?? []).map((i: any) => ({
       quantity: i.quantity,
       sku: i.sku ?? null,

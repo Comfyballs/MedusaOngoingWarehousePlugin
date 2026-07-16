@@ -11,10 +11,11 @@ const baseInput = {
   medusa_fulfillment_id: "ful_1",
 }
 
-function makeContainer({ putOrder }: { putOrder: jest.Mock }) {
+function makeContainer({ putOrder, putArticle }: { putOrder: jest.Mock; putArticle?: jest.Mock }) {
   const recordSync = jest.fn().mockResolvedValue({ id: "oos_1" })
+  const article = putArticle ?? jest.fn().mockResolvedValue({ articleSystemId: 1 })
   const service = {
-    getClient: jest.fn().mockReturnValue({ putOrder }),
+    getClient: jest.fn().mockReturnValue({ putOrder, putArticle: article }),
     recordSync,
   }
   const logger = { info: jest.fn(), warn: jest.fn(), error: jest.fn() }
@@ -32,7 +33,7 @@ function makeContainer({ putOrder }: { putOrder: jest.Mock }) {
       }
     }),
   }
-  return { container, recordSync, service, logger, emit }
+  return { container, recordSync, service, logger, emit, article }
 }
 
 // The createStep wrapper does not expose its invoke fn; test the exported handler.
@@ -69,6 +70,59 @@ describe("pushOrderRecordSyncStep", () => {
     const pendingOrder = recordSync.mock.invocationCallOrder[0]
     const putOrderOrder = putOrder.mock.invocationCallOrder[0]
     expect(pendingOrder).toBeLessThan(putOrderOrder)
+  })
+
+  it("ensures the order's articles exist (PUT /articles) after pending, before putOrder", async () => {
+    const putOrder = jest.fn().mockResolvedValue({ ongoingOrderId: 999 })
+    const putArticle = jest.fn().mockResolvedValue({ articleSystemId: 1 })
+    const { container, recordSync } = makeContainer({ putOrder, putArticle })
+
+    await invoke(
+      {
+        ...baseInput,
+        articles: [
+          { articleNumber: "SKU-A", articleName: "Alpha" },
+          { articleNumber: "SKU-B", articleName: "Beta" },
+        ],
+      },
+      { container }
+    )
+
+    expect(putArticle).toHaveBeenCalledTimes(2)
+    expect(putArticle).toHaveBeenNthCalledWith(1, {
+      goodsOwnerId: 7,
+      articleNumber: "SKU-A",
+      articleName: "Alpha",
+    })
+
+    // Order: pending record < first putArticle < putOrder.
+    const pendingOrder = recordSync.mock.invocationCallOrder[0]
+    const firstArticleOrder = putArticle.mock.invocationCallOrder[0]
+    const putOrderOrder = putOrder.mock.invocationCallOrder[0]
+    expect(pendingOrder).toBeLessThan(firstArticleOrder)
+    expect(firstArticleOrder).toBeLessThan(putOrderOrder)
+  })
+
+  it("records a retryable error when article sync fails, before any putOrder", async () => {
+    const putOrder = jest.fn().mockResolvedValue({ ongoingOrderId: 999 })
+    const putArticle = jest
+      .fn()
+      .mockRejectedValue(new OngoingApiError("503 down", { kind: "retryable", status: 503 }))
+    const { container, recordSync } = makeContainer({ putOrder, putArticle })
+
+    await expect(
+      invoke(
+        { ...baseInput, articles: [{ articleNumber: "SKU-A", articleName: "Alpha" }] },
+        { container }
+      )
+    ).rejects.toMatchObject({ kind: "retryable" })
+
+    expect(putOrder).not.toHaveBeenCalled()
+    // pending + error rows recorded; the error row carries the retryable class.
+    expect(recordSync.mock.calls[1][0]).toMatchObject({
+      sync_state: "error",
+      error_class: "retryable",
+    })
   })
 
   it("records a retryable error for a retryable OngoingApiError, then rethrows", async () => {

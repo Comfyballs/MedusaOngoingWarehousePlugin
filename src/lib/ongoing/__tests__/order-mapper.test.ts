@@ -73,10 +73,39 @@ describe("mapOrderToPostOrderModel — happy path", () => {
     expect(out.consignee).not.toHaveProperty("email")
   })
 
-  it("omits wayOfDelivery and transporter in the M2 baseline", () => {
+  it("omits wayOfDelivery and transporter when the input carries none", () => {
     const out = mapOrderToPostOrderModel(baseInput())
     expect(out.wayOfDelivery).toBeUndefined()
     expect(out.transporter).toBeUndefined()
+  })
+
+  it("maps wayOfDelivery (code + name) and transporter when the input provides them", () => {
+    const input = baseInput()
+    input.way_of_delivery = { code: "dhl-express", name: "DHL Express" }
+    input.transporter = { transporterCode: "DHL", transporterServiceCode: "EXP", paymentAdvanced: false }
+    const out = mapOrderToPostOrderModel(input)
+    expect(out.wayOfDelivery).toEqual({ code: "dhl-express", name: "DHL Express" })
+    expect(out.transporter).toEqual({
+      transporterCode: "DHL",
+      transporterServiceCode: "EXP",
+      paymentAdvanced: false,
+    })
+  })
+
+  it("maps wayOfDelivery with only a code (no name) and omits an empty transporter", () => {
+    const input = baseInput()
+    input.way_of_delivery = { code: "postnord" }
+    input.transporter = {}
+    const out = mapOrderToPostOrderModel(input)
+    expect(out.wayOfDelivery).toEqual({ code: "postnord" })
+    expect(out.transporter).toBeUndefined()
+  })
+
+  it("omits wayOfDelivery when the code is blank", () => {
+    const input = baseInput()
+    input.way_of_delivery = { code: "   " }
+    const out = mapOrderToPostOrderModel(input)
+    expect(out.wayOfDelivery).toBeUndefined()
   })
 
   it("uses the order currency (uppercased) when a line has no currency", () => {

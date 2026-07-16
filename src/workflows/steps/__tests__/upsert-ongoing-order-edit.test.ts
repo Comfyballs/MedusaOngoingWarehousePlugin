@@ -36,19 +36,20 @@ const decision: GateDecision = {
   category: "line_items",
 }
 
-function makeContext({ putOrder }: { putOrder: jest.Mock }) {
+function makeContext({ putOrder, putArticle }: { putOrder: jest.Mock; putArticle?: jest.Mock }) {
   const updateOngoingOrderSyncs = jest.fn().mockResolvedValue(undefined)
+  const article = putArticle ?? jest.fn().mockResolvedValue({ articleSystemId: 1 })
   const service = {
     retrieveOngoingIntegration: jest.fn().mockResolvedValue({ credential_key: "wh-a" }),
     getCredentials: jest.fn().mockReturnValue({ goodsOwnerId: 7 }),
-    getClient: jest.fn().mockReturnValue({ putOrder }),
+    getClient: jest.fn().mockReturnValue({ putOrder, putArticle: article }),
     updateOngoingOrderSyncs,
   }
   const query = { graph: jest.fn() }
   const container = {
     resolve: jest.fn((key: string) => (key === "query" ? query : service)),
   } as unknown as MedusaContainer
-  return { container, service, updateOngoingOrderSyncs }
+  return { container, service, updateOngoingOrderSyncs, putArticle: article }
 }
 
 const invoke = (ctx: { container: MedusaContainer }) =>
@@ -89,6 +90,25 @@ describe("upsertOngoingOrderEditStep", () => {
         error_class: null,
         last_error: null,
       })
+    )
+  })
+
+  it("ensures the (possibly new) order SKUs exist as articles before the re-PUT", async () => {
+    const putOrder = jest.fn().mockResolvedValue({ ongoingOrderId: 555 })
+    const putArticle = jest.fn().mockResolvedValue({ articleSystemId: 1 })
+    const { container } = makeContext({ putOrder, putArticle })
+
+    await invoke({ container })
+
+    expect(putArticle).toHaveBeenCalledTimes(1)
+    expect(putArticle).toHaveBeenCalledWith({
+      goodsOwnerId: 7,
+      articleNumber: "ART-1",
+      articleName: "ART-1",
+    })
+    // Article upsert must precede the order PUT.
+    expect(putArticle.mock.invocationCallOrder[0]).toBeLessThan(
+      putOrder.mock.invocationCallOrder[0]
     )
   })
 

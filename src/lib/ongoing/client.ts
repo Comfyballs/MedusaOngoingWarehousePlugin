@@ -9,6 +9,7 @@ import type {
   OngoingInventoryRow,
   OngoingOrderStatus,
   OngoingTrackedOrder,
+  PostArticleModel,
   PostOrderModel,
 } from "./types"
 
@@ -145,6 +146,22 @@ export class OngoingClient {
       )
     )
     return rows.map(mapTrackedOrder)
+  }
+
+  // ProcessArticle (step 1 of Ongoing's webshop flow): PUT /articles upserts by
+  // articleNumber, so the same call creates or updates. Called before putOrder so
+  // an order never references an unknown articleNumber. A 2xx (with or without an
+  // articleSystemId echo) means the upsert landed; a non-2xx surfaces as the usual
+  // classified OngoingApiError for the caller's record-then-retry pipeline.
+  async putArticle(article: PostArticleModel): Promise<{ articleSystemId?: number }> {
+    const res = await this.request<{ articleSystemId?: number | null; message?: string }>(
+      "PUT",
+      "/articles",
+      article
+    )
+    return {
+      articleSystemId: typeof res?.articleSystemId === "number" ? res.articleSystemId : undefined,
+    }
   }
 
   async putOrder(order: PostOrderModel): Promise<{ ongoingOrderId: number }> {
