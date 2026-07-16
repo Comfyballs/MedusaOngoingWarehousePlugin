@@ -10,6 +10,8 @@ The repo is currently the unmodified Medusa plugin **starter scaffold**: directo
 
 Pinned to Medusa **2.16.0** (see `package.json`); package manager is **yarn 4.6.0**; Node **>= 20**.
 
+**Issue tracking:** GitHub Issues is **retired** (all open issues closed 2026-07-05 with a "moved to beads" comment). Work tracking lives in `bd` (beads) — see the managed **Beads Issue Tracker** section below. In commits and PRs, reference the bead ID (e.g. `MedusaOngoingWarehousePlugin-1783216052060-66-b0ad5eb4`) rather than `Closes #N`.
+
 ## Commands
 
 ```bash
@@ -73,9 +75,9 @@ The `medusa-dev` skills (`building-with-medusa`, `building-admin-dashboard-custo
 
 ## Code review before merging (required)
 
-**Before merging any PR — including auto-driven `/work-milestone` wave merges — a Medusa-aware code review MUST happen first.** Do not squash/merge a PR until it has been reviewed by an agent (or session) that has loaded the **`medusa-dev:building-with-medusa`** skill; for PRs touching `src/admin/**`, also load **`medusa-dev:building-admin-dashboard-customizations`**. A generic review misses Medusa-specific defects this skill catches: mutations not wrapped in workflows, PUT/PATCH routes, broken module isolation / cross-module service calls, wrong `query.graph` vs `query.index` usage, non-`async` service methods, `MedusaError` vs generic `Error`, price-format (stored as-is, not cents), and workflow-composition rules (no async/arrow/conditionals in `createWorkflow`).
+**Before merging any PR, a Medusa-aware code review MUST happen first.** Do not squash/merge a PR until it has been reviewed by an agent (or session) that has loaded the **`medusa-dev:building-with-medusa`** skill; for PRs touching `src/admin/**`, also load **`medusa-dev:building-admin-dashboard-customizations`**. A generic review misses Medusa-specific defects this skill catches: mutations not wrapped in workflows, PUT/PATCH routes, broken module isolation / cross-module service calls, wrong `query.graph` vs `query.index` usage, non-`async` service methods, `MedusaError` vs generic `Error`, price-format (stored as-is, not cents), and workflow-composition rules (no async/arrow/conditionals in `createWorkflow`).
 
-The reviewer runs `yarn lint`, `yarn build`, and the test suite, and confirms the diff against the skill's rule categories. Merge only after the review is clean (or its findings are addressed). This is in addition to the generic `requesting-code-review` step in `process.md` below.
+The reviewer runs `yarn lint`, `yarn build`, and the test suite, and confirms the diff against the skill's rule categories. Merge only after the review is clean (or its findings are addressed). This is in addition to the generic `superpowers:requesting-code-review` skill.
 
 ## graphify
 

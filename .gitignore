@@ -36,3 +36,6 @@ build
 *.db
 .beads-credential-key
 .beads/proxieddb/
+
+# Local superpowers uninstall backups
+.superpowers-uninstall-backup-*.tar.gz
