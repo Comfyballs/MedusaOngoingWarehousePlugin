@@ -1,14 +1,16 @@
 // Provider identity for the Ongoing fulfillment provider.
 //
-// NOTE (issue #20 coordination): the canonical source for these two values is the
-// provider package's `src/providers/ongoing-fulfillment/constants.ts`, which is
-// owned by issue #20 and not yet merged. To avoid blocking this workflow and to
-// avoid a merge conflict on a sibling branch, they are defined locally here. The
-// literals MUST stay identical to #20's `ONGOING_PROVIDER_ID` /
-// `ONGOING_STANDARD_OPTION_ID`. Once #20 lands, switch these to a re-export from
-// the provider package so there is a single source of truth.
-export const ONGOING_PROVIDER_IDENTIFIER = "ongoing"
-export const ONGOING_FULFILLMENT_OPTION_ID = "ongoing-standard"
+// Re-exported from the provider package (`src/providers/ongoing-fulfillment/
+// constants.ts`) so there is a single source of truth: the shipping option this
+// workflow seeds must carry a provider_id that resolves to the registered provider,
+// and a divergent literal here would silently point it at a nonexistent provider.
+import {
+  ONGOING_PROVIDER_ID,
+  ONGOING_STANDARD_OPTION_ID,
+} from "../../providers/ongoing-fulfillment/constants"
+
+export const ONGOING_PROVIDER_IDENTIFIER = ONGOING_PROVIDER_ID
+export const ONGOING_FULFILLMENT_OPTION_ID = ONGOING_STANDARD_OPTION_ID
 
 // Seed values — placeholders, clearly flagged so operators edit before go-live.
 export const ONGOING_SHIPPING_OPTION_NAME = "Ongoing Fulfillment"

@@ -29,6 +29,10 @@ const dispatchStatusRefresh =
 beforeEach(() => {
   dispatchVerifiedShipment.mockClear()
   dispatchStatusRefresh.mockClear()
+  logger.info.mockClear()
+  logger.warn.mockClear()
+  logger.error.mockClear()
+  logger.debug.mockClear()
 })
 
 const SECRET = "s3cret-token"
@@ -203,6 +207,55 @@ describe("POST /ongoing/webhooks/:credentialKey", () => {
       integrationId: "int_1",
       credentialKey: "wh-1",
     })
+  })
+
+  it("acks 200 (not 500) and logs when listOngoingIntegrations throws (bead e1a4c811)", async () => {
+    const service = makeService({ credentials: makeCreds() })
+    service.listOngoingIntegrations.mockRejectedValueOnce(new Error("db down"))
+    const res = makeRes()
+    await POST(makeReq({ token: SECRET, service }), res)
+    // Retry-friendly ack per the always-200, poll-backstopped contract.
+    expect(res.sendStatus).toHaveBeenCalledWith(200)
+    expect(res.sendStatus).not.toHaveBeenCalledWith(500)
+    expect(logger.error).toHaveBeenCalledWith(expect.stringContaining("post-auth handling failed"))
+    expect(dispatchVerifiedShipment).not.toHaveBeenCalled()
+  })
+
+  it("warns (not debug) when no integration is bound to the credential (bead tfk)", async () => {
+    const service = makeService({ credentials: makeCreds(), integrations: [] })
+    const res = makeRes()
+    await POST(makeReq({ token: SECRET, service }), res)
+    expect(res.sendStatus).toHaveBeenCalledWith(200)
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("no integration bound"))
+  })
+
+  it("warns when the integration has no shipped_status_codes configured (bead tfk)", async () => {
+    const service = makeService({
+      credentials: makeCreds(),
+      integrations: [{ id: "int_1", shipped_status_codes: null }],
+    })
+    const res = makeRes()
+    await POST(makeReq({ token: SECRET, service }), res)
+    expect(res.sendStatus).toHaveBeenCalledWith(200)
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("no shipped_status_codes"))
+    // Empty codes => every status treated out-of-band, never a shipment dispatch.
+    expect(dispatchVerifiedShipment).not.toHaveBeenCalled()
+    expect(dispatchStatusRefresh).toHaveBeenCalledTimes(1)
+  })
+
+  it("normalizes a malformed (non-array) tracking field instead of throwing (bead tfk)", async () => {
+    const service = makeService({
+      credentials: makeCreds(),
+      integrations: [{ id: "int_1", shipped_status_codes: [320] }],
+    })
+    const res = makeRes()
+    const body = { ...validBody(), tracking: "oops-not-an-array" }
+    await POST(makeReq({ token: SECRET, body, service }), res)
+    // Parses (still in-band) and reaches the seam with tracking dropped — no throw.
+    expect(res.sendStatus).toHaveBeenCalledWith(200)
+    expect(dispatchVerifiedShipment).toHaveBeenCalledTimes(1)
+    const forwarded = dispatchVerifiedShipment.mock.calls[0][1].payload as unknown as Record<string, unknown>
+    expect(forwarded.tracking).toBeUndefined()
   })
 
   it("does not reveal which auth check failed (uniform 401 across causes)", async () => {

@@ -38,6 +38,90 @@ export function decideReuse(
   return { reuse: false }
 }
 
+// --- setup-location guard helpers (bead 0dc) ---
+// These throw a clear MedusaError instead of letting an unguarded [0] index or a
+// missing nested field surface as a raw TypeError. They live here (not inline in
+// the workflow) because @medusajs/no-throw-in-transform forbids throwing directly
+// in a transform() callback — a called helper is the sanctioned pattern.
+
+export type QueriedStockLocation = {
+  id: string
+  address?: { country_code?: string | null } | null
+  fulfillment_sets?: QueriedFulfillmentSet[]
+}
+
+export function requireStockLocation(
+  location: QueriedStockLocation | undefined,
+  stockLocationId: string
+): QueriedStockLocation {
+  if (!location) {
+    throw new MedusaError(
+      MedusaError.Types.NOT_FOUND,
+      `[ongoing] setup-location: stock location "${stockLocationId}" not found`
+    )
+  }
+  return location
+}
+
+export function requireCountryCode(location: QueriedStockLocation): string {
+  const code = location.address?.country_code
+  if (!code) {
+    throw new MedusaError(
+      MedusaError.Types.INVALID_DATA,
+      `[ongoing] setup-location: stock location "${location.id}" has no address.country_code; set the location address before wiring Ongoing`
+    )
+  }
+  return code
+}
+
+export function requireDefaultShippingProfileId(
+  profile: { id: string } | undefined
+): string {
+  if (!profile) {
+    throw new MedusaError(
+      MedusaError.Types.NOT_FOUND,
+      `[ongoing] setup-location: no default shipping profile found; create one before wiring Ongoing`
+    )
+  }
+  return profile.id
+}
+
+export function requireServiceZoneId(zone: { id: string } | undefined): string {
+  if (!zone) {
+    throw new MedusaError(
+      MedusaError.Types.UNEXPECTED_STATE,
+      `[ongoing] setup-location: service zone creation returned no zone`
+    )
+  }
+  return zone.id
+}
+
+export function resolveStoreCurrencyCode(
+  store:
+    | { supported_currencies?: Array<{ currency_code: string; is_default?: boolean }> }
+    | undefined
+): string {
+  if (!store) {
+    throw new MedusaError(
+      MedusaError.Types.NOT_FOUND,
+      `[ongoing] setup-location: no store configured`
+    )
+  }
+  const currencies = store.supported_currencies || []
+  const def = currencies.find((c) => c.is_default === true)
+  if (def) {
+    return def.currency_code
+  }
+  const first = currencies[0]
+  if (!first) {
+    throw new MedusaError(
+      MedusaError.Types.INVALID_DATA,
+      `[ongoing] setup-location: store has no supported currencies; configure at least one before wiring Ongoing`
+    )
+  }
+  return first.currency_code
+}
+
 export function extractFulfillmentSetId(location: QueriedLocation): string {
   const sets = location.fulfillment_sets || []
   if (sets.length === 0) {

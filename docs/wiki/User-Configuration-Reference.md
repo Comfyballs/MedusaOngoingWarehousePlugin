@@ -12,7 +12,7 @@ You pass these in the consuming app's `medusa-config.ts` under the plugin's `opt
 | `rateLimitConcurrency` | `number` | No | `1` | Maximum concurrent Ongoing API calls per goods owner. Ongoing recommends fully sequential calls — leave at `1` unless Ongoing support advises otherwise. |
 
 > **Note**
-> `rateLimitConcurrency` is not validated at startup. A value below `1` is rejected later by the client's throttle, not by the boot-time option validator.
+> These options are validated at startup. `rateLimitConcurrency` must be an integer `>= 1`, and `defaultStockSyncInterval` / `defaultStatusPollInterval` must parse to a positive integer number of milliseconds. A bad value fails the boot with a clear `INVALID_DATA` error instead of surfacing later mid-request or silently disabling a poll.
 
 ## Per-integration credentials
 

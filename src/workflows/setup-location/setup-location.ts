@@ -24,6 +24,11 @@ import {
   extractFulfillmentSetId,
   buildServiceZoneInput,
   buildShippingOptionInput,
+  requireStockLocation,
+  requireCountryCode,
+  requireDefaultShippingProfileId,
+  requireServiceZoneId,
+  resolveStoreCurrencyCode,
   FulfillmentSetMode,
 } from "./helpers"
 import { upsertIntegrationLocationStep } from "./steps/upsert-integration-location"
@@ -53,9 +58,15 @@ export const setupOngoingLocationWorkflow = createWorkflow(
       filters: { id: input.stock_location_id },
     }).config({ name: "query-existing-location" })
 
+    // guard the lookup: a missing/unknown stock location must fail with a clear
+    // MedusaError, not a raw TypeError from indexing [0] on an empty result.
+    const existingLocation = transform({ existing, input }, (data) =>
+      requireStockLocation(data.existing.data[0], data.input.stock_location_id)
+    )
+
     // honor the optional override flag; default "auto" = reuse-if-exists
-    const reuseDecision = transform({ existing, input }, (data) =>
-      decideReuse(data.existing.data[0], data.input.fulfillment_set_mode ?? "auto")
+    const reuseDecision = transform({ existingLocation, input }, (data) =>
+      decideReuse(data.existingLocation, data.input.fulfillment_set_mode ?? "auto")
     )
 
     // precompute the create gate as a plain boolean so when() reads no flag logic
@@ -64,8 +75,8 @@ export const setupOngoingLocationWorkflow = createWorkflow(
       (data) => data.reuseDecision.reuse === false
     )
 
-    const countryCode = transform({ existing }, (data) =>
-      data.existing.data[0].address.country_code
+    const countryCode = transform({ existingLocation }, (data) =>
+      requireCountryCode(data.existingLocation)
     )
 
     // (2) create the fulfillment set only when the decision says so
@@ -108,7 +119,9 @@ export const setupOngoingLocationWorkflow = createWorkflow(
       filters: { type: "default" },
     }).config({ name: "query-default-shipping-profile" })
 
-    const shippingProfileId = transform({ profiles }, (data) => data.profiles.data[0].id)
+    const shippingProfileId = transform({ profiles }, (data) =>
+      requireDefaultShippingProfileId(data.profiles.data[0])
+    )
 
     // (5) service zone scoped to the location country
     const serviceZones = createServiceZonesWorkflow.runAsStep({
@@ -120,7 +133,9 @@ export const setupOngoingLocationWorkflow = createWorkflow(
       ),
     })
 
-    const serviceZoneId = transform({ serviceZones }, (data) => data.serviceZones[0].id)
+    const serviceZoneId = transform({ serviceZones }, (data) =>
+      requireServiceZoneId(data.serviceZones[0])
+    )
 
     // (6) shipping option pointing at the Ongoing provider
     const providerId = transform({}, () =>
@@ -133,14 +148,9 @@ export const setupOngoingLocationWorkflow = createWorkflow(
       fields: ["id", "supported_currencies.currency_code", "supported_currencies.is_default"],
     }).config({ name: "query-store-currency" })
 
-    const currencyCode = transform({ stores }, (data) => {
-      const currencies = data.stores.data[0].supported_currencies || []
-      const def = currencies.find((c: { is_default?: boolean }) => c.is_default === true)
-      if (def) {
-        return def.currency_code
-      }
-      return currencies[0].currency_code
-    })
+    const currencyCode = transform({ stores }, (data) =>
+      resolveStoreCurrencyCode(data.stores.data[0])
+    )
 
     const shippingOptions = createShippingOptionsWorkflow.runAsStep({
       input: transform(
