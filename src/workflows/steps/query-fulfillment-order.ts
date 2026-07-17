@@ -48,7 +48,7 @@ export async function queryFulfillmentOrderHandler(
 export const queryFulfillmentOrderStep = createStep(
   "query-fulfillment-order",
   async (input: QueryFulfillmentOrderInput, context) => {
-    const result = await queryFulfillmentOrderHandler(input, context as any)
+    const result = await queryFulfillmentOrderHandler(input, context)
     return new StepResponse(result)
   }
 )

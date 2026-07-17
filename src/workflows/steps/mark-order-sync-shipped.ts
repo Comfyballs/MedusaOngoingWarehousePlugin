@@ -1,6 +1,6 @@
 import { createStep, StepResponse } from "@medusajs/framework/workflows-sdk"
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
-import type { MedusaContainer, IEventBusModuleService } from "@medusajs/framework/types"
+import type { MedusaContainer, IEventBusModuleService, Logger } from "@medusajs/framework/types"
 import { ONGOING_MODULE } from "../../modules/ongoing"
 import type OngoingModuleService from "../../modules/ongoing/service"
 import { ONGOING_EVENTS } from "../../lib/ongoing/events"
@@ -21,7 +21,7 @@ export const markOrderSyncShippedHandler = async (
   { container }: { container: MedusaContainer }
 ): Promise<StepResponse<{ order_sync_id: string }>> => {
   const ongoing = container.resolve(ONGOING_MODULE) as OngoingModuleService
-  const logger: any = container.resolve(ContainerRegistrationKeys.LOGGER)
+  const logger: Logger = container.resolve(ContainerRegistrationKeys.LOGGER)
   const eventBus = container.resolve<IEventBusModuleService>(Modules.EVENT_BUS)
 
   try {

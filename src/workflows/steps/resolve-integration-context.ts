@@ -39,7 +39,7 @@ export async function resolveIntegrationContextHandler(
 export const resolveIntegrationContextStep = createStep(
   "resolve-integration-context",
   async (input: ResolveIntegrationContextInput, context) => {
-    const output = await resolveIntegrationContextHandler(input, context as any)
+    const output = await resolveIntegrationContextHandler(input, context)
     return new StepResponse(output)
   }
 )

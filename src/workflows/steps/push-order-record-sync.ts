@@ -1,6 +1,6 @@
 import { createStep, StepResponse } from "@medusajs/framework/workflows-sdk"
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
-import type { MedusaContainer, IEventBusModuleService } from "@medusajs/framework/types"
+import type { MedusaContainer, IEventBusModuleService, Logger } from "@medusajs/framework/types"
 import { classifyError } from "../../lib/ongoing/errors"
 import type { PostOrderModel } from "../../lib/ongoing/types"
 import { ensureArticlesExist, type EnsureArticleInput } from "../../lib/ongoing/ensure-articles"
@@ -37,7 +37,7 @@ export async function pushOrderRecordSyncHandler(
   { container }: { container: MedusaContainer }
 ): Promise<PushOrderOutput> {
   const service = container.resolve(ONGOING_MODULE) as OngoingModuleService
-  const logger: any = container.resolve(ContainerRegistrationKeys.LOGGER)
+  const logger: Logger = container.resolve(ContainerRegistrationKeys.LOGGER)
   const eventBus = container.resolve<IEventBusModuleService>(Modules.EVENT_BUS)
 
   // Persist the order number BEFORE the PUT so a retry upserts the same Ongoing order.
@@ -143,7 +143,7 @@ export async function pushOrderRecordSyncHandler(
 export const pushOrderRecordSyncStep = createStep(
   "push-order-record-sync",
   async (input: PushOrderInput, context) => {
-    const output = await pushOrderRecordSyncHandler(input, context as any)
+    const output = await pushOrderRecordSyncHandler(input, context)
     return new StepResponse(output)
   }
 )

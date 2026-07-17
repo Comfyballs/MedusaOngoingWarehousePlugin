@@ -64,7 +64,7 @@ export async function flagOrphanedOrderSyncsHandler(
 export const flagOrphanedOrderSyncsStep = createStep(
   "flag-orphaned-order-syncs",
   async (input: FlagOrphanedOrderSyncsInput, context) => {
-    const output = await flagOrphanedOrderSyncsHandler(input, context as any)
+    const output = await flagOrphanedOrderSyncsHandler(input, context)
     return new StepResponse(output)
   }
 )

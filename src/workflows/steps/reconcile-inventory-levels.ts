@@ -1,7 +1,8 @@
 import { createStep, StepResponse } from "@medusajs/framework/workflows-sdk"
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
-import type { MedusaContainer, RemoteQueryFunction } from "@medusajs/framework/types"
+import type { MedusaContainer, RemoteQueryFunction, Logger } from "@medusajs/framework/types"
 import { ONGOING_MODULE } from "../../modules/ongoing"
+import type OngoingModuleService from "../../modules/ongoing/service"
 import type { OngoingInventoryRow } from "../../lib/ongoing/types"
 
 export type ReconcileInventoryInput = {
@@ -35,6 +36,30 @@ type LevelUpdate = {
   incoming_quantity: number
 }
 
+// Narrow local interface for only the inventory-module methods this step calls.
+// The real IInventoryService DTOs type `sku`/quantity fields more loosely
+// (nullable/BigNumberInput) than what this step actually relies on at runtime
+// (Ongoing-sourced SKUs always populate `sku`; quantities are plain numbers in
+// this schema) -- mirrors the `OngoingServiceLike` pattern used for the same
+// reason in retry-ongoing-syncs.ts / flag-orphaned-order-syncs.ts. Resolving
+// `Modules.INVENTORY` still yields the real `IInventoryService`, whose DTOs
+// don't structurally satisfy this narrower shape (nullable `sku`,
+// `BigNumberInput` quantities) -- see the `as unknown as InventoryServiceLike`
+// cast below, the same narrowing pattern already used for `model.json()`
+// columns in update-ongoing-integration.ts/create-ongoing-integration-row.ts.
+type InventoryServiceLike = {
+  listInventoryItems: (selector: { sku: string[] }) => Promise<InventoryItem[]>
+  listInventoryLevels: (selector: {
+    inventory_item_id: string[]
+    location_id: string
+  }) => Promise<InventoryLevel[]>
+  listReservationItems: (selector: {
+    inventory_item_id: string[]
+    location_id: string
+  }) => Promise<ReservationItem[]>
+  updateInventoryLevels: (updates: LevelUpdate[]) => Promise<unknown>
+}
+
 // updateInventoryLevels accepts an array; chunk the bulk write so a very large
 // catalogue doesn't build one unbounded payload (third-party-sync best practice).
 const LEVEL_WRITE_CHUNK = 100
@@ -44,9 +69,11 @@ export async function reconcileInventoryLevelsHandler(
   { container }: { container: MedusaContainer }
 ): Promise<StepResponse<ReconcileInventoryOutput>> {
   const { rows, integration_id, stock_location_id, stock_reconcile_mode } = input
-  const logger: any = container.resolve(ContainerRegistrationKeys.LOGGER)
-  const inventoryService: any = container.resolve(Modules.INVENTORY)
-  const ongoing: any = container.resolve(ONGOING_MODULE)
+  const logger: Logger = container.resolve(ContainerRegistrationKeys.LOGGER)
+  const inventoryService = container.resolve(
+    Modules.INVENTORY
+  ) as unknown as InventoryServiceLike
+  const ongoing = container.resolve(ONGOING_MODULE) as OngoingModuleService
 
   if (rows.length === 0) {
     return new StepResponse({ written: 0, skipped: 0 })
