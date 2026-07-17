@@ -3,6 +3,17 @@ import type { RemoteQueryFunction } from "@medusajs/framework/types"
 import type { CodeNamePair, PostOrderTransporter } from "./types"
 import { extractOngoingCarrier } from "./way-of-delivery"
 
+// Shape of a raw `fulfillment.items[]` entry as returned by `query.graph` for the
+// `items.quantity`/`items.sku`/`items.barcode`/`items.title`/`items.line_item_id`
+// field selection above -- only the fields this function actually reads.
+type RawFulfillmentItem = {
+  quantity: number
+  sku?: string | null
+  barcode?: string | null
+  title?: string | null
+  line_item_id?: string | null
+}
+
 export type QueriedFulfillmentOrder = {
   fulfillment_id: string
   location_id: string
@@ -101,7 +112,7 @@ export async function reQueryFulfillmentOrder(
     location_id: fulfillment.location_id,
     way_of_delivery: carrier.wayOfDelivery,
     transporter: carrier.transporter,
-    items: (fulfillment.items ?? []).map((i: any) => ({
+    items: (fulfillment.items ?? []).map((i: RawFulfillmentItem) => ({
       quantity: i.quantity,
       sku: i.sku ?? null,
       barcode: i.barcode ?? null,

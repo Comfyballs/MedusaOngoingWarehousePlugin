@@ -49,7 +49,7 @@ export async function retryOngoingSyncsHandler(
 export const retryOngoingSyncsStep = createStep(
   "retry-ongoing-syncs",
   async (input: RetryOngoingSyncsInput, context) => {
-    const output = await retryOngoingSyncsHandler(input, context as any)
+    const output = await retryOngoingSyncsHandler(input, context)
     return new StepResponse(output)
   }
 )

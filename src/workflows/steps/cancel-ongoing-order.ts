@@ -1,6 +1,6 @@
 import { createStep, StepResponse } from "@medusajs/framework/workflows-sdk"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
-import type { MedusaContainer } from "@medusajs/framework/types"
+import type { MedusaContainer, Logger } from "@medusajs/framework/types"
 import { OngoingApiError } from "../../lib/ongoing/errors"
 import { ONGOING_MODULE } from "../../modules/ongoing"
 import type OngoingModuleService from "../../modules/ongoing/service"
@@ -67,7 +67,7 @@ export const cancelOngoingOrderHandler = async (
   { container }: { container: MedusaContainer }
 ): Promise<StepResponse<CancelStepResult>> => {
   const ongoing = container.resolve(ONGOING_MODULE) as OngoingModuleService
-  const logger: any = container.resolve(ContainerRegistrationKeys.LOGGER)
+  const logger: Logger = container.resolve(ContainerRegistrationKeys.LOGGER)
   const client = ongoing.getClient(input.credentialKey)
 
   try {
