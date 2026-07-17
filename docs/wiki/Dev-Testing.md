@@ -105,7 +105,7 @@ Match the existing layout and style:
 - **Injected dependencies**: for the client and steps, pass fakes (`fetchImpl`, `sleep`, a stub module service) rather than reaching for real services.
 - **Live tests must self-skip**: gate the body on `process.env.ONGOING_LIVE === "1"` (and `ONGOING_LIVE_WRITES` for write paths) so the suite is safe to run without credentials.
 
-Run the suite you affected before committing; run `yarn test:live` against a sandbox when you change the Ongoing client. There is no CI, so these are manual gates — see [[Dev Contributing]].
+Run the suite you affected before committing; run `yarn test:live` against a sandbox when you change the Ongoing client. CI (`.github/workflows/ci.yml`) runs `yarn test` (L1 only) on every PR and push to `main`; `test:integration` and `test:live` are not wired into CI and stay manual gates — see [[Dev Contributing]].
 
 ## Related pages
 

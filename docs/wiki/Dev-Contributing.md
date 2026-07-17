@@ -77,7 +77,7 @@ Work tracking lives in `bd` (beads). Create the bead **before** you write code. 
 6. Get the required Medusa-aware review (below).
 7. Merge only after the review is clean or its findings are addressed.
 
-There is **no CI** in this repo — no `.github/workflows/`. Nothing runs lint, build, or tests automatically on a PR. The local gates and the required review are the only checks, so run them yourself.
+`.github/workflows/ci.yml` runs `yarn lint`, `yarn build`, and `yarn test` (the L1 unit suite) automatically on every PR into `main` and on push to `main`, pinned to **Node 22** via Corepack/yarn 4.6.0. It does **not** run `yarn test:integration` or `yarn test:live` — those need a real Postgres / live Ongoing sandbox CI doesn't have — so a green CI run is not a substitute for running those locally when they apply. CI is in addition to, not instead of, the required review below.
 
 ## Required review before merge
 
