@@ -8,19 +8,16 @@ Editing a page is an ordinary repo edit — change the `.md` file in `docs/wiki/
 
 ## How to publish to the GitHub wiki
 
-A GitHub wiki is its own git repository at `https://github.com/Comfyballs/MedusaOngoingWarehousePlugin.wiki.git`. Only commits on that repo's default branch go live. To publish the `docs/wiki/` source to it, push the files there:
+A GitHub wiki is its own git repository at `https://github.com/Comfyballs/MedusaOngoingWarehousePlugin.wiki.git`. Only commits on that repo's default branch go live. Publish with the sync script:
 
 ```bash
-# Clone the wiki repo (once), alongside the main checkout:
-git clone git@github.com:Comfyballs/MedusaOngoingWarehousePlugin.wiki.git
-
-# Copy the current source over and publish:
-cp path/to/main-repo/docs/wiki/*.md MedusaOngoingWarehousePlugin.wiki/
-cd MedusaOngoingWarehousePlugin.wiki
-git add .
-git commit -m "docs: sync wiki from docs/wiki"
-git push
+./scripts/publish-wiki.sh
 ```
+
+It clones the wiki repo into a temp directory, mirrors `docs/wiki/` into it (deleting wiki pages that no longer exist in the source), commits with the main-repo commit SHA, and pushes. It no-ops when the wiki is already current.
+
+> **Note**
+> One-time prerequisite: GitHub creates the `.wiki.git` repo only after the wiki is initialized in the browser — open the repo's wiki tab and use "Create the first page" (any content; the first sync replaces it). Until then the script exits with that hint.
 
 The `docs/wiki/` directory in the main repo is the source of truth; the wiki repo is a publish target. Edit in `docs/wiki/`, then sync — do not edit the live wiki directly, or the next sync will overwrite your change.
 
