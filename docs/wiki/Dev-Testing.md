@@ -28,25 +28,37 @@ This is the suite you run on every commit. It is self-contained — no external 
 
 ### Medusa integration suite (`yarn test:integration`)
 
-Layer 2 boots the plugin's `ongoing` module inside a **real DB-backed Medusa module container** using `moduleIntegrationTestRunner` from `@medusajs/test-utils`, exercising the wiring the unit suite mocks: module registration, the `validate-options` loader, migrations/schema, and the module service against Postgres. Ongoing is **never** contacted — specs pass well-formed fake plugin options and inject a spy logger.
+Layer 2 boots the plugin's `ongoing` module inside a **real DB-backed Medusa module container** using `moduleIntegrationTestRunner` from `@medusajs/test-utils`, exercising the wiring the unit suite mocks: module registration, the `validate-options` loader, migrations/schema, and the module service against Postgres. Ongoing is **never** contacted over the network — HTTP is stubbed (see below).
 
-- `testMatch: ["**/integration-tests/**/*.spec.ts"]`, rooted at `integration-tests/` (outside `src/`, so `yarn test` never picks these up).
-- Specs end in `.spec.ts` (not `.test.ts`) and live in `integration-tests/`, e.g. `integration-tests/ongoing-module.spec.ts` (the boot smoke test).
+Current specs:
+
+- `integration-tests/ongoing-module.spec.ts` — boot smoke (module registers, migrates, resolves; loader ran).
+- `integration-tests/push-order-to-ongoing.spec.ts` — drives the real `pushOrderToOngoing` workflow (real order-mapper + real SKU resolver) and asserts the real `OngoingOrderSync` row transitions `pending → sent`, plus the error-row-on-failure path.
+- `integration-tests/fulfillment-provider.spec.ts` — the fulfillment provider's `createFulfillment` / `cancelFulfillment` end-to-end into the real module + workflows.
+- `integration-tests/_shared/l2.ts` — shared harness: fake plugin options, a fake `query.graph` (the core Order/Product modules are absent from a module container, so cross-module reads are faked), and a `createMedusaContainer()` that registers the **real** module service alongside those fakes so the real workflow orchestrator runs.
+
+**How Ongoing HTTP is stubbed:** with [`nock`](https://github.com/nock/nock). `OngoingClient`'s default transport is Node's `https` module, which nock intercepts; Postgres uses raw sockets via `pg` and is unaffected. Specs `nock(ONGOING_BASE_URL).put("/orders")...` etc. and `nock.cleanAll()` in `afterEach`.
+
+- `testMatch: ["**/integration-tests/**/*.spec.ts"]`, rooted at `integration-tests/` (outside `src/`, so `yarn test` never picks these up). Specs end in `.spec.ts` (not `.test.ts`).
+- `setupFiles: ["<rootDir>/integration-tests/setup-env.ts"]` fills conventional Medusa local `DB_*` defaults (`127.0.0.1:5432 postgres/postgres`) when unset, so the suite runs out of the box; CI overrides via real env.
 - `testTimeout: 60_000` — booting a module and running migrations against Postgres is far slower than a unit test; the runner creates and drops a temp database per run.
 - Same `buffer-equal-constant-time` shim as the other configs.
+- Seed rows **per test** in a `beforeEach` (the runner resets the DB and re-inits the module each test); the `service` handed to `testSuite` is a live proxy, valid only after that per-test init.
 
-**Requires a running Postgres.** The runner reads connection details from env and creates/drops a temp database itself:
+**Requires a running Postgres and Node 20/22.** The `test:integration` script sets `NODE_OPTIONS=--experimental-vm-modules` (the module loader uses dynamic `import()`), and Node 26 breaks the mikro-orm/migration path (see [[Dev Gotchas]]) — run under Node 20 or 22 (`nvm use 22`). The runner reads connection details from env and creates/drops its own throwaway temp database (via `pg-god`, a devDependency); it never writes to an existing app database:
 
 ```bash
-export DB_HOST=localhost      # default localhost
+nvm use 22
+export DB_HOST=127.0.0.1      # default (setup-env.ts) 127.0.0.1
 export DB_PORT=5432           # default 5432
 export DB_USERNAME=postgres   # a role that may CREATE/DROP DATABASE
 export DB_PASSWORD=postgres
-export DB_TEMP_NAME=medusa-ongoing-integration   # temp db the runner creates/drops
 yarn test:integration
 ```
 
-The `DB_USERNAME` role must be allowed to create and drop databases. Nothing here needs Ongoing credentials.
+The `DB_USERNAME` role must be allowed to create and drop databases. Nothing here needs Ongoing credentials. No local Postgres? Any standard local Postgres works — e.g. the docker Postgres from a sibling Medusa app (`docker compose up -d` in that app, then point `DB_*` at it).
+
+**Deferred to full-app fidelity (bead wh5.9):** real cross-module `query.graph` link resolution and registering the provider under the real `@medusajs/medusa/fulfillment` module (Medusa core driving `createFulfillment`) need a full consuming-app boot, not a module container — tracked separately and verified against a consuming app.
 
 ### Live harness (`yarn test:live`)
 
