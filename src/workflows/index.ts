@@ -47,3 +47,8 @@ export type {
   RefreshOrderSyncStatusInput,
   RefreshOrderSyncStatusOutput,
 } from "./steps/refresh-order-sync-status"
+export { syncOngoingReturnStatusWorkflow } from "./sync-ongoing-return-status"
+export type {
+  RecordReturnStatusInput,
+  RecordReturnStatusOutput,
+} from "./steps/record-return-status"

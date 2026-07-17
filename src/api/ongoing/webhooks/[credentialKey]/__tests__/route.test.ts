@@ -12,10 +12,15 @@ jest.mock("../dispatch-status-refresh", () => ({
   __esModule: true,
   dispatchStatusRefresh: jest.fn().mockResolvedValue(undefined),
 }))
+jest.mock("../dispatch-return-status", () => ({
+  __esModule: true,
+  dispatchReturnStatus: jest.fn().mockResolvedValue(undefined),
+}))
 
 import { POST } from "../route"
 import { dispatchVerifiedShipment as dispatchVerifiedShipmentImport } from "../dispatch-shipment"
 import { dispatchStatusRefresh as dispatchStatusRefreshImport } from "../dispatch-status-refresh"
+import { dispatchReturnStatus as dispatchReturnStatusImport } from "../dispatch-return-status"
 
 const dispatchVerifiedShipment =
   dispatchVerifiedShipmentImport as jest.MockedFunction<
@@ -25,10 +30,15 @@ const dispatchStatusRefresh =
   dispatchStatusRefreshImport as jest.MockedFunction<
     typeof dispatchStatusRefreshImport
   >
+const dispatchReturnStatus =
+  dispatchReturnStatusImport as jest.MockedFunction<
+    typeof dispatchReturnStatusImport
+  >
 
 beforeEach(() => {
   dispatchVerifiedShipment.mockClear()
   dispatchStatusRefresh.mockClear()
+  dispatchReturnStatus.mockClear()
   logger.info.mockClear()
   logger.warn.mockClear()
   logger.error.mockClear()
@@ -174,6 +184,13 @@ describe("POST /ongoing/webhooks/:credentialKey", () => {
       integrationId: "int_1",
       credentialKey: "wh-1",
     })
+    // Return-status detection runs regardless of the shipped/out-of-band branch.
+    expect(dispatchReturnStatus).toHaveBeenCalledTimes(1)
+    expect(dispatchReturnStatus).toHaveBeenCalledWith(expect.anything(), {
+      payload: expect.objectContaining({ goodsOwnerId: GOODS_OWNER }),
+      integrationId: "int_1",
+      credentialKey: "wh-1",
+    })
   })
 
   it("returns 200 no-op (no refresh) when no integration exists for the credential", async () => {
@@ -187,6 +204,8 @@ describe("POST /ongoing/webhooks/:credentialKey", () => {
     expect(res.sendStatus).toHaveBeenCalledWith(200)
     expect(dispatchVerifiedShipment).not.toHaveBeenCalled()
     expect(dispatchStatusRefresh).not.toHaveBeenCalled()
+    // No integration bound => the route returns before reaching any dispatcher.
+    expect(dispatchReturnStatus).not.toHaveBeenCalled()
   })
 
   it("returns 200 and reaches the #36 seam for a valid, in-band webhook", async () => {
@@ -207,6 +226,8 @@ describe("POST /ongoing/webhooks/:credentialKey", () => {
       integrationId: "int_1",
       credentialKey: "wh-1",
     })
+    // Return-status detection runs regardless of the shipped/out-of-band branch.
+    expect(dispatchReturnStatus).toHaveBeenCalledTimes(1)
   })
 
   it("acks 200 (not 500) and logs when listOngoingIntegrations throws (bead e1a4c811)", async () => {
@@ -219,6 +240,7 @@ describe("POST /ongoing/webhooks/:credentialKey", () => {
     expect(res.sendStatus).not.toHaveBeenCalledWith(500)
     expect(logger.error).toHaveBeenCalledWith(expect.stringContaining("post-auth handling failed"))
     expect(dispatchVerifiedShipment).not.toHaveBeenCalled()
+    expect(dispatchReturnStatus).not.toHaveBeenCalled()
   })
 
   it("warns (not debug) when no integration is bound to the credential (bead tfk)", async () => {
@@ -241,6 +263,37 @@ describe("POST /ongoing/webhooks/:credentialKey", () => {
     // Empty codes => every status treated out-of-band, never a shipment dispatch.
     expect(dispatchVerifiedShipment).not.toHaveBeenCalled()
     expect(dispatchStatusRefresh).toHaveBeenCalledTimes(1)
+    expect(dispatchReturnStatus).toHaveBeenCalledTimes(1)
+  })
+
+  it("reaches the return-status dispatcher for a return-flagged webhook (bead mkg)", async () => {
+    const service = makeService({
+      credentials: makeCreds(),
+      integrations: [{ id: "int_1", shipped_status_codes: [320] }],
+    })
+    const res = makeRes()
+    const body = {
+      ...validBody(),
+      tracking: [
+        { trackingUrl: "https://t/1", waybill: "WB1", isReturn: false },
+        { trackingUrl: "https://t/ret", waybill: "WB-RET", isReturn: true },
+      ],
+    }
+    await POST(makeReq({ token: SECRET, body, service }), res)
+    expect(res.sendStatus).toHaveBeenCalledWith(200)
+    expect(dispatchReturnStatus).toHaveBeenCalledTimes(1)
+    expect(dispatchReturnStatus).toHaveBeenCalledWith(expect.anything(), {
+      payload: expect.objectContaining({
+        goodsOwnerId: GOODS_OWNER,
+        tracking: expect.arrayContaining([
+          expect.objectContaining({ waybill: "WB-RET", isReturn: true }),
+        ]),
+      }),
+      integrationId: "int_1",
+      credentialKey: "wh-1",
+    })
+    // The outbound shipment dispatch still runs independently (in-band status).
+    expect(dispatchVerifiedShipment).toHaveBeenCalledTimes(1)
   })
 
   it("normalizes a malformed (non-array) tracking field instead of throwing (bead tfk)", async () => {
@@ -256,6 +309,10 @@ describe("POST /ongoing/webhooks/:credentialKey", () => {
     expect(dispatchVerifiedShipment).toHaveBeenCalledTimes(1)
     const forwarded = dispatchVerifiedShipment.mock.calls[0][1].payload as unknown as Record<string, unknown>
     expect(forwarded.tracking).toBeUndefined()
+    // dispatchReturnStatus is mocked here, so it can't throw on the normalized
+    // payload either — asserting it still runs guards against a future regression
+    // where it's wired only into one branch.
+    expect(dispatchReturnStatus).toHaveBeenCalledTimes(1)
   })
 
   it("does not reveal which auth check failed (uniform 401 across causes)", async () => {

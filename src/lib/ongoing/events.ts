@@ -9,6 +9,7 @@ export const ONGOING_EVENTS = {
   EDIT_BLOCKED: "ongoing.sync.edit_blocked",
   RETURN_ORDER_PUSHED: "ongoing.sync.return_order_pushed",
   RETURN_ORDER_PUSH_FAILED: "ongoing.sync.return_order_push_failed",
+  RETURN_STATUS_RECEIVED: "ongoing.sync.return_status_received",
 } as const
 
 export type OngoingEventName = (typeof ONGOING_EVENTS)[keyof typeof ONGOING_EVENTS]
@@ -90,4 +91,21 @@ export interface ReturnOrderPushFailedPayload {
   integration_id: string
   error_class: "retryable" | "terminal"
   error_message: string
+}
+
+// Emitted when an inbound Ongoing order-status webhook carries return-flagged
+// (isReturn / isReturnParcel) tracking/parcel entries. There is no return-order
+// identifier on this payload (see map-payload-to-return-status-input.ts), so this
+// event is scoped to the ORIGINAL order's OngoingOrderSync row, not a specific
+// Medusa `return` record — see record-return-status.ts and Dev-Architecture.md for
+// the full rationale.
+export interface ReturnStatusReceivedPayload {
+  medusa_order_id: string
+  ongoing_order_number: string
+  ongoing_order_sync_id: string
+  integration_id: string
+  status_code: number
+  status_text: string
+  return_tracking_numbers: string[]
+  return_parcel_numbers: string[]
 }

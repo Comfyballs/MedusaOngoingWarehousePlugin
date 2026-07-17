@@ -8,6 +8,7 @@ import type {
 } from "../../../../lib/ongoing/types"
 import { dispatchVerifiedShipment } from "./dispatch-shipment"
 import { dispatchStatusRefresh } from "./dispatch-status-refresh"
+import { dispatchReturnStatus } from "./dispatch-return-status"
 
 // Timing-safe equality. timingSafeEqual throws on unequal-length buffers, so we
 // guard byteLength first; an early length-difference return is acceptable here
@@ -134,6 +135,18 @@ export async function POST(
       res.sendStatus(200)
       return
     }
+
+    // --- Return-status: orthogonal to the shipped/out-of-band split below. A
+    // return-flagged (isReturn/isReturnParcel) tracking/parcel entry can arrive on a
+    // webhook for ANY order status, not just the ones configured as "shipped", so
+    // this runs unconditionally instead of living inside either branch. Detects and
+    // records via its own idempotent, always-swallowing dispatcher (see
+    // dispatch-return-status.ts) — never throws, so it can't affect the ack below.
+    await dispatchReturnStatus(req.scope, {
+      payload,
+      integrationId: integration.id,
+      credentialKey,
+    })
 
     const shippedCodes = (integration.shipped_status_codes ?? []) as number[]
     if (shippedCodes.length === 0) {
