@@ -7,17 +7,20 @@ import { z } from "@medusajs/framework/zod"
 // `{ article, totalItems }` shape came from a `/articles/inventory` endpoint that does
 // not exist in the spec (bead dtw). Counts default to 0 downstream if omitted, so they
 // stay optional here; z.object ignores the many other GetArticleModel fields.
+// Optional members are .nullish(), not .optional(): Ongoing's API serializes absent
+// members as JSON null (observed live — a fresh order returns `"tracking": null`), and
+// zod's .optional() rejects null (bead dw5). The mappers already null-guard via ??/?..
 export const OngoingInventoryRowResponseSchema = z.object({
   articleNumber: z.string(),
   articleSystemId: z.number(),
   inventoryInfo: z
     .object({
-      numberOfItems: z.number().optional(),
-      allocatedNumberOfItems: z.number().optional(),
-      sellableNumberOfItems: z.number().optional(),
-      toReceiveNumberOfItems: z.number().optional(),
+      numberOfItems: z.number().nullish(),
+      allocatedNumberOfItems: z.number().nullish(),
+      sellableNumberOfItems: z.number().nullish(),
+      toReceiveNumberOfItems: z.number().nullish(),
     })
-    .optional(),
+    .nullish(),
 })
 
 export type OngoingInventoryRowResponse = z.infer<typeof OngoingInventoryRowResponseSchema>
@@ -30,8 +33,8 @@ export type OngoingInventoryRowResponse = z.infer<typeof OngoingInventoryRowResp
 // The earlier parcels[].parcelTracking.code / trackingNumber fields do not exist in the
 // spec, so tracking extraction silently produced [] (bead 5vu).
 const OngoingTrackingSchema = z.object({
-  waybill: z.string().optional(),
-  trackingUrl: z.string().optional(),
+  waybill: z.string().nullish(),
+  trackingUrl: z.string().nullish(),
 })
 
 export const OngoingTrackedOrderResponseSchema = z.object({
@@ -47,12 +50,12 @@ export const OngoingTrackedOrderResponseSchema = z.object({
     .array(
       z.object({
         // GetOrderParcel.isReturnParcel — return parcels are excluded from outbound tracking.
-        isReturnParcel: z.boolean().optional(),
-        tracking: OngoingTrackingSchema.optional(),
+        isReturnParcel: z.boolean().nullish(),
+        tracking: OngoingTrackingSchema.nullish(),
       })
     )
-    .optional(),
-  tracking: z.array(OngoingTrackingSchema).optional(),
+    .nullish(),
+  tracking: z.array(OngoingTrackingSchema).nullish(),
 })
 
 export type OngoingTrackedOrderResponse = z.infer<typeof OngoingTrackedOrderResponseSchema>

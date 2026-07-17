@@ -31,6 +31,23 @@ describe("OngoingInventoryRowResponseSchema (GetArticleModel subset)", () => {
     expect(OngoingInventoryRowResponseSchema.safeParse(raw).success).toBe(true)
   })
 
+  // Regression (bead dw5): Ongoing serializes absent members as JSON null, not omitted.
+  it("accepts an article where inventoryInfo and its counts are null", () => {
+    const raw = {
+      articleNumber: "SKU-1",
+      articleSystemId: 42,
+      inventoryInfo: { numberOfItems: null, sellableNumberOfItems: null },
+    }
+    expect(OngoingInventoryRowResponseSchema.safeParse(raw).success).toBe(true)
+    expect(
+      OngoingInventoryRowResponseSchema.safeParse({
+        articleNumber: "SKU-1",
+        articleSystemId: 42,
+        inventoryInfo: null,
+      }).success
+    ).toBe(true)
+  })
+
   it("rejects an article missing articleNumber", () => {
     const raw = { articleSystemId: 42, inventoryInfo: {} }
     expect(OngoingInventoryRowResponseSchema.safeParse(raw).success).toBe(false)
@@ -67,6 +84,34 @@ describe("OngoingTrackedOrderResponseSchema (GetOrderModel subset)", () => {
         orderNumber: "ORD-1",
         orderStatus: { number: 300, text: "Sent" },
       },
+    }
+    expect(OngoingTrackedOrderResponseSchema.safeParse(raw).success).toBe(true)
+  })
+
+  // Regression (bead dw5): Ongoing serializes absent members as JSON null, not omitted —
+  // a freshly created order (no waybill yet) comes back with `"tracking": null` live.
+  it("accepts an order where tracking/parcels are null (fresh order, no waybill yet)", () => {
+    const raw = {
+      orderInfo: {
+        orderId: 100,
+        orderNumber: "ORD-1",
+        orderStatus: { number: 200, text: "Open" },
+      },
+      parcels: null,
+      tracking: null,
+    }
+    expect(OngoingTrackedOrderResponseSchema.safeParse(raw).success).toBe(true)
+  })
+
+  it("accepts null nested tracking fields inside parcels (bead dw5)", () => {
+    const raw = {
+      orderInfo: {
+        orderId: 100,
+        orderNumber: "ORD-1",
+        orderStatus: { number: 200, text: "Open" },
+      },
+      parcels: [{ isReturnParcel: null, tracking: null }, { tracking: { waybill: null, trackingUrl: null } }],
+      tracking: [{ waybill: null, trackingUrl: null }],
     }
     expect(OngoingTrackedOrderResponseSchema.safeParse(raw).success).toBe(true)
   })
