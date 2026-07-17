@@ -4,6 +4,11 @@ import {
   extractFulfillmentSetId,
   buildServiceZoneInput,
   buildShippingOptionInput,
+  requireStockLocation,
+  requireCountryCode,
+  requireDefaultShippingProfileId,
+  requireServiceZoneId,
+  resolveStoreCurrencyCode,
 } from "../helpers"
 import {
   ONGOING_PROVIDER_IDENTIFIER,
@@ -67,6 +72,72 @@ describe("extractFulfillmentSetId", () => {
 
   it("throws when no fulfillment set is present", () => {
     expect(() => extractFulfillmentSetId({ id: "loc_1", fulfillment_sets: [] })).toThrow(/fulfillment set/i)
+  })
+})
+
+describe("setup-location guard helpers (bead 0dc)", () => {
+  describe("requireStockLocation", () => {
+    it("returns the location when present", () => {
+      const loc = { id: "loc_1" }
+      expect(requireStockLocation(loc, "loc_1")).toBe(loc)
+    })
+    it("throws NOT_FOUND when the location is missing", () => {
+      expect(() => requireStockLocation(undefined, "loc_missing")).toThrow(/loc_missing.*not found/)
+    })
+  })
+
+  describe("requireCountryCode", () => {
+    it("returns the address country code", () => {
+      expect(requireCountryCode({ id: "loc_1", address: { country_code: "no" } })).toBe("no")
+    })
+    it("throws when there is no address", () => {
+      expect(() => requireCountryCode({ id: "loc_1" })).toThrow(/country_code/)
+    })
+    it("throws when the country code is null/empty", () => {
+      expect(() => requireCountryCode({ id: "loc_1", address: { country_code: null } })).toThrow(/country_code/)
+    })
+  })
+
+  describe("requireDefaultShippingProfileId", () => {
+    it("returns the profile id", () => {
+      expect(requireDefaultShippingProfileId({ id: "sp_1" })).toBe("sp_1")
+    })
+    it("throws when no default profile exists", () => {
+      expect(() => requireDefaultShippingProfileId(undefined)).toThrow(/shipping profile/)
+    })
+  })
+
+  describe("requireServiceZoneId", () => {
+    it("returns the zone id", () => {
+      expect(requireServiceZoneId({ id: "sz_1" })).toBe("sz_1")
+    })
+    it("throws when the zone is missing", () => {
+      expect(() => requireServiceZoneId(undefined)).toThrow(/service zone/)
+    })
+  })
+
+  describe("resolveStoreCurrencyCode", () => {
+    it("prefers the default currency", () => {
+      expect(
+        resolveStoreCurrencyCode({
+          supported_currencies: [
+            { currency_code: "usd", is_default: false },
+            { currency_code: "nok", is_default: true },
+          ],
+        })
+      ).toBe("nok")
+    })
+    it("falls back to the first currency when none is marked default", () => {
+      expect(
+        resolveStoreCurrencyCode({ supported_currencies: [{ currency_code: "usd" }] })
+      ).toBe("usd")
+    })
+    it("throws when there is no store", () => {
+      expect(() => resolveStoreCurrencyCode(undefined)).toThrow(/no store/)
+    })
+    it("throws when the store has no supported currencies", () => {
+      expect(() => resolveStoreCurrencyCode({ supported_currencies: [] })).toThrow(/no supported currencies/)
+    })
   })
 })
 

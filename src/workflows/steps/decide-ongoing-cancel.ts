@@ -1,5 +1,6 @@
 import { createStep, StepResponse } from "@medusajs/framework/workflows-sdk"
 import type { MedusaContainer } from "@medusajs/framework/types"
+import { ONGOING_MODULE } from "../../modules/ongoing"
 
 export type DecideCancelInput = {
   medusa_order_id?: string
@@ -40,7 +41,7 @@ export const decideOngoingCancelHandler = async (
   input: DecideCancelInput,
   { container }: { container: MedusaContainer }
 ): Promise<StepResponse<CancelDecision>> => {
-    const ongoing = container.resolve("ongoing") as any
+    const ongoing = container.resolve(ONGOING_MODULE) as any
 
     const filter = buildFilter(input)
     const syncs = await ongoing.listOngoingOrderSyncs(filter)

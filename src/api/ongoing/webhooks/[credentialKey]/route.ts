@@ -34,6 +34,16 @@ function parsePayload(body: unknown): WebhookOrderPayload | null {
   ) {
     return null
   }
+  // Only goodsOwnerId and orderStatus.number are contractually required above.
+  // tracking/parcels flow into the shipment mapper, which calls .filter() on them —
+  // a malformed non-array would throw there and be swallowed as a silent shipment
+  // drop. Normalize array-typed fields to undefined when they arrive malformed.
+  if (b.tracking !== undefined && !Array.isArray(b.tracking)) {
+    delete b.tracking
+  }
+  if (b.parcels !== undefined && !Array.isArray(b.parcels)) {
+    delete b.parcels
+  }
   return b as unknown as WebhookOrderPayload
 }
 
@@ -105,35 +115,56 @@ export async function POST(
   // Ongoing order webhooks fire on any selected status change
   // (https://developer.ongoingwarehouse.com/webhook-order). Register the webhook
   // for the full active-status range the poll job covers.
-  const [integration] = await ongoing.listOngoingIntegrations({
-    credential_key: credentialKey,
-  })
+  // The post-auth path touches the DB (listOngoingIntegrations) and a nullable
+  // model column. Wrap it so a transient DB/config error acks 200 instead of a 500:
+  // the status-poll job is the reconciliation backstop, and a 5xx would only make
+  // Ongoing retry-flood against a transient failure. (Uniform-401 surface is intact
+  // — auth already ran above.)
+  try {
+    const [integration] = await ongoing.listOngoingIntegrations({
+      credential_key: credentialKey,
+    })
 
-  if (!integration) {
-    logger.debug(
-      `[ongoing] webhook: no integration for "${credentialKey}"; acknowledging no-op`
-    )
-    res.sendStatus(200)
-    return
-  }
+    if (!integration) {
+      // Warn (not debug): deleting an integration while Ongoing still delivers is
+      // silent data loss at production log levels unless it's visible.
+      logger.warn(
+        `[ongoing] webhook: no integration bound to "${credentialKey}"; acknowledging no-op — webhook deliveries are being dropped until an integration is configured`
+      )
+      res.sendStatus(200)
+      return
+    }
 
-  const shippedCodes = (integration.shipped_status_codes ?? []) as number[]
-  if (!shippedCodes.includes(payload.orderStatus.number)) {
-    // Out-of-band status: refresh the sync row's status, then ack 200.
-    await dispatchStatusRefresh(req.scope, {
+    const shippedCodes = (integration.shipped_status_codes ?? []) as number[]
+    if (shippedCodes.length === 0) {
+      logger.warn(
+        `[ongoing] webhook: integration "${credentialKey}" has no shipped_status_codes configured; shipment dispatch will never fire until they are set`
+      )
+    }
+    if (!shippedCodes.includes(payload.orderStatus.number)) {
+      // Out-of-band status: refresh the sync row's status, then ack 200.
+      await dispatchStatusRefresh(req.scope, {
+        payload,
+        integrationId: integration.id,
+        credentialKey,
+      })
+      res.sendStatus(200)
+      return
+    }
+
+    // --- In-band: hand off to the #36 shipment-sync seam, then ack 200 ---
+    await dispatchVerifiedShipment(req.scope, {
       payload,
       integrationId: integration.id,
       credentialKey,
     })
     res.sendStatus(200)
-    return
+  } catch (error) {
+    logger.error(
+      `[ongoing] webhook: post-auth handling failed for "${credentialKey}": ${
+        (error as Error).message
+      }`
+    )
+    res.sendStatus(200)
   }
-
-  // --- In-band: hand off to the #36 shipment-sync seam, then ack 200 ---
-  await dispatchVerifiedShipment(req.scope, {
-    payload,
-    integrationId: integration.id,
-    credentialKey,
-  })
-  res.sendStatus(200)
 }

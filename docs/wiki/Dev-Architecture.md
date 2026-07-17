@@ -228,7 +228,7 @@ Admin routes cover credential-key listing, integration CRUD (update is `POST` wi
 4. Payload must be an object with numeric `goodsOwnerId` and `orderStatus.number` -> else **400**.
 5. Payload `goodsOwnerId` must equal the credential's configured goods owner -> else **401**.
 
-After auth it **always returns 200** (both dispatchers swallow workflow errors and log only), because Ongoing floods retries on any non-2xx and the poll job is the reconciliation backstop; idempotency lives in the workflows. If the status is a `shipped_status_codes` value it dispatches a shipment, otherwise a status refresh.
+After auth it **always returns 200** — both dispatchers swallow workflow errors and log only, and the whole post-auth body (integration lookup, the nullable `shipped_status_codes` read, dispatch) is wrapped so a transient DB/config error also acks 200 instead of leaking a 500. Ongoing floods retries on any non-2xx and the poll job is the reconciliation backstop; idempotency lives in the workflows. If the status is a `shipped_status_codes` value it dispatches a shipment, otherwise a status refresh. Two visibility warnings log here: a webhook for a credential with **no bound integration**, and an integration with **no `shipped_status_codes` configured** (shipment dispatch can never fire until they are set).
 
 ## Fulfillment provider
 

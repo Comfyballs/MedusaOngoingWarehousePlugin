@@ -6,6 +6,15 @@ import { validateOngoingOptions } from "./options"
 import { OngoingClient } from "../../lib/ongoing/client"
 import type { OngoingCredentials, OngoingPluginOptions } from "../../lib/ongoing/types"
 
+// Parse a millisecond interval plugin option, falling back to `fallback` when the
+// value is absent or not a finite positive number. validateOngoingOptions rejects a
+// bad value at boot; this is the defense-in-depth guard so a NaN can never reach the
+// poll/stock-sync scheduler (where it would silently disable the tick).
+function parseIntervalMs(value: string | undefined, fallback: number): number {
+  const parsed = parseInt(value ?? "", 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+}
+
 export type RetrySyncTransitionInput = {
   id: string
   expected_retry_count: number
@@ -110,14 +119,14 @@ class OngoingModuleService extends MedusaService({
   // sync on purpose, same rationale as getCredentials/getClient above.
   // eslint-disable-next-line @medusajs/service-methods-must-be-async
   getDefaultStatusPollIntervalMs(): number {
-    return parseInt(this.options_.defaultStatusPollInterval ?? "60000", 10)
+    return parseIntervalMs(this.options_.defaultStatusPollInterval, 60000)
   }
 
   // Pure synchronous config accessor (parses an in-memory option, no I/O) — kept
   // sync on purpose, same rationale as getDefaultStatusPollIntervalMs above.
   // eslint-disable-next-line @medusajs/service-methods-must-be-async
   getDefaultStockSyncIntervalMs(): number {
-    return parseInt(this.options_.defaultStockSyncInterval ?? "600000", 10)
+    return parseIntervalMs(this.options_.defaultStockSyncInterval, 600000)
   }
 
   // Best-effort advisory lock so two ticks can't poll the same integration at
