@@ -59,3 +59,29 @@ export const OngoingTrackedOrderResponseSchema = z.object({
 })
 
 export type OngoingTrackedOrderResponse = z.infer<typeof OngoingTrackedOrderResponseSchema>
+
+// Response shape parsed by mapOrderDetail (src/lib/ongoing/client.ts, `getOrder`).
+// Models the subset of Ongoing's GetOrderModel (GET /api/v1/orders/{orderId}) needed to
+// resolve a return order line's `customerOrderLine.orderLineId`: each order line's own
+// internal `id` plus its `article.articleNumber`. Confirmed against the official
+// example-requests repo's "Get an order (GET request)" response fixture (live openapi
+// unreachable — site in maintenance — while this was built).
+export const OngoingOrderDetailResponseSchema = z.object({
+  orderInfo: z.object({
+    orderId: z.number(),
+  }),
+  orderLines: z
+    .array(
+      z.object({
+        id: z.number(),
+        article: z
+          .object({
+            articleNumber: z.string(),
+          })
+          .nullish(),
+      })
+    )
+    .nullish(),
+})
+
+export type OngoingOrderDetailResponse = z.infer<typeof OngoingOrderDetailResponseSchema>

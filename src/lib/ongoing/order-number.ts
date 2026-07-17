@@ -38,3 +38,38 @@ export function buildOngoingOrderNumber(input: OngoingOrderNumberInput): string 
 
   return `${displayId}-${fulfillmentId}`
 }
+
+export type OngoingReturnOrderNumberInput = {
+  displayId: number | string
+  returnFulfillmentId: string
+}
+
+/**
+ * Build the `returnOrderNumber` upsert key for a Medusa return fulfillment.
+ *
+ * Format: `RET-<order.display_id>-<returnFulfillment.id>`. The `RET-` prefix
+ * distinguishes it from `buildOngoingOrderNumber`'s outbound key at a glance (the two
+ * live in separate Ongoing resources — `/orders` vs `/returnOrders` — so a collision
+ * isn't possible either way, but the prefix keeps sync-state logs/dashboards readable).
+ * Deterministic like the outbound key: a retried `PUT /api/v1/returnOrders` upserts the
+ * same Ongoing return order instead of creating a duplicate.
+ */
+export function buildOngoingReturnOrderNumber(input: OngoingReturnOrderNumberInput): string {
+  const displayId = input?.displayId
+  if (displayId === undefined || displayId === null || `${displayId}` === "") {
+    throw new MedusaError(
+      MedusaError.Types.INVALID_DATA,
+      "[ongoing] cannot build return order number: order display_id is missing"
+    )
+  }
+
+  const returnFulfillmentId = input?.returnFulfillmentId
+  if (!returnFulfillmentId) {
+    throw new MedusaError(
+      MedusaError.Types.INVALID_DATA,
+      "[ongoing] cannot build return order number: return fulfillment id is missing"
+    )
+  }
+
+  return `RET-${displayId}-${returnFulfillmentId}`
+}

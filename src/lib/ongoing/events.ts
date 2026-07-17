@@ -7,6 +7,8 @@ export const ONGOING_EVENTS = {
   ORDER_DEAD_LETTERED: "ongoing.sync.order_dead_lettered",
   INVENTORY_SYNCED: "ongoing.sync.inventory_synced",
   EDIT_BLOCKED: "ongoing.sync.edit_blocked",
+  RETURN_ORDER_PUSHED: "ongoing.sync.return_order_pushed",
+  RETURN_ORDER_PUSH_FAILED: "ongoing.sync.return_order_push_failed",
 } as const
 
 export type OngoingEventName = (typeof ONGOING_EVENTS)[keyof typeof ONGOING_EVENTS]
@@ -70,4 +72,22 @@ export interface EditBlockedPayload {
   ongoing_order_sync_id: string
   category: string
   latest_status_code: number | null
+}
+
+export interface ReturnOrderPushedPayload {
+  medusa_order_id: string
+  medusa_return_fulfillment_id: string
+  return_order_number: string
+  ongoing_return_order_id: number
+  ongoing_order_id: number
+  integration_id: string
+}
+
+export interface ReturnOrderPushFailedPayload {
+  medusa_order_id: string
+  medusa_return_fulfillment_id: string
+  return_order_number: string
+  integration_id: string
+  error_class: "retryable" | "terminal"
+  error_message: string
 }

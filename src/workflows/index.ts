@@ -9,6 +9,11 @@ export type {
   PushOrderToOngoingInput,
   PushOrderToOngoingOutput,
 } from "./push-order-to-ongoing"
+export { pushReturnOrderToOngoing } from "./push-return-order-to-ongoing"
+export type {
+  PushReturnOrderToOngoingInput,
+  PushReturnOrderToOngoingOutput,
+} from "./push-return-order-to-ongoing"
 export { default as syncOrderEditToOngoing } from "./sync-order-edit-to-ongoing"
 export type { SyncOrderEditResult } from "./sync-order-edit-to-ongoing"
 export { gateOrderEditStep, decideOrderEditGate } from "./steps/gate-order-edit"

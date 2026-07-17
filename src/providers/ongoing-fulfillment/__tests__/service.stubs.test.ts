@@ -33,19 +33,8 @@ describe("OngoingFulfillmentProviderService.validateFulfillmentData (carrier con
 })
 
 describe("OngoingFulfillmentProviderService extension-point stubs", () => {
-  describe("createReturnFulfillment", () => {
-    it("resolves to an empty data/labels result and does NOT throw", async () => {
-      const service = makeService()
-      await expect(
-        service.createReturnFulfillment({ id: "ful_ret_1" })
-      ).resolves.toEqual({ data: {}, labels: [] })
-    })
-
-    it("does not throw the base-class 'must be overridden' error", async () => {
-      const service = makeService()
-      await expect(service.createReturnFulfillment({})).resolves.toBeDefined()
-    })
-  })
+  // createReturnFulfillment is no longer a stub — see
+  // __tests__/create-return-fulfillment.test.ts for its real (workflow-backed) behavior.
 
   describe("getFulfillmentDocuments", () => {
     it("resolves to an empty array", async () => {

@@ -218,6 +218,92 @@ export interface WebhookOrderPayload {
   timestamp?: string
 }
 
+// --- Ongoing PostReturnOrderModel (ProcessReturnOrder body, PUT /api/v1/returnOrders) ---
+// Confirmed against the official Ongoing "REST API Example Requests" Postman collection
+// (github.com/OngoingWarehouse/Ongoing-Warehouse-REST-API-Example-Requests, "Return
+// orders" > "Create or update a return order") — the live openapi.json was unreachable
+// (site in maintenance) while this was built, so field OPTIONALITY beyond the example's
+// shape is unverified; only the fields shown in that example are treated as certain.
+
+export interface PostReturnOrderCustomerOrderRef {
+  // Ongoing's own internal numeric order id (orderInfo.orderId from GET /orders/{id}),
+  // NOT the goodsOwnerOrderId/orderNumber string.
+  orderId: number
+}
+
+export interface PostReturnOrderCustomerOrderLineRef {
+  // Ongoing's own internal numeric order LINE id (orderLines[].id from GET
+  // /orders/{id}), NOT our client-assigned PostOrderLine.rowNumber.
+  orderLineId: number
+}
+
+export interface PostReturnOrderReturnCause {
+  code: string
+  name?: string
+}
+
+export interface PostReturnOrderLine {
+  returnOrderRowNumber: string
+  customerOrderLine: PostReturnOrderCustomerOrderLineRef
+  toBeReturnedNumberOfItems: number
+  returnCause?: PostReturnOrderReturnCause
+}
+
+export interface PostReturnOrderModel {
+  goodsOwnerId: number
+  returnOrderNumber: string
+  customerOrder: PostReturnOrderCustomerOrderRef
+  // Date-only string, e.g. "2026-07-17" (per the confirmed example — NOT a full
+  // ISO datetime like PostOrderModel.deliveryDate).
+  inDate: string
+  comment?: string
+  returnOrderLines?: PostReturnOrderLine[]
+}
+
+// --- Ongoing GetOrderModel subset (GET /api/v1/orders/{orderId}) ---
+// Confirmed against the official example repo's
+// "Order/Get an order (GET request)/GET response - order with many fields.js" fixture.
+// Used to resolve the original order's internal Ongoing orderLineId per articleNumber
+// so a return order line can reference `customerOrderLine.orderLineId`.
+
+export interface OngoingOrderLineDetail {
+  // orderLines[].id in the raw response — Ongoing's internal order-line id.
+  orderLineId: number
+  articleNumber: string
+}
+
+export interface OngoingOrderDetail {
+  ongoingOrderId: number
+  lines: OngoingOrderLineDetail[]
+}
+
+// --- Mapper input (Medusa-shaped subset hydrated by the return-push workflow) ---
+
+export interface MapReturnOrderInputLine {
+  // Pre-resolved by the CALLER via the SKU->articleNumber resolver, matching the
+  // outbound MapOrderInputLine convention.
+  article_number?: string | null
+  quantity?: number | null
+}
+
+export interface MapReturnOrderInput {
+  goods_owner_id: number
+  return_order_number: string
+  // Ongoing's internal numeric id for the ORIGINAL outbound order this return
+  // belongs to (OngoingOrderSync.ongoing_order_id).
+  ongoing_order_id: number
+  // Date-only string (see PostReturnOrderModel.inDate).
+  in_date: string
+  comment?: string | null
+  lines: MapReturnOrderInputLine[]
+  // The original order's Ongoing order lines, fetched fresh via `getOrder`, used to
+  // resolve each return line's `customerOrderLine.orderLineId` by matching
+  // articleNumber. Each original line is consumed at most once so two return lines
+  // for the same articleNumber map to two distinct original order lines when the
+  // original order had duplicate article numbers across rows.
+  original_order_lines: OngoingOrderLineDetail[]
+}
+
 // --- Ongoing integration settings enums (admin CRUD + workflows; #40) ---
 
 export const STOCK_RECONCILE_MODES = ["sellable_plus_reserved", "precise", "onhand"] as const

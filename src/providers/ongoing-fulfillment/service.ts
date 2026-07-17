@@ -12,7 +12,7 @@ import {
   ONGOING_RETURN_OPTION_ID,
   ONGOING_STANDARD_OPTION_ID,
 } from "./constants"
-import { cancelOngoingOrderWorkflow, pushOrderToOngoing } from "../../workflows"
+import { cancelOngoingOrderWorkflow, pushOrderToOngoing, pushReturnOrderToOngoing } from "../../workflows"
 import { assertValidOngoingCarrierConfig } from "../../lib/ongoing/way-of-delivery"
 
 /**
@@ -190,20 +190,53 @@ class OngoingFulfillmentProviderService extends AbstractFulfillmentProviderServi
   }
 
   /**
-   * Extension point — returns fulfillment.
+   * Create the Ongoing return order (PUT /returnOrders) behind a freshly-created
+   * Medusa return fulfillment.
    *
-   * Returns are out of scope for now (see design §1 "Out of scope": returns /
-   * label retrieval are stubbed as extension points). The base
-   * `AbstractFulfillmentProviderService.createReturn` THROWS
-   * ("createReturn must be overridden"), so this MUST be overridden even to
-   * no-op. The empty `{ data, labels }` shape matches Medusa's manual
-   * fulfillment provider. Implement real Ongoing return creation here when
-   * returns come into scope.
+   * Medusa's `FulfillmentModuleService.createReturnFulfillment` creates the return
+   * fulfillment row FIRST, then calls this method with `{ ...fulfillment,
+   * shipping_option }` — so `fromData.id` is hydrated, but (unlike the outbound
+   * `createFulfillment`) there is no `order`/`order_id` on it: the core method
+   * destructures `order` out before persisting, and links the return fulfillment to
+   * the order only indirectly via `order_return.fulfillment_id`. So, mirroring
+   * `createFulfillment`'s "resolve everything fresh from the id" pattern, only
+   * `fromData.id` is trusted here — `pushReturnOrderToOngoing` (#new) re-queries the
+   * return fulfillment's items/location fresh and resolves the original order (and
+   * its already-synced Ongoing order) from one of those items' `line_item_id`.
+   *
+   * Runs synchronously so a failure aborts return-fulfillment creation, matching
+   * `createFulfillment`: `FulfillmentModuleService.createReturnFulfillment` deletes
+   * the just-created return fulfillment row on any provider throw.
+   *
+   * The returned `data` is persisted onto the return fulfillment row. There is no
+   * `cancelReturnFulfillment` counterpart in Medusa 2.16.0 (its compensation TODO
+   * falls back to `cancelFulfillment`), so nothing downstream currently reads this
+   * stash back — it exists for operator visibility (fulfillment detail / audit).
    */
   async createReturnFulfillment(
-    _fulfillment: Record<string, unknown>
+    fromData: Record<string, unknown>
   ): Promise<{ data: Record<string, unknown>; labels: never[] }> {
-    return { data: {}, labels: [] }
+    const returnFulfillmentId = typeof fromData?.id === "string" ? fromData.id : undefined
+
+    if (!returnFulfillmentId) {
+      throw new MedusaError(
+        MedusaError.Types.INVALID_DATA,
+        `[ongoing] cannot push return to Ongoing: return fulfillment.id is missing from the createReturnFulfillment payload.`
+      )
+    }
+
+    const { result } = await pushReturnOrderToOngoing(this.container_).run({
+      input: { return_fulfillment_id: returnFulfillmentId },
+    })
+
+    return {
+      data: {
+        ongoing_return_order_number: result.returnOrderNumber,
+        ongoing_return_order_id: result.ongoingReturnOrderId,
+        medusa_return_fulfillment_id: returnFulfillmentId,
+      },
+      labels: [],
+    }
   }
 
   /**

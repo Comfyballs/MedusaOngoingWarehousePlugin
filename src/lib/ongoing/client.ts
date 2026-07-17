@@ -2,17 +2,20 @@ import { OngoingApiError, classifyHttpStatus, classifyError } from "./errors"
 import { nodeHttpsFetch } from "./http-transport"
 import {
   OngoingInventoryRowResponseSchema,
+  OngoingOrderDetailResponseSchema,
   OngoingTrackedOrderResponseSchema,
 } from "./schemas"
 import { Throttle } from "./throttle"
 import type { OngoingCredentials } from "./types"
 import type {
   OngoingInventoryRow,
+  OngoingOrderDetail,
   OngoingOrderStatus,
   OngoingTrackedOrder,
   OngoingTrackingRef,
   PostArticleModel,
   PostOrderModel,
+  PostReturnOrderModel,
 } from "./types"
 
 type ClientOpts = {
@@ -233,6 +236,36 @@ export class OngoingClient {
     return { ongoingOrderId: res.orderId }
   }
 
+  // GET /orders/{orderId} (OpenAPI v57 GetOrderModel). Used to resolve a return order
+  // line's `customerOrderLine.orderLineId` by matching the original order's
+  // orderLines[].article.articleNumber (see return-order-mapper.ts).
+  async getOrder(ongoingOrderId: number): Promise<OngoingOrderDetail> {
+    const raw = await this.request<unknown>("GET", `/orders/${ongoingOrderId}`)
+    return mapOrderDetail(raw)
+  }
+
+  // PUT /returnOrders (ProcessReturnOrder, confirmed against the official Ongoing
+  // example-requests Postman collection — the live openapi.json was unreachable while
+  // this was built; see PostReturnOrderModel). Upserts by `returnOrderNumber`, mirroring
+  // putOrder's idempotent-upsert semantics.
+  async putReturnOrder(returnOrder: PostReturnOrderModel): Promise<{ ongoingReturnOrderId: number }> {
+    const res = await this.request<{ returnOrderId?: number | null; message?: string }>(
+      "PUT",
+      "/returnOrders",
+      returnOrder
+    )
+    if (typeof res?.returnOrderId !== "number") {
+      // Mirrors putOrder's #108 guard: a 2xx that omits (or nulls) the id must not
+      // silently flow an undefined/null value into the caller — throw so the same
+      // classified OngoingApiError catch/record/retry pipeline handles it.
+      throw new OngoingApiError(
+        "Ongoing PUT /returnOrders returned a 2xx response without a numeric returnOrderId",
+        { kind: "retryable", body: res }
+      )
+    }
+    return { ongoingReturnOrderId: res.returnOrderId }
+  }
+
   async cancelOrder(ongoingOrderId: number): Promise<{ ongoingOrderId: number; message?: string }> {
     const res = await this.request<any>("DELETE", `/orders/${ongoingOrderId}`)
     return {
@@ -353,6 +386,27 @@ function mapTrackedOrder(raw: unknown): OngoingTrackedOrder {
     trackingNumbers: tracking.map((t) => t.number),
     tracking,
   }
+}
+
+// #114-a-style structural validation (see mapInventoryRow/mapTrackedOrder above) before
+// mapping GET /orders/{id} into the minimal shape return-order-mapper.ts needs. A line
+// without a resolvable article.articleNumber is dropped (not thrown) — an
+// articleNumber-less original order line can never be matched by a return line anyway,
+// and dropping it (rather than failing the whole GET) keeps a single malformed original
+// line from blocking every return against that order.
+function mapOrderDetail(raw: unknown): OngoingOrderDetail {
+  const parsed = OngoingOrderDetailResponseSchema.safeParse(raw)
+  if (!parsed.success) {
+    throw new OngoingApiError("Ongoing order-detail response failed schema validation", {
+      kind: "terminal",
+      reason: "unexpected_body_shape",
+      body: parsed.error.issues,
+    })
+  }
+  const lines = (parsed.data.orderLines ?? [])
+    .filter((l) => l.article?.articleNumber)
+    .map((l) => ({ orderLineId: l.id, articleNumber: l.article!.articleNumber }))
+  return { ongoingOrderId: parsed.data.orderInfo.orderId, lines }
 }
 
 // Best-effort diagnostic parse for an ERROR (!res.ok) response body only -- the
