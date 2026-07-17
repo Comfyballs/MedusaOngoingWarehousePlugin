@@ -1,0 +1,1 @@
+[Repository](https://github.com/Comfyballs/MedusaOngoingWarehousePlugin) · Issue tracking lives in [beads](https://github.com/gastownhall/beads) (`bd`), not GitHub Issues · Docs source: [`docs/wiki/`](https://github.com/Comfyballs/MedusaOngoingWarehousePlugin/blob/main/docs/wiki) — see [[Documentation Guidelines]]

@@ -47,6 +47,17 @@ cp -rf source dest          # NOT: cp -r source dest
 - `apt-get` - use `-y` flag
 - `brew` - use `HOMEBREW_NO_AUTO_UPDATE=1` env var
 
+## Documentation (required on every PR review)
+
+Project documentation lives as GitHub-wiki-compatible pages in `docs/wiki/` (`User-*` pages for people installing/operating the plugin, `Dev-*` pages for contributors, plus `Home.md`, `_Sidebar.md`, and `Documentation-Guidelines.md`). The `docs/wiki/` directory is the source of truth; the GitHub wiki is a publish target (see `docs/wiki/Dev-Documentation-Maintenance.md`).
+
+**On any PR review, verifying documentation freshness is part of the review.** Concretely:
+
+- If the PR changes a plugin option, a public extension-point shape (provider methods, module models, route paths, workflow/job/subscriber behavior), the admin UI, or an install/build/test command, the corresponding `docs/wiki/` page(s) MUST be updated **in the same PR**. Block the merge on a missing doc update the same way you would block on a missing test.
+- If the PR touches behavior that the docs describe and the docs still match, say so explicitly in the review ("docs checked — still accurate") rather than skipping the check silently.
+- New user-visible or contributor-visible behavior with no existing page gets a minimum-viable page, not a follow-up promise. A stale doc is worse than no doc: when a PR removes something, trim or delete its documentation in the same PR.
+- All doc edits follow `docs/wiki/Documentation-Guidelines.md` (page naming, structure, style, wiki link syntax).
+
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:970c3bf2 -->
 ## Beads Issue Tracker
 

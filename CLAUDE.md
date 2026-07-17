@@ -79,6 +79,8 @@ The `medusa-dev` skills (`building-with-medusa`, `building-admin-dashboard-custo
 
 The reviewer runs `yarn lint`, `yarn build`, and the test suite, and confirms the diff against the skill's rule categories. Merge only after the review is clean (or its findings are addressed). This is in addition to the generic `superpowers:requesting-code-review` skill.
 
+**Documentation freshness is part of every PR review.** Docs live as GitHub-wiki-compatible pages in `docs/wiki/` (`User-*`, `Dev-*`, `Home.md`, `_Sidebar.md`, `Documentation-Guidelines.md`); `docs/wiki/` is the source of truth and the GitHub wiki is a publish target (see `docs/wiki/Dev-Documentation-Maintenance.md`). If a PR changes a plugin option, a public extension-point shape (provider methods, module models, route paths, workflow/job/subscriber behavior), the admin UI, or an install/build/test command, the corresponding `docs/wiki/` page(s) must be updated in the same PR — block the merge on a missing doc update the same way you would block on a missing test. If the docs still match, state that explicitly in the review. Doc edits follow `docs/wiki/Documentation-Guidelines.md`.
+
 ## graphify
 
 This project has a graphify knowledge graph at graphify-out/.
