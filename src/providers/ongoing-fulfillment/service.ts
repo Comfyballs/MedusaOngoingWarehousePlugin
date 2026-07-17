@@ -155,11 +155,28 @@ class OngoingFulfillmentProviderService extends AbstractFulfillmentProviderServi
       )
     }
 
-    const ongoingService = this.container_.resolve("ongoing") as {
-      getIntegrationByLocation: (
-        locationId: string
-      ) => Promise<{ credential_key: string } | undefined>
+    // `this.container_` is the awilix CRADLE: @medusajs/fulfillment's provider
+    // loader instantiates providers via `asFunction((cradle) => new klass(cradle,
+    // options))` (see node_modules/@medusajs/fulfillment/dist/loaders/providers.js),
+    // so it has no callable `.resolve()` — accessing `cradle.resolve` would try to
+    // resolve a registration literally named "resolve" and throw. Real Medusa (and
+    // the wh5.9 full-app harness, the first test to drive this provider through the
+    // core FulfillmentModuleService) reaches the module as `cradle.ongoing`. The
+    // unit/module specs instead hand the provider a container object exposing
+    // `.resolve()`. Support both: prefer the cradle property, fall back to resolve().
+    const ongoingContainer = this.container_ as unknown as {
+      ongoing?: {
+        getIntegrationByLocation: (
+          locationId: string
+        ) => Promise<{ credential_key: string } | undefined>
+      }
+      resolve?: (key: string) => {
+        getIntegrationByLocation: (
+          locationId: string
+        ) => Promise<{ credential_key: string } | undefined>
+      }
     }
+    const ongoingService = ongoingContainer.ongoing ?? ongoingContainer.resolve!("ongoing")
 
     const integration = await ongoingService.getIntegrationByLocation(locationId)
     if (!integration) {
@@ -305,9 +322,14 @@ class OngoingFulfillmentProviderService extends AbstractFulfillmentProviderServi
       if (typeof stashed.location_id === "string") {
         // Diagnostic lookup only; never throws.
         try {
-          const ongoing = container.resolve("ongoing") as {
-            getIntegrationByLocation: (id: string) => Promise<unknown>
+          // Same cradle-vs-container distinction as createFulfillment above: the
+          // real provider receives the awilix cradle (no `.resolve()`), tests pass a
+          // container with one. This lookup is diagnostic-only (swallowed below).
+          const oc = container as unknown as {
+            ongoing?: { getIntegrationByLocation: (id: string) => Promise<unknown> }
+            resolve?: (key: string) => { getIntegrationByLocation: (id: string) => Promise<unknown> }
           }
+          const ongoing = oc.ongoing ?? oc.resolve!("ongoing")
           await ongoing.getIntegrationByLocation(stashed.location_id)
         } catch {
           // swallow — this is purely a diagnostic lookup
