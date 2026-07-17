@@ -1,5 +1,7 @@
 # WMS Integration Architecture Audit — Ongoing Warehouse Plugin
 
+> **ARCHIVED / HISTORICAL — not a live punch-list.** This audit is a point-in-time snapshot from 2026-07-15. The three criticals it identifies (C1 fictional pagination, C2 nonexistent inventory endpoint, C3 wrong tracking-field paths) were fixed in commit `76c187d` ("fix(ongoing): make the Ongoing REST client conform to OpenAPI v57", beads `ji6`/`dtw`/`5vu`/`4s4`) and subsequent work (`sw8` delta inventory sync, `3e8` batched reconcile). Kept for historical record only — do not treat its findings as current state; see `docs/wiki/Dev-Architecture.md` for the up-to-date architecture reference.
+
 - **Bead:** `MedusaOngoingWarehousePlugin-s1k`
 - **Date:** 2026-07-15
 - **Scope:** Holistic, outside-in audit of the plugin against Ongoing Warehouse's recommended integration patterns and Medusa v2 architectural conventions (judged with the `medusa-dev:building-with-medusa` skill loaded).

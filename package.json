@@ -1,7 +1,7 @@
 {
   "name": "MedusaOngoingWarehousePlugin",
   "version": "0.0.1",
-  "description": "A starter for Medusa plugins.",
+  "description": "Medusa v2 plugin integrating the Ongoing Warehouse WMS: order fulfillment, shipment status, and inventory sync.",
   "author": "Medusa (https://medusajs.com)",
   "license": "MIT",
   "files": [
