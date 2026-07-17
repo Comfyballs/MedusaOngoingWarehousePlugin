@@ -45,8 +45,8 @@ type OngoingServiceLike = {
   listOngoingIntegrations: (filter: { enabled: boolean }) => Promise<IntegrationRow[]>
   getClient: (credentialKey: string) => OngoingClientLike
   getDefaultStatusPollIntervalMs: () => number
-  acquireSyncLock: (integrationId: string, ttlMs: number) => Promise<boolean>
-  releaseSyncLock: (integrationId: string) => Promise<void>
+  acquireSyncLock: (integrationId: string, ttlMs: number, lockName?: "status_poll") => Promise<boolean>
+  releaseSyncLock: (integrationId: string, lockName?: "status_poll") => Promise<void>
   listOngoingOrderSyncs: (filter: { integration_id: string }) => Promise<OrderSyncRow[]>
   updateOngoingOrderSyncs: (data: {
     id: string
@@ -145,7 +145,7 @@ async function pollIntegration(
     return
   }
 
-  const acquired = await service.acquireSyncLock(integration.id, intervalMs)
+  const acquired = await service.acquireSyncLock(integration.id, intervalMs, "status_poll")
   if (!acquired) {
     logger.debug?.(
       `[ongoing] status-poll: integration ${integration.id} is locked by another run, skipping`
@@ -168,7 +168,7 @@ async function pollIntegration(
         }`
       )
     }
-    await service.releaseSyncLock(integration.id)
+    await service.releaseSyncLock(integration.id, "status_poll")
   }
 }
 

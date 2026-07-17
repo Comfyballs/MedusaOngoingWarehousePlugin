@@ -24,8 +24,8 @@ type OngoingServiceLike = {
   }) => Promise<IntegrationRow[]>
   getCredentials: (credentialKey: string) => { goodsOwnerId: number }
   getDefaultStockSyncIntervalMs: () => number
-  acquireSyncLock: (integrationId: string, ttlMs: number) => Promise<boolean>
-  releaseSyncLock: (integrationId: string) => Promise<void>
+  acquireSyncLock: (integrationId: string, ttlMs: number, lockName?: "stock_sync") => Promise<boolean>
+  releaseSyncLock: (integrationId: string, lockName?: "stock_sync") => Promise<void>
   updateOngoingIntegrations: (data: {
     id: string
     last_stock_sync_at?: Date
@@ -101,7 +101,7 @@ async function syncIntegration(
     return
   }
 
-  const acquired = await service.acquireSyncLock(integration.id, intervalMs)
+  const acquired = await service.acquireSyncLock(integration.id, intervalMs, "stock_sync")
   if (!acquired) {
     logger.debug?.(
       `[ongoing] stock-sync: integration ${integration.id} is locked by another run, skipping`
@@ -181,7 +181,7 @@ async function syncIntegration(
         }`
       )
     }
-    await service.releaseSyncLock(integration.id)
+    await service.releaseSyncLock(integration.id, "stock_sync")
   }
 }
 

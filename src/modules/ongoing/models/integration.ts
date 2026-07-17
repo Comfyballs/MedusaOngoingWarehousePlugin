@@ -23,7 +23,13 @@ const OngoingIntegration = model.define("ongoing_integration", {
   // full-reconciliation fallback so any missed deltas self-heal (bead sw8).
   last_full_stock_sync_at: model.dateTime().nullable(),
   last_status_poll_at: model.dateTime().nullable(),
+  // Per-job advisory locks (bead mjy): status-poll and stock-sync used to share this
+  // single column, so whichever job acquired first blocked the other for its TTL even
+  // though they poll unrelated data. sync_lock_until now belongs to status-poll only;
+  // stock_sync_lock_until is its independent counterpart for the stock-sync job. See
+  // acquireSyncLock/releaseSyncLock in service.ts.
   sync_lock_until: model.dateTime().nullable(),
+  stock_sync_lock_until: model.dateTime().nullable(),
 })
 
 export default OngoingIntegration

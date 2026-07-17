@@ -91,7 +91,7 @@ describe("ongoing stock-sync job", () => {
 
     await ongoingStockSyncJob(h.container)
 
-    expect(h.service.acquireSyncLock).toHaveBeenCalledWith("int_1", 600000)
+    expect(h.service.acquireSyncLock).toHaveBeenCalledWith("int_1", 600000, "stock_sync")
     expect(run).not.toHaveBeenCalled()
     expect(h.service.releaseSyncLock).not.toHaveBeenCalled()
   })
@@ -134,7 +134,7 @@ describe("ongoing stock-sync job", () => {
       id: "int_1",
       last_stock_sync_at: expect.any(Date),
     })
-    expect(h.service.releaseSyncLock).toHaveBeenCalledWith("int_1")
+    expect(h.service.releaseSyncLock).toHaveBeenCalledWith("int_1", "stock_sync")
 
     expect(h.emit).toHaveBeenCalledWith({
       name: "ongoing.sync.inventory_synced",
@@ -215,7 +215,7 @@ describe("ongoing stock-sync job", () => {
 
     await ongoingStockSyncJob(h.container)
 
-    expect(h.service.acquireSyncLock).toHaveBeenCalledWith("int_1", 600000)
+    expect(h.service.acquireSyncLock).toHaveBeenCalledWith("int_1", 600000, "stock_sync")
     expect(run).toHaveBeenCalledTimes(1)
   })
 
@@ -233,7 +233,7 @@ describe("ongoing stock-sync job", () => {
       await ongoingStockSyncJob(h.container)
 
       // Must use the default interval, not the malformed value.
-      expect(h.service.acquireSyncLock).toHaveBeenCalledWith("int_1", 600000)
+      expect(h.service.acquireSyncLock).toHaveBeenCalledWith("int_1", 600000, "stock_sync")
     }
   })
 
@@ -248,7 +248,7 @@ describe("ongoing stock-sync job", () => {
       id: "int_1",
       last_stock_sync_at: expect.any(Date),
     })
-    expect(h.service.releaseSyncLock).toHaveBeenCalledWith("int_1")
+    expect(h.service.releaseSyncLock).toHaveBeenCalledWith("int_1", "stock_sync")
     expect(h.logger.error).toHaveBeenCalled()
     expect(run).toHaveBeenCalledTimes(1)
   })
@@ -274,7 +274,7 @@ describe("ongoing stock-sync job", () => {
       id: "int_1",
       last_stock_sync_at: expect.any(Date),
     })
-    expect(h.service.releaseSyncLock).toHaveBeenCalledWith("int_1")
+    expect(h.service.releaseSyncLock).toHaveBeenCalledWith("int_1", "stock_sync")
     // The reconcile itself succeeded — only the best-effort emit failed, so the
     // per-integration sweep catch (`integration ${id} ... failed: ...`) must not fire.
     expect(h.logger.error).not.toHaveBeenCalledWith(
@@ -299,8 +299,8 @@ describe("ongoing stock-sync job", () => {
     expect(h.logger.error).toHaveBeenCalled()
     // Both locks must be released: int_a via finally even though its workflow threw,
     // and int_b as part of a normal successful run.
-    expect(h.service.releaseSyncLock).toHaveBeenCalledWith("int_a")
-    expect(h.service.releaseSyncLock).toHaveBeenCalledWith("int_b")
+    expect(h.service.releaseSyncLock).toHaveBeenCalledWith("int_a", "stock_sync")
+    expect(h.service.releaseSyncLock).toHaveBeenCalledWith("int_b", "stock_sync")
     expect(run).toHaveBeenCalledTimes(2)
     expect(run).toHaveBeenCalledWith(
       expect.objectContaining({

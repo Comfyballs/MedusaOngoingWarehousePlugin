@@ -15,6 +15,15 @@ function parseIntervalMs(value: string | undefined, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
 }
 
+// The two jobs that poll an integration are independent (status-poll reads order status;
+// stock-sync reads inventory) and must not block each other — see LOCK_COLUMNS below.
+export type SyncLockKind = "status_poll" | "stock_sync"
+
+const LOCK_COLUMNS: Record<SyncLockKind, "sync_lock_until" | "stock_sync_lock_until"> = {
+  status_poll: "sync_lock_until",
+  stock_sync: "stock_sync_lock_until",
+}
+
 export type RetrySyncTransitionInput = {
   id: string
   expected_retry_count: number
@@ -129,26 +138,58 @@ class OngoingModuleService extends MedusaService({
     return parseIntervalMs(this.options_.defaultStockSyncInterval, 600000)
   }
 
-  // Best-effort advisory lock so two ticks can't poll the same integration at
-  // once. Read-then-write is fine for a single-instance cron; the TTL is a crash
-  // safety net (the dispatcher also releases it in a finally).
-  async acquireSyncLock(integrationId: string, ttlMs: number): Promise<boolean> {
+  /**
+   * Advisory lock so two ticks can't poll the same integration for the same job at once.
+   * `lockName` selects an independent column per job (see `LOCK_COLUMNS`) — status-poll
+   * and stock-sync used to share a single `sync_lock_until` column, so whichever acquired
+   * first blocked the other for its TTL even though they poll unrelated data (bead mjy).
+   *
+   * Acquisition itself is now a CAS, mirroring `attemptRetrySyncTransition` below: the
+   * initial read establishes the expected current column value (busy vs. free/expired),
+   * then a native `UPDATE ... WHERE id = ? AND <column> = <expected>` only lands if no
+   * other tick changed that column since the read. A plain read-then-write here would
+   * double-acquire under multi-instance deployment (two ticks both observe "free" and
+   * both write); the guarded write lets only one of them win.
+   */
+  @InjectManager()
+  async acquireSyncLock(
+    integrationId: string,
+    ttlMs: number,
+    lockName: SyncLockKind = "status_poll",
+    @MedusaContext() sharedContext: Context = {}
+  ): Promise<boolean> {
+    const column = LOCK_COLUMNS[lockName]
     const integration = await this.retrieveOngoingIntegration(integrationId)
-    const lockedUntil = integration?.sync_lock_until
-      ? new Date(integration.sync_lock_until).getTime()
-      : 0
+    const currentValue = (integration as Record<string, unknown> | undefined)?.[column] as
+      | Date
+      | string
+      | null
+      | undefined
+    const lockedUntil = currentValue ? new Date(currentValue).getTime() : 0
     if (lockedUntil > Date.now()) {
       return false
     }
-    await this.updateOngoingIntegrations({
-      id: integrationId,
-      sync_lock_until: new Date(Date.now() + ttlMs),
-    })
-    return true
+
+    const manager = sharedContext.manager as {
+      nativeUpdate: (
+        entityName: string,
+        where: Record<string, unknown>,
+        data: Record<string, unknown>
+      ) => Promise<number>
+    }
+
+    const affectedRows = await manager.nativeUpdate(
+      "OngoingIntegration",
+      { id: integrationId, [column]: currentValue ?? null },
+      { [column]: new Date(Date.now() + ttlMs) }
+    )
+
+    return affectedRows === 1
   }
 
-  async releaseSyncLock(integrationId: string): Promise<void> {
-    await this.updateOngoingIntegrations({ id: integrationId, sync_lock_until: null })
+  async releaseSyncLock(integrationId: string, lockName: SyncLockKind = "status_poll"): Promise<void> {
+    const column = LOCK_COLUMNS[lockName]
+    await this.updateOngoingIntegrations({ id: integrationId, [column]: null })
   }
 
   /**

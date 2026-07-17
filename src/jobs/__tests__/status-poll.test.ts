@@ -97,7 +97,7 @@ describe("ongoing status-poll job", () => {
 
     await ongoingStatusPollJob(h.container)
 
-    expect(h.service.acquireSyncLock).toHaveBeenCalledWith("int_1", 60000)
+    expect(h.service.acquireSyncLock).toHaveBeenCalledWith("int_1", 60000, "status_poll")
     expect(h.clients["wh-a"].getOrdersByStatus).not.toHaveBeenCalled()
     expect(h.service.releaseSyncLock).not.toHaveBeenCalled()
     expect(run).not.toHaveBeenCalled()
@@ -174,7 +174,7 @@ describe("ongoing status-poll job", () => {
       id: "int_1",
       last_status_poll_at: expect.any(Date),
     })
-    expect(h.service.releaseSyncLock).toHaveBeenCalledWith("int_1")
+    expect(h.service.releaseSyncLock).toHaveBeenCalledWith("int_1", "status_poll")
   })
 
   it("releases the lock, advances cadence, and never throws when the poll fails", async () => {
@@ -187,7 +187,7 @@ describe("ongoing status-poll job", () => {
 
     await expect(ongoingStatusPollJob(h.container)).resolves.toBeUndefined()
 
-    expect(h.service.releaseSyncLock).toHaveBeenCalledWith("int_1")
+    expect(h.service.releaseSyncLock).toHaveBeenCalledWith("int_1", "status_poll")
     expect(h.service.updateOngoingIntegrations).toHaveBeenCalledWith({
       id: "int_1",
       last_status_poll_at: expect.any(Date),
@@ -226,7 +226,7 @@ describe("ongoing status-poll job", () => {
     await expect(ongoingStatusPollJob(h.container)).resolves.toBeUndefined()
 
     expect(h.logger.error).toHaveBeenCalled()
-    expect(h.service.releaseSyncLock).toHaveBeenCalledWith("int_b")
+    expect(h.service.releaseSyncLock).toHaveBeenCalledWith("int_b", "status_poll")
     expect(run).toHaveBeenCalledWith({
       input: {
         ongoing_order_number: "2001-bbb",

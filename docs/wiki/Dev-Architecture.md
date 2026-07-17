@@ -51,7 +51,8 @@ Table `ongoing_integration`. One row per warehouse integration: one Ongoing good
 | `cancellable_status_codes` | json, nullable | Ongoing status codes at which a cancel toward Ongoing is allowed. |
 | `last_stock_delta_cursor` | text, nullable | ISO timestamp passed as `stockInfoChangedFrom` next tick; advanced only on success; null forces a full sweep. |
 | `last_full_stock_sync_at` | dateTime, nullable | Drives the 6-hour full-reconciliation fallback so missed deltas self-heal. |
-| `sync_lock_until` | dateTime, nullable | Advisory lock TTL shared by the status-poll and stock-sync jobs. |
+| `sync_lock_until` | dateTime, nullable | Advisory lock TTL for the status-poll job. |
+| `stock_sync_lock_until` | dateTime, nullable | Advisory lock TTL for the stock-sync job — independent of `sync_lock_until` so the two jobs never block each other (bead `mjy`). |
 
 Bookkeeping columns (`last_stock_sync_at`, `last_status_poll_at`) record the last tick.
 
@@ -86,7 +87,7 @@ The `error_class` (`retryable` | `terminal`) decides whether the retry job touch
 - `getCredentials(credentialKey)` is a synchronous in-memory lookup into plugin options (deliberately sync, with an eslint-disable).
 - `getIntegrationByLocation(stockLocationId)` returns the first **enabled** integration for a location.
 - `recordSync(input)` upserts an `OngoingOrderSync` row keyed on `ongoing_order_number`.
-- `acquireSyncLock` / `releaseSyncLock` implement the advisory lock (read-then-write, fine for single-instance cron).
+- `acquireSyncLock(integrationId, ttlMs, lockName?)` / `releaseSyncLock(integrationId, lockName?)` implement the advisory lock. `lockName` is `"status_poll"` (default, `sync_lock_until` column) or `"stock_sync"` (`stock_sync_lock_until` column) — independent per job so status-poll and stock-sync never block each other. Acquisition is a **CAS-guarded native UPDATE** (`UPDATE ... WHERE id=? AND <column>=<observed value>`), the same pattern as `attemptRetrySyncTransition`, so two instances can't both win the same lock (bead `mjy`).
 - `attemptRetrySyncTransition(input)` is a **CAS-guarded native UPDATE** (`UPDATE ... WHERE id=? AND sync_state='error' AND retry_count=<expected>`) that returns true only if exactly one row changed. It deliberately bypasses last-write-wins CRUD so two ticks can't double-retry a row.
 
 ### Plugin options and boot validation
@@ -95,7 +96,7 @@ The `error_class` (`retryable` | `terminal`) decides whether the retry job touch
 
 ### Migrations
 
-Three migrations under [`src/modules/ongoing/migrations/`](https://github.com/Comfyballs/MedusaOngoingWarehousePlugin/blob/main/src/modules/ongoing/migrations): the base tables and indexes, the `edit_blocked_*` columns, and the delta-stock-sync columns. See [[Dev Gotchas]] for the `plugin:db:generate` recipe when you change a model.
+Four migrations under [`src/modules/ongoing/migrations/`](https://github.com/Comfyballs/MedusaOngoingWarehousePlugin/blob/main/src/modules/ongoing/migrations): the base tables and indexes, the `edit_blocked_*` columns, the delta-stock-sync columns, and the `stock_sync_lock_until` column (bead `mjy`). See [[Dev Gotchas]] for the `plugin:db:generate` recipe when you change a model.
 
 ## Ongoing REST client stack
 
@@ -200,10 +201,10 @@ Source: [`src/subscribers/`](https://github.com/Comfyballs/MedusaOngoingWarehous
 Source: [`src/jobs/`](https://github.com/Comfyballs/MedusaOngoingWarehousePlugin/blob/main/src/jobs). All run every minute.
 
 - `retry-failed-syncs.ts`: lists all `error/retryable` rows globally (no integration lock — safety is row-level CAS only), filters to due rows by backoff, and per row either dead-letters, re-invokes `pushOrderToOngoing`, or loses the CAS silently. A row with a null `medusa_fulfillment_id` is dead-lettered immediately — it cannot be re-pushed — with `retry_count` unchanged and `order_dead_lettered` emitted with a null fulfillment id (see [[Dev Gotchas]]).
-- `status-poll.ts`: per enabled integration, acquires the shared lock, calls `getOrdersByStatus(100, 999)`, writes `latest_status_code/text` **directly** (a documented `arch-workflow-required` deviation, bead `o6c`), and runs `syncOngoingShipmentWorkflow` when a shipped status appears.
-- `stock-sync.ts`: per enabled-and-stock-sync-enabled integration, decides full vs delta (full at least every 6 h), runs `syncOngoingInventoryWorkflow`, and advances the delta cursor **only on success**.
+- `status-poll.ts`: per enabled integration, acquires its own `"status_poll"` lock, calls `getOrdersByStatus(100, 999)`, writes `latest_status_code/text` **directly** (a documented `arch-workflow-required` deviation, bead `o6c`), and runs `syncOngoingShipmentWorkflow` when a shipped status appears.
+- `stock-sync.ts`: per enabled-and-stock-sync-enabled integration, acquires its own `"stock_sync"` lock, decides full vs delta (full at least every 6 h), runs `syncOngoingInventoryWorkflow`, and advances the delta cursor **only on success**.
 
-`status-poll` and `stock-sync` share the same `sync_lock_until` column, so if both are due for one integration in the same tick, whichever wins blocks the other for its TTL.
+`status-poll` and `stock-sync` each hold an independent advisory lock (`sync_lock_until` / `stock_sync_lock_until`), so if both are due for one integration in the same tick they run concurrently rather than one blocking the other for its TTL (bead `mjy`).
 
 ### Links
 
