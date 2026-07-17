@@ -67,9 +67,41 @@ async function processRow(
   const eventBus = container.resolve<IEventBusModuleService>(Modules.EVENT_BUS)
 
   if (row.medusa_fulfillment_id == null) {
+    // A row with no fulfillment id can never be re-pushed (pushOrderToOngoing
+    // requires one), so retrying is meaningless — dead-letter it immediately,
+    // through the same CAS guard as the normal path so an overlapping tick
+    // can't double-process it. Without this, the row stays error/retryable and
+    // is re-listed and re-skipped every tick forever (bead dpa).
+    const won = await service.attemptRetrySyncTransition({
+      id: row.id,
+      expected_retry_count: row.retry_count,
+      retry_count: row.retry_count,
+      last_synced_at: new Date(),
+      error_class: "terminal",
+    })
+    if (!won) {
+      logger.info(
+        `[ongoing] retry: row ${row.id} (null medusa_fulfillment_id) lost the CAS guard — another tick already processed it; skipping`
+      )
+      return
+    }
     logger.warn(
-      `[ongoing] retry: row ${row.id} has no medusa_fulfillment_id — skipping (not dead-lettering)`
+      `[ongoing] retry: dead-lettered row ${row.id} — no medusa_fulfillment_id, cannot be retried`
     )
+    try {
+      await eventBus.emit({
+        name: ONGOING_EVENTS.ORDER_DEAD_LETTERED,
+        data: {
+          ongoing_order_sync_id: row.id,
+          medusa_fulfillment_id: null,
+          retry_count: row.retry_count,
+        } satisfies OrderDeadLetteredPayload,
+      })
+    } catch (emitErr) {
+      logger.error(
+        `[ongoing] retry: failed to emit ${ONGOING_EVENTS.ORDER_DEAD_LETTERED} for row ${row.id}: ${(emitErr as Error).message}`
+      )
+    }
     return
   }
 

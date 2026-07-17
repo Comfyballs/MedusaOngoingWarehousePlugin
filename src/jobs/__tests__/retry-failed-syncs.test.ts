@@ -223,15 +223,66 @@ describe("retryFailedSyncsJob", () => {
     })
   })
 
-  it("skips a row with null medusa_fulfillment_id and logs a warning — does not dead-letter", async () => {
-    const r = row({ medusa_fulfillment_id: null })
+  // Regression for bead MedusaOngoingWarehousePlugin-dpa: a null-fulfillment
+  // row used to be warned-and-skipped without any state transition, so the
+  // error/retryable sweep re-listed it every tick forever.
+  it("dead-letters a row with null medusa_fulfillment_id (cannot be retried) instead of skipping it forever", async () => {
+    const r = row({ medusa_fulfillment_id: null, retry_count: 2 })
     const h = makeHarness({ rows: [r] })
 
     await retryFailedSyncsJob(h.container)
 
-    expect(h.logger.warn).toHaveBeenCalledWith(expect.stringContaining("sync_1"))
-    expect(h.service.attemptRetrySyncTransition).not.toHaveBeenCalled()
+    // Flips error_class to terminal via the CAS guard, without spending an
+    // attempt (retry_count unchanged) — the sweep query excludes it afterwards.
+    expect(h.service.attemptRetrySyncTransition).toHaveBeenCalledWith({
+      id: "sync_1",
+      expected_retry_count: 2,
+      retry_count: 2,
+      last_synced_at: expect.any(Date),
+      error_class: "terminal",
+    })
     expect(pushRun).not.toHaveBeenCalled()
+    expect(h.logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining("dead-lettered row sync_1")
+    )
+    expect(h.emit).toHaveBeenCalledWith({
+      name: "ongoing.sync.order_dead_lettered",
+      data: {
+        ongoing_order_sync_id: "sync_1",
+        medusa_fulfillment_id: null,
+        retry_count: 2,
+      },
+    })
+  })
+
+  it("skips the null-fulfillment dead-letter when the CAS guard loses — no event emit, no error", async () => {
+    const r = row({ medusa_fulfillment_id: null })
+    const transitionImpl = jest.fn(async () => false)
+    const h = makeHarness({ rows: [r], transitionImpl })
+
+    await retryFailedSyncsJob(h.container)
+
+    expect(pushRun).not.toHaveBeenCalled()
+    expect(h.emit).not.toHaveBeenCalled()
+    expect(h.logger.error).not.toHaveBeenCalled()
+    expect(h.logger.info).toHaveBeenCalledWith(
+      expect.stringContaining("lost the CAS guard")
+    )
+  })
+
+  it("does not log the row as failed when the null-fulfillment dead-letter emit rejects (the write itself succeeded)", async () => {
+    const r = row({ medusa_fulfillment_id: null })
+    const h = makeHarness({ rows: [r] })
+    h.emit.mockRejectedValueOnce(new Error("event bus unavailable"))
+
+    await expect(retryFailedSyncsJob(h.container)).resolves.toBeUndefined()
+
+    expect(h.logger.error).not.toHaveBeenCalledWith(
+      expect.stringMatching(/^\[ongoing\] retry: row sync_1 /)
+    )
+    expect(h.logger.error).toHaveBeenCalledWith(
+      expect.stringContaining("failed to emit ongoing.sync.order_dead_lettered")
+    )
   })
 
   it("continues processing remaining rows when one row throws during re-invocation", async () => {

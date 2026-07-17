@@ -51,7 +51,9 @@ export interface OrderRetriedPayload {
 
 export interface OrderDeadLetteredPayload {
   ongoing_order_sync_id: string
-  medusa_fulfillment_id: string
+  // null when the row was dead-lettered because it had no fulfillment id to
+  // retry (retry-failed-syncs.ts null-fulfillment branch).
+  medusa_fulfillment_id: string | null
   retry_count: number
 }
 

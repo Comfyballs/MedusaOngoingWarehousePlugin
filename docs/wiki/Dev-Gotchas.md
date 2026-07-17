@@ -73,9 +73,9 @@ Commit the generated migration and the updated `.snapshot-medusa-ongoing.json`. 
 
 Ongoing rate-limits concurrent calls and recommends serializing requests per goods owner. The client's `Throttle` defaults to concurrency **1**, and `getClient` caches one client (one throttle) per credential key so all process-wide calls to one goods owner are serialized. When writing batch syncs, do not fan out parallel calls to the same warehouse — let the throttle serialize them. See the Ongoing [parallel-requests](https://developer.ongoingwarehouse.com/parallel-requests) note and [[Dev Architecture]].
 
-## A retryable row with no fulfilment id is stuck forever
+## A retryable row with no fulfilment id is dead-lettered immediately
 
-In `retry-failed-syncs.ts`, an `error/retryable` row whose `medusa_fulfillment_id` is null is warned-and-skipped every tick without being retried, dead-lettered, or removed from the query — so it re-appears indefinitely with no operator-visible escape. If you touch the retry job, this is the edge to fix; if you are debugging a "row that never clears", this is likely why.
+In `retry-failed-syncs.ts`, an `error/retryable` row whose `medusa_fulfillment_id` is null cannot be re-pushed (the push workflow requires a fulfillment id), so the job dead-letters it on first sight: `error_class` flips to `terminal` via the same CAS guard as the normal path, `retry_count` is left unchanged (no attempt is spent), a warning is logged, and `ongoing.sync.order_dead_lettered` is emitted with `medusa_fulfillment_id: null`. No production code path writes a null fulfillment id — such rows only arise from historical data or manual DB edits. (Before bead `dpa` was fixed, these rows were warned-and-skipped every tick forever with no escape path.)
 
 ## graphify graph is stale
 

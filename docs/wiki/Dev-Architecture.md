@@ -202,7 +202,7 @@ Source: [`src/subscribers/`](https://github.com/Comfyballs/MedusaOngoingWarehous
 
 Source: [`src/jobs/`](https://github.com/Comfyballs/MedusaOngoingWarehousePlugin/blob/main/src/jobs). All run every minute.
 
-- `retry-failed-syncs.ts`: lists all `error/retryable` rows globally (no integration lock — safety is row-level CAS only), filters to due rows by backoff, and per row either dead-letters, re-invokes `pushOrderToOngoing`, or loses the CAS silently. A row with a null `medusa_fulfillment_id` is warned-and-skipped every tick with no escape path (see [[Dev Gotchas]]).
+- `retry-failed-syncs.ts`: lists all `error/retryable` rows globally (no integration lock — safety is row-level CAS only), filters to due rows by backoff, and per row either dead-letters, re-invokes `pushOrderToOngoing`, or loses the CAS silently. A row with a null `medusa_fulfillment_id` is dead-lettered immediately — it cannot be re-pushed — with `retry_count` unchanged and `order_dead_lettered` emitted with a null fulfillment id (see [[Dev Gotchas]]).
 - `status-poll.ts`: per enabled integration, acquires the shared lock, calls `getOrdersByStatus(100, 999)`, writes `latest_status_code/text` **directly** (a documented `arch-workflow-required` deviation, bead `o6c`), and runs `syncOngoingShipmentWorkflow` when a shipped status appears.
 - `stock-sync.ts`: per enabled-and-stock-sync-enabled integration, decides full vs delta (full at least every 6 h), runs `syncOngoingInventoryWorkflow`, and advances the delta cursor **only on success**.
 
