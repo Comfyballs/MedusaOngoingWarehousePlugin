@@ -32,6 +32,8 @@
     "dev": "medusa plugin:develop",
     "lint": "medusa lint",
     "test": "jest",
+    "test:cov": "jest --coverage",
+    "test:watch": "jest --watch",
     "test:integration": "NODE_OPTIONS=--experimental-vm-modules jest --config jest.config.integration.js --runInBand --forceExit",
     "test:live": "jest --config jest.integration.config.js",
     "prepublishOnly": "medusa plugin:build"
