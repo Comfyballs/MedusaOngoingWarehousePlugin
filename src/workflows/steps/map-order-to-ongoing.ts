@@ -21,7 +21,9 @@ export async function mapOrderToOngoingHandler(input: MapOrderStepInput): Promis
     fulfillmentId: queried.fulfillment_id,
   })
 
-  // #24 — build ONE flat MapOrderInput; lines already carry resolved article_number (Task 3).
+  // #24 — build ONE flat MapOrderInput; lines already carry resolved article_number
+  // (Task 3) plus weight/unit_price resolved by query-fulfillment-order.ts (dl3) for
+  // Ongoing-side customs/invoice/weight logic (order-mapper.ts mapLine()).
   const mapInput: MapOrderInput = {
     goods_owner_id,
     order_number: ongoingOrderNumber,
@@ -35,6 +37,10 @@ export async function mapOrderToOngoingHandler(input: MapOrderStepInput): Promis
     lines: queried.resolvedLines.map((l) => ({
       article_number: l.article_number,
       quantity: l.quantity,
+      weight: l.weight,
+      unit_price: l.unit_price,
+      // No per-line currency_code: the mapper falls back to the order-level
+      // currency_code (set above) when a line doesn't carry its own.
     })),
   }
 

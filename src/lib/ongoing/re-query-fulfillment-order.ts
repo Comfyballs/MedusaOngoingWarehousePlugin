@@ -14,6 +14,21 @@ type RawFulfillmentItem = {
   line_item_id?: string | null
 }
 
+// Shape of a raw `order.items[]` entry. `id` here IS the order line item id and
+// matches `fulfillment.items[].line_item_id` above (confirmed against Medusa
+// core's createOrderFulfillmentWorkflow, which keys fulfillment items off
+// `order.items[].id` from this same query.graph shape -- see
+// @medusajs/core-flows/order/workflows/create-fulfillment). `unit_price` is a
+// same-module field on the order line item; `variant.weight` is a cross-module
+// join into the Product module -- both are valid `query.graph` field paths on
+// the "order" entity's "items" relation (@medusajs/core-flows requests
+// `items.variant.weight` itself when building fulfillment data).
+type RawOrderLineItem = {
+  id: string
+  unit_price?: number | null
+  variant?: { weight?: number | null } | null
+}
+
 export type QueriedFulfillmentOrder = {
   fulfillment_id: string
   location_id: string
@@ -45,6 +60,14 @@ export type QueriedFulfillmentOrder = {
       phone: string | null
       company: string | null
     } | null
+    // Order line items keyed later (in query-fulfillment-order.ts) by id ==
+    // fulfillment.items[].line_item_id, to attach weight/unit_price per Ongoing
+    // order line (customs/invoice data -- see order-mapper.ts mapLine()).
+    line_items: Array<{
+      id: string
+      unit_price: number | null
+      weight: number | null
+    }>
   }
 }
 
@@ -85,6 +108,9 @@ export async function reQueryFulfillmentOrder(
       "order.shipping_address.country_code",
       "order.shipping_address.phone",
       "order.shipping_address.company",
+      "order.items.id",
+      "order.items.unit_price",
+      "order.items.variant.weight",
     ],
     filters: { id: fulfillmentId },
   })
@@ -125,6 +151,11 @@ export async function reQueryFulfillmentOrder(
       currency_code: order.currency_code,
       email: order.email ?? null,
       shipping_address: order.shipping_address ?? null,
+      line_items: (order.items ?? []).map((i: RawOrderLineItem) => ({
+        id: i.id,
+        unit_price: typeof i.unit_price === "number" ? i.unit_price : null,
+        weight: typeof i.variant?.weight === "number" ? i.variant.weight : null,
+      })),
     },
   }
 }

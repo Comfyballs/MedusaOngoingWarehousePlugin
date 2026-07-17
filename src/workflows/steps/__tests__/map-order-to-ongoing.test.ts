@@ -13,7 +13,9 @@ const queried = {
   fulfillment_id: "ful_1",
   location_id: "loc_1",
   items: [{ quantity: 2, sku: "SKU-1", barcode: null, title: "Tee", line_item_id: "li_1" }],
-  resolvedLines: [{ article_number: "ART-1", quantity: 2, line_item_id: "li_1" }],
+  resolvedLines: [
+    { article_number: "ART-1", quantity: 2, line_item_id: "li_1", weight: 1.5, unit_price: 49.99 },
+  ],
   order: {
     id: "order_1",
     display_id: 1001,
@@ -56,12 +58,30 @@ describe("mapOrderToOngoingStep", () => {
       currency_code: "usd",
       email: "a@b.com",
       shipping_address: queried.order.shipping_address,
-      lines: [{ article_number: "ART-1", quantity: 2 }],
+      lines: [{ article_number: "ART-1", quantity: 2, weight: 1.5, unit_price: 49.99 }],
     })
 
     expect(output.ongoing_order_number).toBe("1001-ful1")
     // model is returned as-is from the mapper (no double-stamping).
     expect(output.model).toMatchObject({ orderNumber: "1001-ful1", goodsOwnerId: 7 })
+  })
+
+  it("passes null weight/unit_price through when a resolved line has none (dl3)", async () => {
+    ;(buildOngoingOrderNumber as jest.Mock).mockReturnValue("1001-ful1")
+    ;(mapOrderToPostOrderModel as jest.Mock).mockReturnValue({
+      orderNumber: "1001-ful1", goodsOwnerId: 7, consignee: {}, orderLines: [],
+    })
+    const withoutWeightPrice = {
+      ...queried,
+      resolvedLines: [
+        { article_number: "ART-1", quantity: 2, line_item_id: "li_1", weight: null, unit_price: null },
+      ],
+    }
+    await run({ queried: withoutWeightPrice, goods_owner_id: 7 })
+    const mapInput = (mapOrderToPostOrderModel as jest.Mock).mock.calls[0][0]
+    expect(mapInput.lines).toEqual([
+      { article_number: "ART-1", quantity: 2, weight: null, unit_price: null },
+    ])
   })
 
   it("threads way_of_delivery/transporter from the queried order into MapOrderInput", async () => {
