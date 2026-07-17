@@ -32,6 +32,7 @@
     "dev": "medusa plugin:develop",
     "lint": "medusa lint",
     "test": "jest",
+    "test:integration": "jest --config jest.config.integration.js",
     "test:live": "jest --config jest.integration.config.js",
     "prepublishOnly": "medusa plugin:build"
   },

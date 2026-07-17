@@ -1,16 +1,20 @@
-This page explains the plugin's two test suites — the fast unit suite and the live Ongoing API harness — how to run each, the environment they need, and how to write tests that match the existing conventions. For the toolchain around them, see [[Dev Contributing]]; for the Node-version and shim traps, see [[Dev Gotchas]].
+This page explains the plugin's three test suites — the fast unit suite, the Postgres-backed Medusa integration suite, and the live Ongoing API harness — how to run each, the environment they need, and how to write tests that match the existing conventions. For the toolchain around them, see [[Dev Contributing]]; for the Node-version and shim traps, see [[Dev Gotchas]].
 
 > **Note**
 > `CLAUDE.md` claims "no test setup wired up yet". That is stale. The repo has both `yarn test` and `yarn test:live`, two jest configs, and a large body of `*.test.ts` files under `src/**/__tests__/`.
 
-## Two suites
+## Three suites
 
-The suites are split by config so live tests never run in the default suite.
+The plugin follows a three-layer strategy: fast unit tests (mock everything), Medusa integration tests (real Postgres, Ongoing stubbed), and live contract tests (real Ongoing sandbox). Each suite has its own jest config so the slow/external ones never run in the default suite.
 
-| Command | Config | What it runs |
-|---|---|---|
-| `yarn test` | `jest.config.js` | The unit suite: every `**/__tests__/**/*.test.ts` under `src/`, **excluding** `*.live.test.ts` |
-| `yarn test:live` | `jest.integration.config.js` | The live harness: `**/__tests__/**/*.live.test.ts`, against the **real** Ongoing API |
+| Command | Config | Layer | What it runs |
+|---|---|---|---|
+| `yarn test` | `jest.config.js` | L1 unit | Every `**/__tests__/**/*.test.ts` under `src/`, **excluding** `*.live.test.ts`. No external services. |
+| `yarn test:integration` | `jest.config.integration.js` | L2 Medusa | `integration-tests/**/*.spec.ts` — boots the `ongoing` module against a **real Postgres**; Ongoing never contacted. |
+| `yarn test:live` | `jest.integration.config.js` | L3 live | `**/__tests__/**/*.live.test.ts`, against the **real** Ongoing API. |
+
+> **Note**
+> The two integration configs have deliberately similar but distinct names: `jest.config.integration.js` (L2, Postgres) vs `jest.integration.config.js` (L3, live Ongoing). The `.config.integration` one is the Medusa/Postgres harness; the `.integration.config` one is the live Ongoing harness.
 
 ### Unit suite (`yarn test`)
 
@@ -21,6 +25,28 @@ The suites are split by config so live tests never run in the default suite.
 - `clearMocks: true`.
 
 This is the suite you run on every commit. It is self-contained — no external services, no credentials.
+
+### Medusa integration suite (`yarn test:integration`)
+
+Layer 2 boots the plugin's `ongoing` module inside a **real DB-backed Medusa module container** using `moduleIntegrationTestRunner` from `@medusajs/test-utils`, exercising the wiring the unit suite mocks: module registration, the `validate-options` loader, migrations/schema, and the module service against Postgres. Ongoing is **never** contacted — specs pass well-formed fake plugin options and inject a spy logger.
+
+- `testMatch: ["**/integration-tests/**/*.spec.ts"]`, rooted at `integration-tests/` (outside `src/`, so `yarn test` never picks these up).
+- Specs end in `.spec.ts` (not `.test.ts`) and live in `integration-tests/`, e.g. `integration-tests/ongoing-module.spec.ts` (the boot smoke test).
+- `testTimeout: 60_000` — booting a module and running migrations against Postgres is far slower than a unit test; the runner creates and drops a temp database per run.
+- Same `buffer-equal-constant-time` shim as the other configs.
+
+**Requires a running Postgres.** The runner reads connection details from env and creates/drops a temp database itself:
+
+```bash
+export DB_HOST=localhost      # default localhost
+export DB_PORT=5432           # default 5432
+export DB_USERNAME=postgres   # a role that may CREATE/DROP DATABASE
+export DB_PASSWORD=postgres
+export DB_TEMP_NAME=medusa-ongoing-integration   # temp db the runner creates/drops
+yarn test:integration
+```
+
+The `DB_USERNAME` role must be allowed to create and drop databases. Nothing here needs Ongoing credentials.
 
 ### Live harness (`yarn test:live`)
 

@@ -19,12 +19,17 @@ yarn build        # medusa plugin:build  → compiles to .medusa/server (the pub
 yarn dev          # medusa plugin:develop → watch mode; publishes locally via yalc for a linked Medusa app
 yarn lint         # medusa lint (eslint flat config, @medusajs/eslint-plugin recommended)
 
+# Tests — three layers (see docs/wiki/Dev-Testing.md):
+yarn test              # L1 unit suite (jest.config.js) — fast, no external services
+yarn test:integration  # L2 Medusa integration (jest.config.integration.js) — needs a real Postgres (DB_* env)
+yarn test:live         # L3 live Ongoing contract (jest.integration.config.js) — needs an Ongoing sandbox (.env.integration)
+
 # Module DB migrations (run from this plugin dir when a src/modules/* model changes):
 npx medusa plugin:db:generate   # generate migrations from data models
 # In the consuming Medusa app, links/migrations are applied with: npx medusa db:migrate
 ```
 
-There is no test setup wired up yet (`@medusajs/test-utils` is a dependency but no test script or test files exist). If adding tests, follow Medusa's integration-test conventions and add a `test` script to `package.json`.
+Tests are split by jest config so slow/external suites never run in the default `yarn test`. The unit suite is the every-commit gate; `test:integration` boots the `ongoing` module against Postgres via `moduleIntegrationTestRunner` (Ongoing stubbed); `test:live` hits a real Ongoing sandbox. Note the two similarly-named integration configs: `jest.config.integration.js` (L2, Postgres) vs `jest.integration.config.js` (L3, live Ongoing).
 
 ## Architecture
 
