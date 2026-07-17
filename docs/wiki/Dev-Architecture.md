@@ -1,8 +1,5 @@
 This page explains how the Ongoing Warehouse plugin is built: its module and data models, the Ongoing REST client stack, the workflows and steps that drive every mutation, the subscribers, jobs, links, API routes, fulfillment provider, and admin UI — and how those pieces cooperate across the order, shipment, inventory, edit, cancellation, and retry lifecycles. Read it before changing runtime behaviour. For per-option reference, see the User pages; for the rules you must follow when editing this code, see [[Dev Medusa Rules]].
 
-> **Note**
-> The repository's `CLAUDE.md` still describes this repo as an "unmodified starter scaffold" with "no test setup". That is stale (tracked in bead `de5`). The plugin is a full integration with a large test suite. Trust this page and the code, not that description.
-
 ## Runtime picture at a glance
 
 The plugin fulfils Medusa orders through Ongoing and syncs stock back. Ongoing is the system of record for warehouse stock and shipping; Medusa pushes orders and pulls back fulfilment, tracking, and inventory levels.
