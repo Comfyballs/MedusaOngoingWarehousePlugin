@@ -137,8 +137,10 @@ describe("hasAddressContactChange", () => {
 
 describe("ADDRESS_CONTACT_DETAIL_TYPES", () => {
   it("contains exactly the classified detail types", () => {
+    // Verified against Medusa 2.16.0 updateOrderWorkflow (see order-change-burst.ts
+    // comment): "contact" is not a real detail type and was removed.
     expect([...ADDRESS_CONTACT_DETAIL_TYPES].sort()).toEqual(
-      ["billing_address", "contact", "email", "shipping_address"].sort()
+      ["billing_address", "email", "shipping_address"].sort()
     )
   })
 })

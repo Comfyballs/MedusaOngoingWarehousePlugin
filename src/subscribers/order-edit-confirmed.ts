@@ -10,8 +10,25 @@ import { emitDomainEvent } from "../lib/ongoing/emit-domain-event"
 // ChangeActionType values that order-edit.confirmed carries: only line-item /
 // shipping mutations appear on this event (address/contact/email go through
 // order.updated -> #54). We classify any of these as the spec §8 "line_items"
-// edit category. See spec §13.3 — verify this set against a live order-edit
-// during integration testing; the exact enum strings are ITEM_*/SHIPPING_*.
+// edit category.
+//
+// Verified against Medusa 2.16.0 core source (spec §13.3 checkpoint):
+// - All six strings below are real `ChangeActionType` enum members
+//   (node_modules/@medusajs/utils/dist/order/order-change-action.js:9-11,16-18).
+// - confirmOrderEditRequestWorkflow emits `order-edit.confirmed` with
+//   `data.actions = orderChange.actions` verbatim
+//   (node_modules/@medusajs/core-flows/dist/order/workflows/order-edit/confirm-order-edit-request.js:175-184),
+//   i.e. `action` is a raw ChangeActionType string, matching this filter's input shape.
+// - Today, order-edit-specific workflows only ever create ITEM_ADD, ITEM_UPDATE,
+//   and SHIPPING_ADD actions (order-edit-add-new-item.js:125,
+//   order-edit-update-item-quantity.js:116, create-order-edit-shipping-method.js:186);
+//   removing/updating an order-edit item or shipping method deletes or mutates
+//   that same action in place rather than creating an ITEM_REMOVE /
+//   SHIPPING_UPDATE / SHIPPING_REMOVE row (remove-order-edit-item-action.js,
+//   update-order-edit-shipping-method.js, remove-order-edit-shipping-method.js).
+//   ITEM_REMOVE/SHIPPING_UPDATE/SHIPPING_REMOVE are kept in this set anyway as
+//   forward-compatible coverage for legitimate ChangeActionType members that
+//   could reach this event in a future Medusa version.
 const LINE_ITEM_ACTION_TYPES = new Set<string>([
   "ITEM_ADD",
   "ITEM_UPDATE",

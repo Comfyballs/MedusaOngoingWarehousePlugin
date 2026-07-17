@@ -7,13 +7,19 @@
 // with multiple actions. Consumers must union detail types across all rows created in
 // the same updateOrderWorkflow call ("burst"), not read a single row (issue #110).
 
-// spec §13.3 — verify this set against a live update_order order-change during
-// integration testing.
+// Verified against Medusa 2.16.0 core source (spec §13.3 checkpoint): every
+// `details.type` string `updateOrderWorkflow` can emit is
+// "shipping_address" | "billing_address" | "email" | "metadata" | "locale"
+// (node_modules/@medusajs/core-flows/dist/order/workflows/update-order.js:128-193).
+// Only the address/contact-relevant three are classified here; "metadata" and
+// "locale" changes intentionally do NOT trigger an address/contact re-sync.
+// There is no "contact" detail type anywhere in @medusajs/order or
+// @medusajs/core-flows 2.16.0 — a prior "contact" entry here was dead/wrong
+// and has been removed (MedusaOngoingWarehousePlugin-gww).
 export const ADDRESS_CONTACT_DETAIL_TYPES = new Set([
   "shipping_address",
   "billing_address",
   "email",
-  "contact",
 ])
 
 // updateOrderWorkflow
