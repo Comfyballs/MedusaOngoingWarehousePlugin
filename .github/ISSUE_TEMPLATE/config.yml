@@ -1,2 +1,7 @@
-# superpowers-setup managed file. setup-version: 7. Do not edit by hand; re-run /init-project to update.
+# GitHub Issues is retired for this repo (all open issues closed 2026-07-05).
+# Work tracking lives in bd (beads); do not file GitHub Issues.
 blank_issues_enabled: false
+contact_links:
+  - name: File work in beads instead
+    url: https://github.com/Comfyballs/MedusaOngoingWarehousePlugin/wiki/Dev-Beads
+    about: GitHub Issues is retired. Use `bd create` (see the Dev-Beads wiki page) to track bugs, features, and tasks.
