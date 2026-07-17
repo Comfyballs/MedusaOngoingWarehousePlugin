@@ -32,7 +32,7 @@
     "dev": "medusa plugin:develop",
     "lint": "medusa lint",
     "test": "jest",
-    "test:integration": "jest --config jest.config.integration.js",
+    "test:integration": "NODE_OPTIONS=--experimental-vm-modules jest --config jest.config.integration.js --runInBand --forceExit",
     "test:live": "jest --config jest.integration.config.js",
     "prepublishOnly": "medusa plugin:build"
   },
@@ -55,6 +55,8 @@
     "eslint": "^9.0.0",
     "jest": "^29",
     "jiti": "^2.0.0",
+    "nock": "^13.5.6",
+    "pg-god": "^1.0.12",
     "prop-types": "^15.8.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",

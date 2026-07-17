@@ -15,6 +15,10 @@ module.exports = {
   testEnvironment: "node",
   roots: ["<rootDir>/integration-tests"],
   testMatch: ["**/integration-tests/**/*.spec.ts"],
+  // Fill in conventional Medusa local DB_* defaults before the runner reads them, so
+  // `yarn test:integration` boots against a standard local Postgres out of the box
+  // (CI overrides by exporting real DB_* env). See integration-tests/setup-env.ts.
+  setupFiles: ["<rootDir>/integration-tests/setup-env.ts"],
   transform: {
     "^.+\\.(t|j)s$": ["@swc/jest"],
   },
