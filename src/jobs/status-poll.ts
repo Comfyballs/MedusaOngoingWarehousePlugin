@@ -1,7 +1,7 @@
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import type { MedusaContainer } from "@medusajs/framework/types"
 import { ONGOING_MODULE } from "../modules/ongoing"
-import { syncOngoingShipmentWorkflow } from "../workflows"
+import { refreshOngoingOrderStatusWorkflow, syncOngoingShipmentWorkflow } from "../workflows"
 
 // Ongoing order-status sweep. Wide on purpose: the poll keeps latest_status_code
 // fresh for order-edit gating AND detects shipment, so it must see every active
@@ -48,12 +48,6 @@ type OngoingServiceLike = {
   acquireSyncLock: (integrationId: string, ttlMs: number, lockName?: "status_poll") => Promise<boolean>
   releaseSyncLock: (integrationId: string, lockName?: "status_poll") => Promise<void>
   listOngoingOrderSyncs: (filter: { integration_id: string }) => Promise<OrderSyncRow[]>
-  updateOngoingOrderSyncs: (data: {
-    id: string
-    latest_status_code: number
-    latest_status_text: string
-    last_synced_at: Date
-  }) => Promise<unknown>
   updateOngoingIntegrations: (data: { id: string; last_status_poll_at: Date }) => Promise<unknown>
 }
 
@@ -111,11 +105,16 @@ async function pollAndApply(
       continue
     }
 
-    await service.updateOngoingOrderSyncs({
-      id: row.id,
-      latest_status_code: order.statusNumber,
-      latest_status_text: order.statusText,
-      last_synced_at: new Date(),
+    // Route the per-order status refresh through the same workflow the
+    // out-of-band webhook path uses (bead jzm), rather than mutating the
+    // module service directly (arch-workflow-required).
+    await refreshOngoingOrderStatusWorkflow(container).run({
+      input: {
+        ongoing_order_number: order.orderNumber,
+        integration_id: integration.id,
+        status_code: order.statusNumber,
+        status_text: order.statusText,
+      },
     })
 
     if (shippedCodes.includes(order.statusNumber) && row.shipped_at == null) {

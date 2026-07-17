@@ -6,7 +6,7 @@ Before implementing backend changes, load the **`medusa-dev:building-with-medusa
 
 Any state change — writing a sync row, calling Ongoing, creating a shipment, updating an integration — goes through a workflow, not directly in a route, subscriber, or provider method. Routes and subscribers may **read** via the module service or `query.graph`, but they mutate only by running a workflow.
 
-There is one documented deviation: `status-poll.ts` writes `updateOngoingOrderSyncs` / `updateOngoingIntegrations` directly for bookkeeping. It is flagged `arch-workflow-required` and tracked in bead `o6c`. Do not add new direct mutations; the webhook's equivalent status write already goes through `refreshOngoingOrderStatusWorkflow`, and new writes should follow that path.
+There is one remaining documented deviation: `status-poll.ts` still calls `acquireSyncLock` / `releaseSyncLock` / `updateOngoingIntegrations` directly for advisory-lock and cadence bookkeeping (tangled with the lock's `finally` lifecycle, not a per-order data mutation). The per-order `latest_status_code`/`latest_status_text` write it used to do directly (`updateOngoingOrderSyncs`) was wrapped in bead `o6c` and now runs through `refreshOngoingOrderStatusWorkflow` — the same workflow the webhook's out-of-band status write uses. Do not add new direct mutations; follow that workflow's pattern for any future per-order status write.
 
 ## No PUT or PATCH routes
 

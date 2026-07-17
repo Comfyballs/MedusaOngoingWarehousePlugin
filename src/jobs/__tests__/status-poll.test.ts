@@ -1,10 +1,12 @@
 import type { MedusaContainer } from "@medusajs/framework/types"
 
-// Mock the #33 workflow (barrel): named export is a factory (container) => { run }.
+// Mock the workflows barrel: named exports are factories (container) => { run }.
 const run = jest.fn().mockResolvedValue({ result: {} })
+const refreshRun = jest.fn().mockResolvedValue({ result: {} })
 jest.mock("../../workflows", () => ({
   __esModule: true,
   syncOngoingShipmentWorkflow: jest.fn(() => ({ run })),
+  refreshOngoingOrderStatusWorkflow: jest.fn(() => ({ run: refreshRun })),
 }))
 
 import ongoingStatusPollJob, { config } from "../status-poll"
@@ -66,7 +68,6 @@ function makeHarness(opts: {
       async ({ integration_id }: { integration_id: string }) =>
         opts.rowsByIntegration?.[integration_id] ?? []
     ),
-    updateOngoingOrderSyncs: jest.fn(async () => ({})),
     updateOngoingIntegrations: jest.fn(async () => ({})),
   }
 
@@ -139,22 +140,32 @@ describe("ongoing status-poll job", () => {
 
     await ongoingStatusPollJob(h.container)
 
-    // Every matched non-terminal row gets its latest status refreshed.
-    expect(h.service.updateOngoingOrderSyncs).toHaveBeenCalledWith({
-      id: "r_open", latest_status_code: 200, latest_status_text: "Open", last_synced_at: expect.any(Date),
+    // Every matched non-terminal row gets its latest status refreshed via the
+    // shared refresh workflow (same one the out-of-band webhook path uses).
+    expect(refreshRun).toHaveBeenCalledWith({
+      input: {
+        ongoing_order_number: "1001-aaa", integration_id: "int_1",
+        status_code: 200, status_text: "Open",
+      },
     })
-    expect(h.service.updateOngoingOrderSyncs).toHaveBeenCalledWith({
-      id: "r_ship_unshipped", latest_status_code: 400, latest_status_text: "Sent", last_synced_at: expect.any(Date),
+    expect(refreshRun).toHaveBeenCalledWith({
+      input: {
+        ongoing_order_number: "1001-bbb", integration_id: "int_1",
+        status_code: 400, status_text: "Sent",
+      },
     })
-    expect(h.service.updateOngoingOrderSyncs).toHaveBeenCalledWith({
-      id: "r_ship_already", latest_status_code: 400, latest_status_text: "Sent", last_synced_at: expect.any(Date),
+    expect(refreshRun).toHaveBeenCalledWith({
+      input: {
+        ongoing_order_number: "1001-ccc", integration_id: "int_1",
+        status_code: 400, status_text: "Sent",
+      },
     })
     // Terminal row (sync_state "shipped") and the untracked order are ignored.
-    const updatedIds = h.service.updateOngoingOrderSyncs.mock.calls.map(
-      (c) => (c as { id: string }[])[0].id
+    const refreshedOrderNumbers = refreshRun.mock.calls.map(
+      (c) => (c as { input: { ongoing_order_number: string } }[])[0].input.ongoing_order_number
     )
-    expect(updatedIds).toHaveLength(3)
-    expect(updatedIds).not.toContain("r_terminal")
+    expect(refreshedOrderNumbers).toHaveLength(3)
+    expect(refreshedOrderNumbers).not.toContain("1001-ddd")
 
     // Shipment workflow only for the shipped-code + not-yet-shipped row.
     expect(run).toHaveBeenCalledTimes(1)
