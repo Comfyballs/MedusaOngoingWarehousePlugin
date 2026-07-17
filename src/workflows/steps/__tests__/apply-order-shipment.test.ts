@@ -86,6 +86,19 @@ describe("applyOrderShipmentStep", () => {
     expect(service.updateOngoingOrderSyncs).not.toHaveBeenCalled()
   })
 
+  it("still swallows the already-shipped case if a future Medusa version rewords the message, as long as it still mentions 'already' and 'shipment' (bead 1783216050306-51-6cb99d17)", async () => {
+    run.mockRejectedValue(
+      new MedusaError(
+        MedusaError.Types.NOT_ALLOWED,
+        "A shipment was already registered for this fulfillment"
+      )
+    )
+    const service = makeService()
+    const res = await invoke(baseInput, service)
+    expect(res.output).toEqual({ applied: false, reason: "already_shipped" })
+    expect(service.updateOngoingOrderSyncs).not.toHaveBeenCalled()
+  })
+
   it("is safe under an outer-workflow retry: a second call for the same fulfillment hits the already-shipped swallow, not a duplicate side effect (#113)", async () => {
     const service = makeService()
 

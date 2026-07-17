@@ -21,16 +21,47 @@ export type ApplyShipmentResult = {
   reason: "shipped" | "already_shipped"
 }
 
+// ---------------------------------------------------------------------------
+// Medusa-version coupling (PINNED TO 2.16.0 — recheck on every Medusa bump):
+//
+// createOrderShipmentWorkflow's validateShipmentStep
+// (@medusajs/core-flows/dist/fulfillment/steps/validate-shipment.js:12-19) is the ONLY
+// place in the create-shipment call graph that throws MedusaError.Types.NOT_ALLOWED, and
+// it does so for exactly three fulfillment states, in this order:
+//   1. fulfillment.shipped_at set      -> "Shipment has already been created"   (idempotent)
+//   2. fulfillment.canceled_at set     -> "Cannot create shipment for a canceled fulfillment"
+//   3. no shipping_option_id           -> "Cannot create shipment without a Shipping Option"
+// (createShipmentValidateOrder's own checks -- order canceled / items missing from order --
+// throw MedusaError.Types.INVALID_DATA, not NOT_ALLOWED, so they can't collide here.)
+//
+// Only case 1 is the idempotent "already shipped" no-op this step swallows; cases 2 and 3
+// are real caller errors and must fall through to the terminal-error recording below.
+// Matching the FULL exact message string ties correctness to Medusa's exact wording, which
+// a future core bump could silently reword (no compile-time or test signal). Instead we key
+// off the type plus a narrower content signal -- both "already" and "shipment" appearing in
+// the message -- which is specific enough to distinguish case 1 from cases 2/3 above (neither
+// contains "already") while tolerating a message reword that keeps the same meaning. If a
+// future Medusa version changes this wording so the signal below stops matching, or introduces
+// a new NOT_ALLOWED reason that also happens to mention "already"/"shipment", re-verify against
+// validate-shipment.js and update this comment + the check together.
+function isAlreadyShippedError(err: unknown): boolean {
+  if (!(err instanceof MedusaError) || err.type !== MedusaError.Types.NOT_ALLOWED) {
+    return false
+  }
+  const message = err.message.toLowerCase()
+  return message.includes("already") && message.includes("shipment")
+}
+
 // The handler invokes the core `createOrderShipmentWorkflow` (which sets shipped_at,
 // updates order state, releases reservations and emits SHIPMENT_CREATED) from INSIDE
 // this step via `.run()` — the canonical "run a core-flow inside a step" pattern.
 //
-// Idempotency: Medusa's validate-shipment step throws a NOT_ALLOWED MedusaError with
-// the exact message "Shipment has already been created" when the fulfillment is already
-// shipped. That is swallowed as success WITHOUT writing an error row. Any other failure
-// is classified (MedusaError -> terminal; OngoingApiError -> its kind; else retryable),
-// recorded on the sync row, then re-thrown (record-then-rethrow, not compensation, since
-// a throwing step returns no StepResponse).
+// Idempotency: Medusa's validate-shipment step throws a NOT_ALLOWED MedusaError (message
+// "Shipment has already been created" as of 2.16.0) when the fulfillment is already shipped;
+// see isAlreadyShippedError above for the matching rule. That is swallowed as success WITHOUT
+// writing an error row. Any other failure is classified (MedusaError -> terminal; OngoingApiError
+// -> its kind; else retryable), recorded on the sync row, then re-thrown (record-then-rethrow,
+// not compensation, since a throwing step returns no StepResponse).
 //
 // Audit (#113): does an outer-workflow retry (syncOngoingShipmentWorkflow re-run after
 // this step already succeeded once, but markOrderSyncShippedStep then failed — see
@@ -45,8 +76,8 @@ export type ApplyShipmentResult = {
 //     `shipment.id`, the output of a parallel branch that includes
 //     createShipmentWorkflow.runAsStep. That inner workflow's first step,
 //     validateShipmentStep (@medusajs/core-flows/dist/fulfillment/steps/
-//     validate-shipment.js:12-19), throws the exact "Shipment has already been created"
-//     MedusaError caught above whenever `fulfillment.shipped_at` is already set — which
+//     validate-shipment.js:12-19), throws the "Shipment has already been created" MedusaError
+//     matched by isAlreadyShippedError above whenever `fulfillment.shipped_at` is already set — which
 //     it is on any retry, because the first successful run already set it via
 //     updateFulfillmentWorkflow. A failed step blocks every step that depends on its
 //     output, so emitEventStep never runs on retry. The sibling parallel step
@@ -90,11 +121,7 @@ export const applyOrderShipmentHandler = async (
     await createOrderShipmentWorkflow(container).run({ input: shipmentInput })
     return new StepResponse({ applied: true, reason: "shipped" })
   } catch (err) {
-    if (
-      err instanceof MedusaError &&
-      err.type === MedusaError.Types.NOT_ALLOWED &&
-      err.message === "Shipment has already been created"
-    ) {
+    if (isAlreadyShippedError(err)) {
       return new StepResponse({ applied: false, reason: "already_shipped" })
     }
 
