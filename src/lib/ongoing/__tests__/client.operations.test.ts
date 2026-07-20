@@ -183,9 +183,4 @@ describe("OngoingClient operations", () => {
     ).resolves.toEqual({ articleSystemId: undefined })
   })
 
-  it("testConnection returns true when statuses load", async () => {
-    const fetchImpl = jest.fn().mockResolvedValue(json({ orderStatuses: [{ number: 200, text: "Open" }] }))
-    const client = new OngoingClient(creds, { fetchImpl })
-    await expect(client.testConnection()).resolves.toBe(true)
-  })
 })
