@@ -1,4 +1,4 @@
-import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
+import { ContainerRegistrationKeys, MedusaError, Modules } from "@medusajs/framework/utils"
 import type { MedusaContainer, IEventBusModuleService } from "@medusajs/framework/types"
 import { ONGOING_MODULE } from "../modules/ongoing"
 import { syncOngoingInventoryWorkflow } from "../workflows"
@@ -38,6 +38,28 @@ type OngoingServiceLike = {
 // change a delta tick might have missed (clock skew, a dropped webhook on Ongoing's side)
 // self-heals. Between full sweeps, ticks pull only stockInfoChangedFrom deltas (bead sw8).
 const FULL_SWEEP_INTERVAL_MS = 6 * 60 * 60 * 1000 // 6 hours
+
+// Ongoing REJECTS a stockInfoChangedFrom cursor older than 24h ("must be within 24 hours
+// of the current time" → HTTP 400, confirmed live — bead 13f). The stored delta cursor
+// must therefore never be sent once it has aged past that limit. Today FULL_SWEEP_INTERVAL_MS
+// (6h) re-anchors the cursor well within the window, so this can't happen — but that safety
+// is an IMPLICIT coupling. This constant makes it explicit: a delta cursor older than this
+// (a margin under Ongoing's hard 24h limit, to absorb tick latency + the overlap rewind)
+// degrades to a full sweep (changed_since=null) instead of 400ing every delta tick. That
+// keeps the job correct even if FULL_SWEEP_INTERVAL_MS is ever raised toward/past 24h.
+const DELTA_CURSOR_MAX_AGE_MS = 23 * 60 * 60 * 1000 // 23 hours (safety margin under Ongoing's 24h limit)
+
+// Enforce the coupling at module load: the full-sweep cadence MUST re-anchor the delta
+// cursor before it can age past the safe window. If a future edit raises
+// FULL_SWEEP_INTERVAL_MS at/above it, fail loudly here rather than silently 400ing deltas.
+if (FULL_SWEEP_INTERVAL_MS >= DELTA_CURSOR_MAX_AGE_MS) {
+  throw new MedusaError(
+    MedusaError.Types.INVALID_DATA,
+    `[ongoing] stock-sync misconfiguration: FULL_SWEEP_INTERVAL_MS (${FULL_SWEEP_INTERVAL_MS}ms) must be < ` +
+      `DELTA_CURSOR_MAX_AGE_MS (${DELTA_CURSOR_MAX_AGE_MS}ms) so the delta cursor is always re-anchored by a ` +
+      `full sweep before it can age past Ongoing's 24h stockInfoChangedFrom limit (bead 13f).`
+  )
+}
 
 // stockInfoChangedFrom is evaluated by Ongoing against OUR timestamp, but the change times
 // it compares against are stamped by ONGOING's clock. If our host clock runs ahead of
@@ -83,6 +105,14 @@ function isStockSyncDue(
 // last full sweep is older than FULL_SWEEP_INTERVAL_MS; otherwise the tick pulls deltas.
 function isFullSweepDue(integration: IntegrationRow, now: number): boolean {
   if (integration.last_stock_delta_cursor == null || integration.last_full_stock_sync_at == null) {
+    return true
+  }
+  // Defensive (bead 13f): never send a delta cursor Ongoing will reject. If the stored
+  // cursor has aged past the safe window (e.g. a raised FULL_SWEEP_INTERVAL_MS, or a long
+  // run of failed syncs that never advanced it), degrade to a full sweep — a full sweep
+  // (changed_since=null) always reconciles the whole catalogue, so no change is missed.
+  const cursorAge = now - new Date(integration.last_stock_delta_cursor).getTime()
+  if (cursorAge >= DELTA_CURSOR_MAX_AGE_MS) {
     return true
   }
   const lastFull = new Date(integration.last_full_stock_sync_at).getTime()
