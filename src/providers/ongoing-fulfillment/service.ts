@@ -12,20 +12,33 @@ import {
   ONGOING_RETURN_OPTION_ID,
   ONGOING_STANDARD_OPTION_ID,
 } from "./constants"
-import { cancelOngoingOrderWorkflow, pushOrderToOngoing, pushReturnOrderToOngoing } from "../../workflows"
 import { assertValidOngoingCarrierConfig } from "../../lib/ongoing/way-of-delivery"
 
 /**
- * Shape `createFulfillment` (#21) stashes as the fulfillment `data`. Medusa hands
- * this object (and nothing else) back to `cancelFulfillment`, so every identifier
- * cancellation needs must be read out of it.
+ * Shape `createFulfillment` stashes as the fulfillment `data`. Medusa hands this
+ * object (and nothing else) back to `cancelFulfillment`.
+ *
+ * MODULE ISOLATION (bug ei4): a fulfillment provider is instantiated by
+ * @medusajs/fulfillment's provider loader as `asFunction((cradle) => new klass(
+ * cradle, options))` — so `this.container_` is the FULFILLMENT module's OWN
+ * isolated container. By Medusa module isolation it does NOT have the sibling
+ * `ongoing` module, `query`, or the workflow engine registered. Therefore NO
+ * provider method can resolve `ongoing` or run a plugin workflow. All Ongoing
+ * push/return/cancel orchestration lives in APP-SCOPE subscribers instead
+ * (src/subscribers/fulfillment-created.ts, return-created.ts,
+ * fulfillment-canceled.ts), which run in the app container that can resolve
+ * everything. These provider methods stay within what a module-isolated
+ * container can do: validate/guard and stash identifiers.
+ *
+ * Because the Ongoing push now happens asynchronously (off `order.fulfillment_created`),
+ * `createFulfillment` cannot know the resulting `ongoing_order_number`/`ongoing_order_id`
+ * at return time — those live in the `OngoingOrderSync` ledger the push subscriber
+ * writes, keyed by `medusa_fulfillment_id`. So the stash only carries what the
+ * provider already knows; downstream cancellation locates the Ongoing order via the
+ * ledger (by `medusa_fulfillment_id`), not this stash.
  */
 export type OngoingFulfillmentData = {
-  ongoing_order_number?: string
-  ongoing_order_id?: number
   location_id?: string
-  credential_key?: string
-  medusa_order_id?: string
   medusa_fulfillment_id?: string
 }
 
@@ -37,18 +50,17 @@ const KNOWN_OPTION_IDS = new Set<string>([
 /**
  * Ongoing Warehouse fulfillment provider.
  *
- * This issue (#20) scaffolds the class and the shipping-option lifecycle:
- * getFulfillmentOptions / validateOption / validateFulfillmentData / canCalculate.
- * Order creation (#21), cancellation (#22), and return/document stubs (#23) are
- * deliberately left on the throwing AbstractFulfillmentProviderService base so they
- * slot in without restructuring this class.
+ * Owns the shipping-option lifecycle (getFulfillmentOptions / validateOption /
+ * validateFulfillmentData / canCalculate) and thin, module-isolation-safe
+ * create/cancel hooks. The actual cross-module Ongoing sync is driven by
+ * app-scope subscribers — see the `OngoingFulfillmentData` doc comment (ei4).
  */
 class OngoingFulfillmentProviderService extends AbstractFulfillmentProviderService {
   static identifier = ONGOING_PROVIDER_ID
 
-  // The Medusa container (cradle) is captured so createFulfillment (#21) and
-  // cancelFulfillment (#22) can resolve the 'ongoing' module and run workflows
-  // via this.container_. Do not drop this field.
+  // The provider is handed the fulfillment module's isolated container (cradle).
+  // It is stored only for the `logger` registered on it — it CANNOT resolve the
+  // `ongoing` module, `query`, or the workflow engine (module isolation, ei4).
   protected readonly container_: MedusaContainer
   protected readonly logger_: Logger
   protected readonly options_: Record<string, unknown>
@@ -104,131 +116,68 @@ class OngoingFulfillmentProviderService extends AbstractFulfillmentProviderServi
   }
 
   /**
-   * Create the Ongoing order behind a freshly-created Medusa fulfillment.
+   * Stash the identifiers the async Ongoing push needs, and nothing more.
    *
-   * Medusa's fulfillment module-service calls this with the persisted fulfillment
-   * row as the 4th arg (minus `provider_id`/`data`/`items`), so `fulfillment.id`
-   * and `fulfillment.location_id` are hydrated — `location_id` is a non-nullable
-   * column on the fulfillment model and the upstream create-fulfillment workflow
-   * always resolves it. We still guard defensively (the DTO type is `Partial`):
-   * a missing `location_id` throws a terminal error, which makes the module-service
-   * delete the just-created fulfillment and surface a clean failure rather than
-   * guessing a warehouse.
+   * The push itself runs in the `order.fulfillment_created` subscriber
+   * (src/subscribers/fulfillment-created.ts), which resolves the `ongoing`
+   * module and runs `pushOrderToOngoing` in the APP container — this provider's
+   * module-isolated container cannot do either (ei4). A push failure is recorded
+   * as an error `OngoingOrderSync` row and swept by the `retry-failed-syncs`
+   * job, so — unlike the old synchronous design — a transient Ongoing outage no
+   * longer aborts Medusa fulfillment creation.
    *
-   * The integration is resolved here ONLY to obtain `credential_key` for the
-   * returned stash; the `pushOrderToOngoing` workflow (#26) re-queries the full
-   * order and re-derives its own integration context from the fulfillment id. The
-   * push runs synchronously so a failure aborts fulfillment creation.
-   *
-   * The returned `data` is persisted onto the fulfillment row and is the ONLY
-   * thing `cancelFulfillment` (#22) later receives — hence `credential_key` and
-   * `ongoing_order_number` must be stashed.
+   * The guards remain: `fulfillment.id` is what the push subscriber re-queries
+   * the order from, and `location_id` is a non-nullable column the upstream
+   * create-fulfillment workflow always resolves. A missing value throws a
+   * terminal error so the module-service deletes the just-created fulfillment
+   * and surfaces a clean failure rather than emitting an unpushable fulfillment.
    */
   async createFulfillment(
     _data: Record<string, unknown>,
     _items: unknown[],
     _order: unknown,
     fulfillment: { id?: string; location_id?: string }
-  ): Promise<{ data: Record<string, unknown>; labels: [] }> {
+  ): Promise<{ data: OngoingFulfillmentData; labels: [] }> {
     const fulfillmentId = fulfillment?.id
     const locationId = fulfillment?.location_id
 
-    // fulfillment.id is the only input the push workflow needs to re-query the
-    // order; without it there is nothing to push. Guard before anything else so
-    // the workflow is never invoked with an undefined id.
     if (!fulfillmentId) {
       throw new MedusaError(
         MedusaError.Types.INVALID_DATA,
-        `[ongoing] cannot push to Ongoing: fulfillment.id is missing from the createFulfillment payload.`
+        `[ongoing] cannot fulfill through Ongoing: fulfillment.id is missing from the createFulfillment payload.`
       )
     }
 
     if (!locationId) {
-      // Log once so a dev fulfillment surfaces any 2.16.0 hydration surprise.
       this.logger_?.warn(
         `[ongoing] createFulfillment received fulfillment ${fulfillmentId} without a location_id; refusing to guess a warehouse.`
       )
       throw new MedusaError(
         MedusaError.Types.INVALID_DATA,
-        `[ongoing] cannot push fulfillment ${fulfillmentId} to Ongoing: ` +
+        `[ongoing] cannot fulfill fulfillment ${fulfillmentId} through Ongoing: ` +
           `fulfillment.location_id is missing. Refusing to guess a warehouse.`
       )
     }
 
-    // `this.container_` is the awilix CRADLE: @medusajs/fulfillment's provider
-    // loader instantiates providers via `asFunction((cradle) => new klass(cradle,
-    // options))` (see node_modules/@medusajs/fulfillment/dist/loaders/providers.js),
-    // so it has no callable `.resolve()` — accessing `cradle.resolve` would try to
-    // resolve a registration literally named "resolve" and throw. Real Medusa (and
-    // the wh5.9 full-app harness, the first test to drive this provider through the
-    // core FulfillmentModuleService) reaches the module as `cradle.ongoing`. The
-    // unit/module specs instead hand the provider a container object exposing
-    // `.resolve()`. Support both: prefer the cradle property, fall back to resolve().
-    const ongoingContainer = this.container_ as unknown as {
-      ongoing?: {
-        getIntegrationByLocation: (
-          locationId: string
-        ) => Promise<{ credential_key: string } | undefined>
-      }
-      resolve?: (key: string) => {
-        getIntegrationByLocation: (
-          locationId: string
-        ) => Promise<{ credential_key: string } | undefined>
-      }
-    }
-    const ongoingService = ongoingContainer.ongoing ?? ongoingContainer.resolve!("ongoing")
-
-    const integration = await ongoingService.getIntegrationByLocation(locationId)
-    if (!integration) {
-      throw new MedusaError(
-        MedusaError.Types.NOT_FOUND,
-        `[ongoing] no enabled Ongoing integration is bound to stock location "${locationId}"; ` +
-          `cannot push fulfillment ${fulfillmentId}.`
-      )
-    }
-
-    // credential_key is captured here ONLY for the returned stash; the workflow
-    // re-derives its own integration context from the fulfillment id.
-    const credentialKey = integration.credential_key
-
-    const { result } = await pushOrderToOngoing(this.container_).run({
-      input: { fulfillment_id: fulfillmentId },
-    })
-
     return {
       data: {
-        ongoing_order_number: result.orderNumber,
-        ongoing_order_id: result.ongoingOrderId,
         location_id: locationId,
-        credential_key: credentialKey,
+        medusa_fulfillment_id: fulfillmentId,
       },
       labels: [],
     }
   }
 
   /**
-   * Create the Ongoing return order (PUT /returnOrders) behind a freshly-created
-   * Medusa return fulfillment.
+   * Stash the return fulfillment id; the Ongoing return push (PUT /returnOrders)
+   * runs in the `order.return_requested` subscriber
+   * (src/subscribers/return-created.ts), for the same module-isolation reason as
+   * `createFulfillment` (ei4).
    *
-   * Medusa's `FulfillmentModuleService.createReturnFulfillment` creates the return
-   * fulfillment row FIRST, then calls this method with `{ ...fulfillment,
-   * shipping_option }` — so `fromData.id` is hydrated, but (unlike the outbound
-   * `createFulfillment`) there is no `order`/`order_id` on it: the core method
-   * destructures `order` out before persisting, and links the return fulfillment to
-   * the order only indirectly via `order_return.fulfillment_id`. So, mirroring
-   * `createFulfillment`'s "resolve everything fresh from the id" pattern, only
-   * `fromData.id` is trusted here — `pushReturnOrderToOngoing` (#new) re-queries the
-   * return fulfillment's items/location fresh and resolves the original order (and
-   * its already-synced Ongoing order) from one of those items' `line_item_id`.
-   *
-   * Runs synchronously so a failure aborts return-fulfillment creation, matching
-   * `createFulfillment`: `FulfillmentModuleService.createReturnFulfillment` deletes
-   * the just-created return fulfillment row on any provider throw.
-   *
-   * The returned `data` is persisted onto the return fulfillment row. There is no
-   * `cancelReturnFulfillment` counterpart in Medusa 2.16.0 (its compensation TODO
-   * falls back to `cancelFulfillment`), so nothing downstream currently reads this
-   * stash back — it exists for operator visibility (fulfillment detail / audit).
+   * `FulfillmentModuleService.createReturnFulfillment` creates the return
+   * fulfillment row first, then calls this with `{ ...fulfillment,
+   * shipping_option }`, so `fromData.id` is hydrated. Guard it: without it there
+   * is nothing to push.
    */
   async createReturnFulfillment(
     fromData: Record<string, unknown>
@@ -238,18 +187,12 @@ class OngoingFulfillmentProviderService extends AbstractFulfillmentProviderServi
     if (!returnFulfillmentId) {
       throw new MedusaError(
         MedusaError.Types.INVALID_DATA,
-        `[ongoing] cannot push return to Ongoing: return fulfillment.id is missing from the createReturnFulfillment payload.`
+        `[ongoing] cannot return through Ongoing: return fulfillment.id is missing from the createReturnFulfillment payload.`
       )
     }
 
-    const { result } = await pushReturnOrderToOngoing(this.container_).run({
-      input: { return_fulfillment_id: returnFulfillmentId },
-    })
-
     return {
       data: {
-        ongoing_return_order_number: result.returnOrderNumber,
-        ongoing_return_order_id: result.ongoingReturnOrderId,
         medusa_return_fulfillment_id: returnFulfillmentId,
       },
       labels: [],
@@ -273,110 +216,28 @@ class OngoingFulfillmentProviderService extends AbstractFulfillmentProviderServi
   }
 
   /**
-   * Cancel the Ongoing order behind a fulfillment.
+   * Fulfillment cancellation hook.
    *
-   * Medusa's fulfillment module-service calls
-   * `provider.cancelFulfillment(provider_id, fulfillment.data ?? {})`, so this
-   * method receives ONLY the stashed `data` — no fulfillment row, items, or
-   * location argument. It reads the order identifiers out of `data` and runs the
-   * idempotent `cancelOngoingOrderWorkflow` (#28); all cancellation gating and
-   * already-cancelled handling lives in that workflow. This method resolves
-   * (never throws) on a genuine no-op decision reason — `already_cancelled`,
-   * `no_sync_row`, `no_ongoing_order_id`, or a missing identifier — because none
-   * of those describe a real Ongoing order that is still shipping. It THROWS a
-   * `MedusaError(NOT_ALLOWED)` for `status_not_cancellable` (#109): that reason
-   * means the `OngoingOrderSync` row AND the Ongoing order both exist and
-   * Ongoing's own status says it can no longer be cancelled there, so this
-   * method must NOT resolve — Medusa's core `FulfillmentModuleService
-   * .cancelFulfillment` (verified against `@medusajs/fulfillment` 2.16.0,
-   * `fulfillment-module-service.js:711-728`) only inspects throw/no-throw and
-   * unconditionally sets `fulfillment.canceled_at` on any non-throwing return.
-   * It also lets genuine retryable failures propagate so Medusa can surface a
-   * retry. Converges safely with the `order.canceled` subscriber (#32) because
-   * that subscriber calls `cancelOngoingOrderWorkflow` directly (not through
-   * this method) and already never throws out of its own per-row try/catch —
-   * this method's new throw does not change that call site (#109).
+   * Medusa's `FulfillmentModuleService.cancelFulfillment` calls this with ONLY
+   * the stashed `data` and inspects nothing but throw/no-throw before setting
+   * `fulfillment.canceled_at`. The real Ongoing cancel runs in APP scope — the
+   * `order.fulfillment_canceled` subscriber (and, for whole-order cancels, the
+   * `order.canceled` subscriber) runs the idempotent, status-gated
+   * `cancelOngoingOrderWorkflow`, which this module-isolated container cannot do
+   * (ei4). So this hook is a non-throwing no-op: it must not throw, or the core
+   * module-service would abort the Medusa-side cancel.
+   *
+   * TRADE-OFF (ei4): the old synchronous design threw here on
+   * `status_not_cancellable` to keep `canceled_at` unset when Ongoing refused the
+   * cancel. A module-isolated provider cannot run the status-gated workflow, so
+   * that guard now lives only in the subscriber's ledger/logs — the Medusa
+   * fulfillment is marked cancelled regardless, and a refused Ongoing cancel is
+   * surfaced via the OngoingOrderSync row + logs. Tracked as a follow-up.
    */
   async cancelFulfillment(
     data: Record<string, unknown>
   ): Promise<Record<string, unknown>> {
-    const stashed = (data ?? {}) as OngoingFulfillmentData
-
-    const ongoingOrderNumber =
-      typeof stashed.ongoing_order_number === "string"
-        ? stashed.ongoing_order_number
-        : undefined
-    const medusaFulfillmentId =
-      typeof stashed.medusa_fulfillment_id === "string"
-        ? stashed.medusa_fulfillment_id
-        : undefined
-    const medusaOrderId =
-      typeof stashed.medusa_order_id === "string"
-        ? stashed.medusa_order_id
-        : undefined
-
-    const container = this.container_
-
-    // Idempotent no-op: nothing in `data` lets us locate an OngoingOrderSync row.
-    if (!ongoingOrderNumber && !medusaFulfillmentId && !medusaOrderId) {
-      if (typeof stashed.location_id === "string") {
-        // Diagnostic lookup only; never throws.
-        try {
-          // Same cradle-vs-container distinction as createFulfillment above: the
-          // real provider receives the awilix cradle (no `.resolve()`), tests pass a
-          // container with one. This lookup is diagnostic-only (swallowed below).
-          const oc = container as unknown as {
-            ongoing?: { getIntegrationByLocation: (id: string) => Promise<unknown> }
-            resolve?: (key: string) => { getIntegrationByLocation: (id: string) => Promise<unknown> }
-          }
-          const ongoing = oc.ongoing ?? oc.resolve!("ongoing")
-          await ongoing.getIntegrationByLocation(stashed.location_id)
-        } catch {
-          // swallow — this is purely a diagnostic lookup
-        }
-      }
-      return { ...data, canceled: false, reason: "no_identifier" }
-    }
-
-    const input: Record<string, string> = {}
-    if (ongoingOrderNumber) {
-      input.ongoing_order_number = ongoingOrderNumber
-    }
-    if (medusaFulfillmentId) {
-      input.medusa_fulfillment_id = medusaFulfillmentId
-    }
-    if (medusaOrderId) {
-      input.medusa_order_id = medusaOrderId
-    }
-
-    // The workflow is idempotent and status-gated (#28). A `retryable` error
-    // propagates here so Medusa surfaces a retry; benign no-op outcomes
-    // (already_cancelled / no_sync_row / no_ongoing_order_id) resolve via the
-    // decision result (no throw) because none of them describe a real Ongoing
-    // order that is still shipping.
-    const { result } = await cancelOngoingOrderWorkflow(container).run({ input })
-
-    // status_not_cancellable is the one reason where a real Ongoing order is
-    // known to exist and Ongoing itself refuses the cancel because its status
-    // has moved past the integration's cancellable window. Resolving here
-    // would let Medusa's core module-service mark the fulfillment cancelled
-    // while Ongoing keeps shipping it (#109) — throw instead so canceled_at is
-    // never set.
-    if (result?.reason === "status_not_cancellable") {
-      throw new MedusaError(
-        MedusaError.Types.NOT_ALLOWED,
-        `[ongoing] cannot cancel fulfillment: Ongoing order ` +
-          `${ongoingOrderNumber ?? medusaFulfillmentId ?? medusaOrderId} has moved ` +
-          `past its integration's cancellable status window; Ongoing will ` +
-          `continue shipping it.`
-      )
-    }
-
-    return {
-      ...data,
-      canceled: Boolean(result?.shouldCancel),
-      reason: result?.reason ?? "unknown",
-    }
+    return { ...(data ?? {}) }
   }
 }
 
