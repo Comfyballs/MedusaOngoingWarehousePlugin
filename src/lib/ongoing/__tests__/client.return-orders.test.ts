@@ -63,6 +63,9 @@ describe("OngoingClient.getOrder", () => {
 })
 
 describe("OngoingClient.putReturnOrder", () => {
+  // The 2xx body shape { returnOrderId, message } is verified against the official
+  // Ongoing openapi.json v57 (PostReturnOrderResponse) — bead 2a6. Keep these field
+  // names in lockstep with that schema.
   it("PUTs /returnOrders and returns the ongoing return order id", async () => {
     const fetchImpl = jest.fn().mockResolvedValue(json({ returnOrderId: 321, message: "ok" }))
     const client = new OngoingClient(creds, { fetchImpl })
