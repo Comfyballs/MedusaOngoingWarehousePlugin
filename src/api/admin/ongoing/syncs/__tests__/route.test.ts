@@ -71,7 +71,7 @@ describe("GET /admin/ongoing/syncs", () => {
     )
   })
 
-  it("always filters to error/sent/pending sync_state (never shipped/cancelled)", async () => {
+  it("defaults to the error/sent/pending dashboard view when no ?state= is given", async () => {
     const service = makeService()
     const res = makeRes()
 
@@ -81,7 +81,37 @@ describe("GET /admin/ongoing/syncs", () => {
     expect(filter).toEqual({ sync_state: ["error", "sent", "pending"] })
   })
 
-  it("responds with { syncs, count, limit, offset, summary } — summary covers all 5 states", async () => {
+  it("drills into a requested state via ?state= (bead on2)", async () => {
+    const service = makeService()
+    const res = makeRes()
+
+    await GET(makeReq({ query: { state: "shipped" }, service }), res)
+
+    const [filter] = service.listAndCountOngoingOrderSyncs.mock.calls[0]
+    expect(filter).toEqual({ sync_state: ["shipped"] })
+  })
+
+  it("accepts multiple states (repeated params, comma-separated) and dedupes them", async () => {
+    const service = makeService()
+    const res = makeRes()
+
+    await GET(makeReq({ query: { state: ["shipped", "cancelled,shipped"] }, service }), res)
+
+    const [filter] = service.listAndCountOngoingOrderSyncs.mock.calls[0]
+    expect(filter).toEqual({ sync_state: ["shipped", "cancelled"] })
+  })
+
+  it("drops unknown states and falls back to the default view when none are valid", async () => {
+    const service = makeService()
+    const res = makeRes()
+
+    await GET(makeReq({ query: { state: "bogus" }, service }), res)
+
+    const [filter] = service.listAndCountOngoingOrderSyncs.mock.calls[0]
+    expect(filter).toEqual({ sync_state: ["error", "sent", "pending"] })
+  })
+
+  it("responds with { syncs, count, limit, offset, states, summary } — summary covers all 5 states", async () => {
     const rows = [
       {
         id: "oos_1",
@@ -108,6 +138,7 @@ describe("GET /admin/ongoing/syncs", () => {
       count: 1,
       limit: 5,
       offset: 0,
+      states: ["error", "sent", "pending"],
       summary: { pending: 2, sent: 1, shipped: 5, cancelled: 3, error: 1 },
     })
   })

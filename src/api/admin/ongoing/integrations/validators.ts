@@ -62,14 +62,41 @@ export function validateCreateIntegrationInput(body: unknown): CreateIntegration
   ) {
     invalid("edit_sync_rules must be an object")
   }
+  // bead on2: reject wrong TYPES here instead of silently coercing them to the default,
+  // matching the update validator's strictness ([id]/validators.ts). A field that is
+  // ABSENT still falls back to its create default below — that create-vs-update
+  // difference is intentional (create fills defaults; update leaves fields untouched).
+  // What was inconsistent was create SWALLOWING a wrong-typed value (e.g. a numeric
+  // interval → null, a string `enabled` → true) while update threw INVALID_DATA.
+  if (b.enabled !== undefined && typeof b.enabled !== "boolean") {
+    invalid("enabled must be a boolean")
+  }
+  if (b.stock_sync_enabled !== undefined && typeof b.stock_sync_enabled !== "boolean") {
+    invalid("stock_sync_enabled must be a boolean")
+  }
+  if (
+    b.stock_sync_interval !== undefined &&
+    b.stock_sync_interval !== null &&
+    typeof b.stock_sync_interval !== "string"
+  ) {
+    invalid("stock_sync_interval must be a string or null")
+  }
+  if (
+    b.status_poll_interval !== undefined &&
+    b.status_poll_interval !== null &&
+    typeof b.status_poll_interval !== "string"
+  ) {
+    invalid("status_poll_interval must be a string or null")
+  }
 
   return {
     credential_key: b.credential_key as string,
     stock_location_id: b.stock_location_id as string,
+    // Absent → create default; wrong types already threw above.
     enabled: typeof b.enabled === "boolean" ? b.enabled : true,
     stock_sync_enabled: typeof b.stock_sync_enabled === "boolean" ? b.stock_sync_enabled : true,
-    stock_sync_interval: typeof b.stock_sync_interval === "string" ? b.stock_sync_interval : null,
-    status_poll_interval: typeof b.status_poll_interval === "string" ? b.status_poll_interval : null,
+    stock_sync_interval: (b.stock_sync_interval as string | null | undefined) ?? null,
+    status_poll_interval: (b.status_poll_interval as string | null | undefined) ?? null,
     stock_reconcile_mode: (b.stock_reconcile_mode as StockReconcileMode) ?? "sellable_plus_reserved",
     edit_sync_rules: (b.edit_sync_rules as Record<string, unknown> | null) ?? null,
     shipped_status_codes: (b.shipped_status_codes as number[] | null) ?? null,
