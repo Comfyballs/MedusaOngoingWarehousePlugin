@@ -8,7 +8,7 @@ The plugin fulfils Medusa orders through Ongoing and syncs stock back. Ongoing i
 flowchart TB
   subgraph Medusa
     FP[Fulfillment provider<br/>ongoing-fulfillment]
-    SUB[Subscribers<br/>order.updated / edit / canceled]
+    SUB[Subscribers<br/>fulfillment created/canceled, return,<br/>order.updated / edit / canceled]
     JOB[Jobs<br/>status-poll / stock-sync / retry]
     WF[Workflows + steps]
     MOD[(ongoing module<br/>integration + order_sync)]
@@ -153,10 +153,10 @@ Source: [`src/workflows/`](https://github.com/Comfyballs/MedusaOngoingWarehouseP
 
 | Workflow | Trigger | What it does |
 |---|---|---|
-| `push-order-to-ongoing` | provider `createFulfillment` (sync), admin repush, retry job | Query fulfilment+order, resolve SKUs to articleNumbers, map to `PostOrderModel`, `recordSync(pending)` before PUT, `ensureArticlesExist`, `putOrder`, then `sent`/`error`. No compensation. |
-| `push-return-order-to-ongoing` | provider `createReturnFulfillment` (sync) | Query the return fulfillment (no `order` relation), resolve the ORIGINAL order + its sent/shipped `OngoingOrderSync` row from one item's `line_item_id`, fetch that order's Ongoing lines (`getOrder`) to resolve `orderLineId` per articleNumber, map to `PostReturnOrderModel`, `putReturnOrder`. No `OngoingOrderSync`-style ledger row (no migration added for this feature) — success/failure is only an `ONGOING_EVENTS.RETURN_ORDER_PUSHED` / `RETURN_ORDER_PUSH_FAILED` emit plus logs. No compensation; a throw here makes Medusa's core `createReturnFulfillment` delete the just-created return fulfillment row. |
+| `push-order-to-ongoing` | `order.fulfillment_created` subscriber (async), admin repush, retry job | Query fulfilment+order, resolve SKUs to articleNumbers, map to `PostOrderModel`, `recordSync(pending)` before PUT, `ensureArticlesExist`, `putOrder`, then `sent`/`error`. No compensation. |
+| `push-return-order-to-ongoing` | `order.return_requested` subscriber (async) | Query the return fulfillment (no `order` relation), resolve the ORIGINAL order + its sent/shipped `OngoingOrderSync` row from one item's `line_item_id`, fetch that order's Ongoing lines (`getOrder`) to resolve `orderLineId` per articleNumber, map to `PostReturnOrderModel`, `putReturnOrder`. No `OngoingOrderSync`-style ledger row (no migration added for this feature) — success/failure is only an `ONGOING_EVENTS.RETURN_ORDER_PUSHED` / `RETURN_ORDER_PUSH_FAILED` emit plus logs. No compensation and **no ledger-based retry** for returns. |
 | `sync-order-edit-to-ongoing` | edit subscribers | Gate the edit against `edit_sync_rules`, then re-query and re-PUT the **same** order number. Re-gates internally to close a TOCTOU race. |
-| `cancel-ongoing-order` | order.canceled subscriber, provider `cancelFulfillment` | Decide against `cancellable_status_codes`, DELETE toward Ongoing (swallowing "already cancelled"), then mark the row `cancelled`. |
+| `cancel-ongoing-order` | `order.canceled` + `order.fulfillment_canceled` subscribers | Decide against `cancellable_status_codes`, DELETE toward Ongoing (swallowing "already cancelled"), then mark the row `cancelled`. |
 | `sync-ongoing-shipment` | status-poll job, webhook | Load the sync row (idempotent via `shipped_at`), run core `createOrderShipmentWorkflow` inside the step with tracking labels, mark `shipped`. |
 | `sync-ongoing-inventory` | stock-sync job | Fetch inventory (delta or full), then batch-reconcile `stocked_quantity` per the integration's reconcile mode. |
 | `refresh-ongoing-order-status` | status-poll job, webhook status refresh | Route the per-order `latest_status_code`/`latest_status_text` write through the workflow layer (scoped by order number + integration, skipping terminal rows) instead of a direct module-service call. Shared by the poll sweep and the out-of-band webhook path. |
@@ -167,27 +167,37 @@ Source: [`src/workflows/`](https://github.com/Comfyballs/MedusaOngoingWarehouseP
 | Integration CRUD | admin routes | `create` (compensation deletes the row; step 2 runs `setup-location` as a saga), `update`, `delete` (Medusa-side row only). |
 | `setup-ongoing-location` | nested in create, or directly | Provisions the fulfilment set, service zone, shipping option, integration-location write (with compensation), and the stock-location link. |
 
-The push chain in detail:
+The push chain in detail. **Module isolation (bug ei4):** a fulfillment provider is
+instantiated inside the fulfillment module's *isolated* container, so it can resolve
+neither the sibling `ongoing` module nor the workflow engine. The push therefore runs
+in an **app-scope subscriber** on `order.fulfillment_created` (emitted by core's
+create-fulfillment workflow), not in `Provider.createFulfillment`. The provider hook is
+thin: it validates and stashes `{ location_id, medusa_fulfillment_id }` onto the
+fulfillment `data`. A push failure no longer aborts fulfilment creation — it is recorded
+as an `error` `OngoingOrderSync` row and swept by `retry-failed-syncs` (async-with-retry).
 
 ```mermaid
 sequenceDiagram
   participant Core as Medusa fulfillment
   participant Prov as Provider.createFulfillment
+  participant Sub as order.fulfillment_created subscriber
   participant WF as push-order-to-ongoing
   participant Mod as ongoing module
   participant Ong as Ongoing API
   Core->>Prov: createFulfillment(fulfillment)
-  Prov->>WF: run({ fulfillment_id })
+  Prov-->>Core: stash { location_id, medusa_fulfillment_id } (no cross-module work)
+  Core->>Sub: emit order.fulfillment_created { order_id, fulfillment_id }
+  Sub->>Sub: query fulfillment.provider_id (gate: ongoing only)
+  Sub->>WF: run({ fulfillment_id })
   WF->>WF: query fulfillment+order, resolve SKUs
   WF->>Mod: recordSync(pending) [persist order number first]
   WF->>Ong: ensureArticlesExist (PUT /articles)
   WF->>Ong: putOrder (PUT /orders, upsert)
   alt success
     WF->>Mod: recordSync(sent, ongoing_order_id)
-    WF-->>Prov: { ongoingOrderId, orderNumber }
   else failure
     WF->>Mod: recordSync(error, classify)
-    WF-->>Prov: throw (aborts fulfillment creation)
+    Note over Sub: subscriber logs, never throws; retry job sweeps the error row
   end
 ```
 
@@ -197,8 +207,15 @@ sequenceDiagram
 
 ### Subscribers
 
-Source: [`src/subscribers/`](https://github.com/Comfyballs/MedusaOngoingWarehousePlugin/blob/main/src/subscribers). All three never throw (per-row try/catch plus an outer backstop) and follow **persist-then-emit**: the state-writing workflow runs first, then a domain event is emitted through the isolated `emitDomainEvent` helper, so an event-bus outage can never be mislogged as a failed workflow.
+Source: [`src/subscribers/`](https://github.com/Comfyballs/MedusaOngoingWarehousePlugin/blob/main/src/subscribers). All never throw (per-row try/catch plus an outer backstop) and follow **persist-then-emit**: the state-writing workflow runs first, then a domain event is emitted through the isolated `emitDomainEvent` helper, so an event-bus outage can never be mislogged as a failed workflow.
 
+The `fulfillment-created` / `return-created` / `fulfillment-canceled` trio are the **app-scope seam for the fulfillment provider** (bug ei4): the provider runs in the fulfillment module's isolated container and cannot resolve the `ongoing` module or the workflow engine, so all cross-module push/return/cancel orchestration that used to run synchronously inside the provider now runs here, in the app container, off core order events.
+
+- `fulfillment-created.ts` handles `order.fulfillment_created`, gates on `fulfillment.provider_id` (only `ongoing_*` fulfillments), and runs `pushOrderToOngoing`. A push failure is left as an `error` sync row for the retry job — the subscriber logs and never throws (async-with-retry; no synchronous abort).
+- `fulfillment-canceled.ts` handles `order.fulfillment_canceled` and runs the idempotent, status-gated `cancelOngoingOrderWorkflow` keyed by `medusa_fulfillment_id` (a `no_sync_row` result means the fulfillment was never ours). Complements `order-canceled.ts` for single-fulfillment cancels. **Trade-off (ei4):** the old provider `cancelFulfillment` threw on `status_not_cancellable` to keep Medusa's `canceled_at` unset when Ongoing refused; a module-isolated provider can't run that gate, so the Medusa fulfillment is now marked cancelled regardless and a refused cancel surfaces only via the ledger/logs (bead `eer`).
+- `return-created.ts` handles `order.return_requested`, resolves the return fulfillment (and its provider, to gate) from `return_id` via `query.graph` on the `return` entity, and runs `pushReturnOrderToOngoing`. Two gaps are tracked: exchange/claim return legs emit different events (bead `pyr`), and a failed return push has no ledger row for the retry job to sweep (bead `8p8`).
+
+  **The graph field is `fulfillments` — plural.** The `return_fulfillment` link extends `Return` with that list-valued alias only (`@medusajs/link-modules` `definitions/order-return-fulfillment.js`); there is no singular `fulfillment`. `query.graph` **silently omits an unknown field rather than throwing**, so a singular selection returns a row with no fulfillment on it and the subscriber skips every return push without a trace. A unit-test mock cannot catch this (it returns whatever shape it was written against), so the real shape is pinned by the `ei4: return.fulfillments (plural) …` case in `integration-tests/full-app.spec.ts`, against a booted app. Treat any `query.graph` field selection that crosses a link the same way — verify it in L2, not against a mock.
 - `order-canceled.ts` runs `cancelOngoingOrderWorkflow` per sync row and emits `ORDER_CANCELLED` when a cancel actually happened.
 - `order-edit-confirmed.ts` handles `order-edit.confirmed`, gates line-item edits, and trusts the workflow's own re-gate over its pre-check. The `LINE_ITEM_ACTION_TYPES` set (`ITEM_ADD`/`ITEM_UPDATE`/`ITEM_REMOVE`/`SHIPPING_ADD`/`SHIPPING_UPDATE`/`SHIPPING_REMOVE`) is verified against Medusa 2.16.0's `ChangeActionType` enum; today only `ITEM_ADD`/`ITEM_UPDATE`/`SHIPPING_ADD` actually reach this event, the rest are forward-compatible coverage.
 - `order-updated.ts` handles `order.updated`, uses the burst-union logic to detect address/contact/email changes, and gates on the `address_contact` category.
@@ -246,9 +263,12 @@ Source: [`src/providers/ongoing-fulfillment/`](https://github.com/Comfyballs/Med
 - `getFulfillmentOptions()` returns a static, global list (standard and return) — it takes no args and cannot vary per warehouse; the real per-warehouse `wayOfDelivery` is resolved later, per order, from the shipping option's `data`.
 - `validateOption` / `validateFulfillmentData` accept only the two known option ids and run strict carrier-config validation at shipping-option creation time.
 - `canCalculate()` returns `false` (flat rates).
-- `createFulfillment` runs `pushOrderToOngoing` **synchronously** — a push failure aborts fulfilment creation — and returns a `data` blob that is the only thing `cancelFulfillment` later receives.
-- `cancelFulfillment` reads identifiers from that stashed blob and runs `cancelOngoingOrderWorkflow`. It resolves (never throws) for benign reasons but **must throw** `MedusaError.NOT_ALLOWED` for `status_not_cancellable`, because Medusa core unconditionally sets `canceled_at` on any non-throwing return — throwing is the only way to keep Medusa's fulfilment un-cancelled while Ongoing keeps shipping (bead `#109`).
-- `createReturnFulfillment` implements Ongoing return-order creation (previously a no-op stub). Medusa's core `FulfillmentModuleService.createReturnFulfillment` creates the return fulfillment row first, then calls this method with `{ ...fulfillment, shipping_option }` — critically, **no `order`/`order_id`** (the core method destructures `order` out before persisting). So, mirroring `createFulfillment`'s "trust only the id, re-query everything fresh" pattern, this method reads only `fromData.id` and runs `pushReturnOrderToOngoing` **synchronously**; that workflow re-derives the original order (and its already-synced Ongoing order) from one of the return items' `line_item_id`. A push failure aborts return-fulfillment creation the same way an outbound push failure does. There is no `cancelReturnFulfillment` counterpart in Medusa 2.16.0 to read the returned stash back (its compensation TODO falls back to `cancelFulfillment`), so the stash exists for operator visibility only.
+
+**Module isolation (bug ei4) — why the create/cancel hooks are thin.** The provider is instantiated by `@medusajs/fulfillment`'s loader as `asFunction((cradle) => new klass(cradle, options))`, so `this.container_` is the fulfillment module's *isolated* container — it has neither the sibling `ongoing` module nor `query`/the workflow engine. Resolving `ongoing` or running a workflow from any provider method therefore threw `AwilixResolutionError: Could not resolve 'ongoing'` in a real app (the unit/module specs masked it by injecting a fake container that had `ongoing`). All cross-module orchestration now lives in app-scope subscribers (see Subscribers above); the provider hooks only validate and stash.
+
+- `createFulfillment` does **no** cross-module work: it validates `fulfillment.id`/`location_id` and returns a thin `data` stash `{ location_id, medusa_fulfillment_id }`. The Ongoing push runs asynchronously in the `order.fulfillment_created` subscriber; a push failure is recorded as an `error` sync row and retried, and no longer aborts fulfilment creation.
+- `cancelFulfillment` is a non-throwing no-op that echoes `data` back. The real, status-gated Ongoing cancel runs in the `order.fulfillment_canceled` / `order.canceled` subscribers. Core `FulfillmentModuleService.cancelFulfillment` inspects only throw/no-throw, so this hook must resolve. Trade-off: the old bead-`#109` guard (throw on `status_not_cancellable` to keep `canceled_at` unset) cannot run from a module-isolated container, so a refused Ongoing cancel now surfaces via the ledger/logs rather than blocking the Medusa-side cancel.
+- `createReturnFulfillment` likewise stashes only `{ medusa_return_fulfillment_id }`. The Ongoing return push (PUT /returnOrders) runs in the `order.return_requested` subscriber, which resolves the return fulfillment from `return_id` and runs `pushReturnOrderToOngoing`. There is no `cancelReturnFulfillment` counterpart in Medusa 2.16.0.
 
 ### Return-status webhook handling
 
@@ -281,7 +301,7 @@ Source: [`src/admin/`](https://github.com/Comfyballs/MedusaOngoingWarehousePlugi
 
 ## End-to-end lifecycles
 
-**Order push -> shipment -> tracking**: a fulfilment with the Ongoing shipping option triggers `createFulfillment` -> `pushOrderToOngoing`. Then status-poll and the webhook both keep `latest_status_code` current; once a shipped code arrives, both converge on the idempotent `syncOngoingShipmentWorkflow`, which runs core `createOrderShipmentWorkflow` with tracking labels and marks the row `shipped`.
+**Order push -> shipment -> tracking**: creating a fulfilment with the Ongoing shipping option emits `order.fulfillment_created`, whose subscriber runs `pushOrderToOngoing` (the provider's `createFulfillment` only stashes ids — bug ei4). Then status-poll and the webhook both keep `latest_status_code` current; once a shipped code arrives, both converge on the idempotent `syncOngoingShipmentWorkflow`, which runs core `createOrderShipmentWorkflow` with tracking labels and marks the row `shipped`.
 
 **Inventory**: every minute `stock-sync` picks due integrations, chooses delta or full, fetches inventory, and reconciles `stocked_quantity` per mode — `sellable_plus_reserved` reconstructs Medusa's `stocked = sellable + reserved` invariant so reservations don't double-deduct; `precise` scopes reserved to this integration's own synced orders; `onhand` uses raw on-hand.
 

@@ -42,7 +42,7 @@ describe("OngoingFulfillmentProviderService", () => {
     expect(OngoingFulfillmentProviderService.identifier).toBe("ongoing")
   })
 
-  it("captures the injected container as container_ (so #21/#22 can run workflows)", () => {
+  it("captures the injected container as container_ (module-isolated cradle; used only for its logger — ei4)", () => {
     const service = makeService() as any
     expect(service.container_).toBe(containerStub)
   })
