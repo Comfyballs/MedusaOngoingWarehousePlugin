@@ -240,6 +240,8 @@ Source: [`src/api/`](https://github.com/Comfyballs/MedusaOngoingWarehousePlugin/
 
 Admin routes cover credential-key listing, integration CRUD (update is `POST` with PATCH semantics — Medusa forbids PUT/PATCH), per-order repush and sync read, the dashboard `syncs` list with a five-state summary, bulk retry, orphan repair (no UI entry point), and `test-connection` (which returns **HTTP 200** even on an Ongoing failure, distinguishing a bad request from a reachable-but-erroring Ongoing).
 
+The create and update integration validators are both **strict** (bead on2): each rejects a wrong-typed field with `MedusaError(INVALID_DATA)` rather than silently coercing it — create previously swallowed a bad `enabled`/interval value into the default, which diverged from update. The create-vs-update *default* behaviour still differs intentionally (create fills defaults for absent fields; update leaves absent fields untouched). `GET /admin/ongoing/syncs` defaults to the actionable `error`/`sent`/`pending` view but accepts a repeatable/comma-separated `?state=` filter over any of the five summarised states (so `shipped`/`cancelled` counts are drillable); the applied states echo back in the response as `states` (bead on2). Two known gaps left as follow-ups (bead on2 notes): bulk-retry's response reports `skipped` ids without a per-id reason (terminal vs already-synced vs not-found — only the UI currently distinguishes them), and the `test-connection` 200-on-failure contract is deliberate but can confuse status-code monitors.
+
 ### Webhook auth and dispatch
 
 `POST /ongoing/webhooks/:credentialKey`. Auth pipeline, in order:

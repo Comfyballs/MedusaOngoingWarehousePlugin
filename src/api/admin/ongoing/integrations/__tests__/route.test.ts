@@ -91,6 +91,37 @@ describe("POST /admin/ongoing/integrations", () => {
     expect(createOngoingIntegrationWorkflow).not.toHaveBeenCalled()
   })
 
+  // bead on2: create now REJECTS wrong-typed enabled/interval fields instead of silently
+  // coercing them to defaults, matching the update validator's strictness.
+  it.each([
+    ["stock_sync_interval", 60000],
+    ["status_poll_interval", 60000],
+    ["enabled", "yes"],
+    ["stock_sync_enabled", 1],
+  ])("rejects a wrong-typed %s instead of coercing it (on2)", async (field, badValue) => {
+    const service = makeService({})
+    const res = makeRes()
+
+    await expect(
+      POST(makeReq({ ...validBody(), [field]: badValue }, service), res)
+    ).rejects.toThrow(MedusaError)
+    expect(createOngoingIntegrationWorkflow).not.toHaveBeenCalled()
+  })
+
+  it("still accepts an explicit null interval (on2 strictness only rejects wrong TYPES)", async () => {
+    const run = jest.fn().mockResolvedValue({ result: { id: "integ_1" } })
+    createOngoingIntegrationWorkflow.mockReturnValue({ run } as any)
+    const service = makeService({})
+    const res = makeRes()
+
+    await POST(makeReq({ ...validBody(), stock_sync_interval: null }, service), res)
+
+    expect(run).toHaveBeenCalledWith({
+      input: expect.objectContaining({ stock_sync_interval: null }),
+    })
+    expect(res.status).toHaveBeenCalledWith(201)
+  })
+
   it("runs the workflow with the validated input and returns 201", async () => {
     const created = { id: "integ_1", credential_key: "wh-1", stock_location_id: "sloc_1" }
     const run = jest.fn().mockResolvedValue({ result: created })
