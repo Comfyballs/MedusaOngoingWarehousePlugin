@@ -196,6 +196,41 @@ describe("ongoing stock-sync job", () => {
     )
   })
 
+  it("still takes the delta path just under the 23h cursor-age guard (bead 13f)", async () => {
+    // 22h59m old cursor — just inside the safety margin. Must NOT be treated as stale.
+    const justUnderCursor = new Date(Date.now() - (23 * 60 * 60 * 1000 - 60 * 1000)).toISOString()
+    const due = integ({
+      last_stock_sync_at: new Date(Date.now() - 700000),
+      last_stock_delta_cursor: justUnderCursor,
+      last_full_stock_sync_at: new Date(Date.now() - 60000), // 1 min ago → 6h full-sweep clock NOT due
+    })
+    const h = makeHarness({ integrations: [due] })
+
+    await ongoingStockSyncJob(h.container)
+
+    expect(run).toHaveBeenCalledWith(
+      expect.objectContaining({ input: expect.objectContaining({ changed_since: justUnderCursor }) })
+    )
+  })
+
+  it("forces a full sweep exactly at the 23h cursor-age guard boundary (bead 13f)", async () => {
+    // Cursor aged to precisely DELTA_CURSOR_MAX_AGE_MS — the guard is `>=`, so this must
+    // already degrade to a full sweep rather than send a cursor sitting on the boundary.
+    const boundaryCursor = new Date(Date.now() - 23 * 60 * 60 * 1000).toISOString()
+    const due = integ({
+      last_stock_sync_at: new Date(Date.now() - 700000),
+      last_stock_delta_cursor: boundaryCursor,
+      last_full_stock_sync_at: new Date(Date.now() - 60000), // 1 min ago → 6h full-sweep clock NOT due
+    })
+    const h = makeHarness({ integrations: [due] })
+
+    await ongoingStockSyncJob(h.container)
+
+    expect(run).toHaveBeenCalledWith(
+      expect.objectContaining({ input: expect.objectContaining({ changed_since: null }) })
+    )
+  })
+
   it("runs a full sweep and advances the full-sweep clock when the last full sweep is stale (bead sw8)", async () => {
     const due = integ({
       last_stock_sync_at: new Date(Date.now() - 700000),

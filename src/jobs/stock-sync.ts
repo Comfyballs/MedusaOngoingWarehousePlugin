@@ -49,6 +49,12 @@ const FULL_SWEEP_INTERVAL_MS = 6 * 60 * 60 * 1000 // 6 hours
 // keeps the job correct even if FULL_SWEEP_INTERVAL_MS is ever raised toward/past 24h.
 const DELTA_CURSOR_MAX_AGE_MS = 23 * 60 * 60 * 1000 // 23 hours (safety margin under Ongoing's 24h limit)
 
+// Ongoing's actual, hard `stockInfoChangedFrom` rejection threshold (confirmed live — bead 13f).
+// DELTA_CURSOR_MAX_AGE_MS is a margin UNDER this, not a stand-in for it: the two constants are
+// checked independently below so a future edit that widens the margin (e.g. bumping it toward
+// 24h "for more headroom") can't silently erase the safety buffer this fix exists to guarantee.
+const ONGOING_STOCK_INFO_CHANGED_FROM_HARD_LIMIT_MS = 24 * 60 * 60 * 1000 // 24 hours
+
 // Enforce the coupling at module load: the full-sweep cadence MUST re-anchor the delta
 // cursor before it can age past the safe window. If a future edit raises
 // FULL_SWEEP_INTERVAL_MS at/above it, fail loudly here rather than silently 400ing deltas.
@@ -58,6 +64,19 @@ if (FULL_SWEEP_INTERVAL_MS >= DELTA_CURSOR_MAX_AGE_MS) {
     `[ongoing] stock-sync misconfiguration: FULL_SWEEP_INTERVAL_MS (${FULL_SWEEP_INTERVAL_MS}ms) must be < ` +
       `DELTA_CURSOR_MAX_AGE_MS (${DELTA_CURSOR_MAX_AGE_MS}ms) so the delta cursor is always re-anchored by a ` +
       `full sweep before it can age past Ongoing's 24h stockInfoChangedFrom limit (bead 13f).`
+  )
+}
+
+// Also enforce the margin against Ongoing's real limit directly — the check above only
+// relates the two LOCAL constants to each other, so on its own it would happily accept
+// DELTA_CURSOR_MAX_AGE_MS being raised to e.g. 25h (still > FULL_SWEEP_INTERVAL_MS) and start
+// 400ing every degraded-full-sweep tick that fires between 24h and 25h of cursor age.
+if (DELTA_CURSOR_MAX_AGE_MS >= ONGOING_STOCK_INFO_CHANGED_FROM_HARD_LIMIT_MS) {
+  throw new MedusaError(
+    MedusaError.Types.INVALID_DATA,
+    `[ongoing] stock-sync misconfiguration: DELTA_CURSOR_MAX_AGE_MS (${DELTA_CURSOR_MAX_AGE_MS}ms) must be < ` +
+      `Ongoing's stockInfoChangedFrom hard limit (${ONGOING_STOCK_INFO_CHANGED_FROM_HARD_LIMIT_MS}ms) or the ` +
+      `degrade-to-full-sweep guard itself would send a rejected cursor (bead 13f).`
   )
 }
 
