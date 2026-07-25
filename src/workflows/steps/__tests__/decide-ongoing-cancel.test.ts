@@ -43,13 +43,21 @@ describe("decideOngoingCancelStep", () => {
     })
   })
 
-  it("no-ops when status is not cancellable", async () => {
+  it("no-ops when status is not cancellable, carrying an operator reason with the status", async () => {
     const res = await invoke(
       { ongoing_order_number: "1001-abc" },
-      makeService({ syncs: [{ ...baseSync, latest_status_code: 500 }] })
+      makeService({
+        syncs: [{ ...baseSync, latest_status_code: 500, latest_status_text: "Hentet" }],
+      })
     )
     expect(res.output.shouldCancel).toBe(false)
     expect(res.output.reason).toBe("status_not_cancellable")
+    expect(res.output.orderSyncId).toBe("osync_1")
+    // eer: the refusal must carry a human-readable reason naming the status so
+    // the order widget can surface it to an operator.
+    expect(res.output.refusedReason).toContain("500")
+    expect(res.output.refusedReason).toContain("Hentet")
+    expect(res.output.refusedReason).toContain("cancellable_status_codes")
   })
 
   it("ATTEMPTS the cancel (M2) when latest_status_code is null/unknown", async () => {
@@ -102,5 +110,37 @@ describe("decideOngoingCancelStep", () => {
       makeService({ integrations: [{ ...integration, cancellable_status_codes: null }] })
     )
     expect(res.output.reason).toBe("status_not_cancellable")
+  })
+
+  // 8p8 return-row leak guard: return pushes now write OngoingOrderSync rows
+  // (sync_kind="return") that share the ledger. A cancel must never resolve one —
+  // it would DELETE the Ongoing RETURN order and corrupt the return row.
+  it("scopes the lookup to sync_kind='order' and no-ops for an order whose only row is a return", async () => {
+    const returnRow = {
+      ...baseSync,
+      id: "osync_return",
+      sync_kind: "return",
+      medusa_order_id: "order_1",
+      ongoing_order_number: "RET-1001",
+    }
+    // Filter-aware mock (mirrors the DB) so the sync_kind filter actually excludes rows.
+    const service = {
+      listOngoingOrderSyncs: jest.fn(async (filter: any) => {
+        let rows = [returnRow]
+        if (filter.sync_kind !== undefined) {
+          rows = rows.filter((r) => r.sync_kind === filter.sync_kind)
+        }
+        return rows
+      }),
+      listOngoingIntegrations: jest.fn().mockResolvedValue([integration]),
+    }
+
+    const res = await invoke({ medusa_order_id: "order_1" }, service)
+
+    expect(res.output.shouldCancel).toBe(false)
+    expect(res.output.reason).toBe("no_sync_row")
+    expect(service.listOngoingOrderSyncs).toHaveBeenCalledWith(
+      expect.objectContaining({ sync_kind: "order" })
+    )
   })
 })

@@ -102,7 +102,10 @@ export const gateOrderEditStep = createStep(
       ? { id: input.order_sync_id }
       : input.medusa_fulfillment_id
         ? { medusa_fulfillment_id: input.medusa_fulfillment_id }
-        : { medusa_order_id: input.medusa_order_id }
+        : // sync_kind:"order" (8p8): the order-id fallback must not pick up a return
+          // row (sync_kind="return") for this order, which would gate the edit on a
+          // return's null status and drop it. Order edits only concern order rows.
+          { medusa_order_id: input.medusa_order_id, sync_kind: "order" }
 
     const [sync] = await service.listOngoingOrderSyncs(filters)
     const integration = sync

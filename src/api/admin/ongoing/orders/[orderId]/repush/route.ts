@@ -9,6 +9,7 @@ type OngoingServiceLike = {
   listOngoingOrderSyncs: (filter: {
     medusa_order_id: string
     medusa_fulfillment_id: string
+    sync_kind?: "order" | "return"
   }) => Promise<Array<{ id: string }>>
 }
 
@@ -28,9 +29,12 @@ export async function POST(
   const ongoing = req.scope.resolve(ONGOING_MODULE) as OngoingServiceLike
 
   const orderId = req.params.orderId
+  // sync_kind:"order" (8p8): this route runs the ORDER push, so it must only match
+  // an outbound order row — never a return row that happens to share the id space.
   const syncs = await ongoing.listOngoingOrderSyncs({
     medusa_order_id: orderId,
     medusa_fulfillment_id: fulfillmentId,
+    sync_kind: "order",
   })
 
   if (syncs.length === 0) {

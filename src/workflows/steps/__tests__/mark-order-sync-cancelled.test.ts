@@ -20,6 +20,9 @@ describe("markOrderSyncCancelledStep", () => {
     expect(arg.sync_state).toBe("cancelled")
     expect(arg.error_class).toBeNull()
     expect(arg.last_error).toBeNull()
+    // A successful cancel supersedes any prior refusal (eer).
+    expect(arg.cancel_refused_at).toBeNull()
+    expect(arg.cancel_refused_reason).toBeNull()
     expect(res.output).toEqual({ orderSyncId: "osync_1" })
   })
 })

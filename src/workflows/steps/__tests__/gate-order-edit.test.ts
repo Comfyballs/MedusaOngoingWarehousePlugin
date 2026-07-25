@@ -107,7 +107,10 @@ describe("gateOrderEditStep — row targeting (#72)", () => {
       },
     })
 
-    expect(service.listOngoingOrderSyncs).toHaveBeenCalledWith({ medusa_order_id: "order_1" })
+    expect(service.listOngoingOrderSyncs).toHaveBeenCalledWith({
+      medusa_order_id: "order_1",
+      sync_kind: "order",
+    })
   })
 
   it("does NOT collapse ≥2 null-fulfillment rows to row[0] — each gates its own row (the #72 bug)", async () => {

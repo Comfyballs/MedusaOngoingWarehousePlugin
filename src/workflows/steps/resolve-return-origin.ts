@@ -61,8 +61,14 @@ export async function resolveReturnOriginHandler(
   }
 
   const service = container.resolve(ONGOING_MODULE) as OngoingModuleService
+  // sync_kind:"order" is essential (8p8): return pushes now write their OWN
+  // OngoingOrderSync rows (sync_kind="return") under this same medusa_order_id,
+  // with a fresh last_synced_at and the RETURN order's id in ongoing_order_id.
+  // Without this filter the 2nd+ return on an order would resolve a prior return
+  // row as its origin and send the wrong customerOrder.orderId to Ongoing. Only
+  // outbound order rows are valid return origins.
   const rows: OngoingOrderSyncRow[] = await service.listOngoingOrderSyncs(
-    { medusa_order_id: order.id },
+    { medusa_order_id: order.id, sync_kind: "order" },
     { order: { last_synced_at: "DESC" } }
   )
 

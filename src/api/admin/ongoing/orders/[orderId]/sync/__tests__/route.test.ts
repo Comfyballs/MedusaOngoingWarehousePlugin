@@ -21,6 +21,8 @@ const makeSyncRow = (overrides: Record<string, unknown> = {}) => ({
   edit_blocked_at: null,
   edit_blocked_category: null,
   edit_blocked_reason: null,
+  cancel_refused_at: null,
+  cancel_refused_reason: null,
   ...overrides,
 })
 
@@ -65,6 +67,7 @@ describe("GET /admin/ongoing/orders/:orderId/sync", () => {
 
     expect(ongoingService.listOngoingOrderSyncs).toHaveBeenCalledWith({
       medusa_order_id: "order_1",
+      sync_kind: "order",
     })
     expect(query.graph).not.toHaveBeenCalled()
     expect(res.status).toHaveBeenCalledWith(200)
@@ -183,6 +186,22 @@ describe("GET /admin/ongoing/orders/:orderId/sync", () => {
       edit_blocked_at: "2026-07-02T10:00:00.000Z",
       edit_blocked_category: "line_items",
       edit_blocked_reason: "status_blocked",
+    })
+    const ongoingService = makeOngoingService([row])
+    const query = makeQuery([])
+    const res = makeRes()
+
+    await GET(makeReq({ ongoingService, query }), res)
+
+    expect(res.json).toHaveBeenCalledWith({
+      syncs: [{ ...row, tracking: [] }],
+    })
+  })
+
+  it("passes through cancel_refused_at/reason fields unchanged", async () => {
+    const row = makeSyncRow({
+      cancel_refused_at: "2026-07-25T10:00:00.000Z",
+      cancel_refused_reason: "Ongoing status 500 (Hentet) is not in cancellable_status_codes",
     })
     const ongoingService = makeOngoingService([row])
     const query = makeQuery([])

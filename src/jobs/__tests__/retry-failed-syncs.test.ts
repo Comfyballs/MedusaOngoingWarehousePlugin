@@ -21,15 +21,18 @@ jest.mock("../../modules/ongoing", () => ({
 // Mock the push-order-to-ongoing workflow BEFORE importing the job.
 // The mock must be hoisted above the import.
 const pushRun = jest.fn().mockResolvedValue({ result: {} })
+const pushReturnRun = jest.fn().mockResolvedValue({ result: {} })
 jest.mock("../../workflows", () => ({
   __esModule: true,
   pushOrderToOngoing: jest.fn(() => ({ run: pushRun })),
+  pushReturnOrderToOngoing: jest.fn(() => ({ run: pushReturnRun })),
 }))
 
 import retryFailedSyncsJob, { config } from "../retry-failed-syncs"
 
 type ErrorRow = {
   id: string
+  sync_kind?: "order" | "return" | null
   medusa_fulfillment_id: string | null
   last_synced_at: Date | string | null
   retry_count: number
@@ -81,6 +84,7 @@ function row(over: Partial<ErrorRow> = {}): ErrorRow {
 
 beforeEach(() => {
   pushRun.mockClear()
+  pushReturnRun.mockClear()
 })
 
 describe("retryFailedSyncsJob", () => {
@@ -123,6 +127,36 @@ describe("retryFailedSyncsJob", () => {
       data: {
         ongoing_order_sync_id: "sync_1",
         medusa_fulfillment_id: "ful_abc",
+        retry_count: 1,
+      },
+    })
+  })
+
+  it("re-invokes the RETURN push (not the order push) for a due sync_kind=return row (8p8)", async () => {
+    const r = row({ sync_kind: "return", medusa_fulfillment_id: "ret_ful_1", retry_count: 0 })
+    const h = makeHarness({ rows: [r] })
+
+    await retryFailedSyncsJob(h.container)
+
+    // Same CAS-guarded retry_count increment as an order row.
+    expect(h.service.attemptRetrySyncTransition).toHaveBeenCalledWith({
+      id: "sync_1",
+      expected_retry_count: 0,
+      retry_count: 1,
+      last_synced_at: expect.any(Date),
+    })
+
+    // Routes through the return workflow with the RETURN fulfillment id, and never
+    // through the outbound order push.
+    expect(pushReturnRun).toHaveBeenCalledWith({ input: { return_fulfillment_id: "ret_ful_1" } })
+    expect(pushRun).not.toHaveBeenCalled()
+
+    // Same dead-letter/retry event semantics as an order row.
+    expect(h.emit).toHaveBeenCalledWith({
+      name: "ongoing.sync.order_retried",
+      data: {
+        ongoing_order_sync_id: "sync_1",
+        medusa_fulfillment_id: "ret_ful_1",
         retry_count: 1,
       },
     })

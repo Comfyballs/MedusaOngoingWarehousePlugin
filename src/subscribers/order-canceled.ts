@@ -16,7 +16,7 @@ type OrderSyncRow = {
 
 type OngoingServiceLike = {
   listOngoingOrderSyncs: (
-    filter: { medusa_order_id: string },
+    filter: { medusa_order_id: string; sync_kind?: "order" | "return" },
     config?: { select?: string[] }
   ) => Promise<OrderSyncRow[]>
 }
@@ -42,8 +42,10 @@ export default async function orderCanceledHandler({
     const ongoingService = container.resolve(
       ONGOING_MODULE
     ) as OngoingServiceLike
+    // sync_kind:"order" only (8p8): canceling the original order must not sweep its
+    // RETURN rows (returns are a separate flow with their own Ongoing return orders).
     rows = await ongoingService.listOngoingOrderSyncs(
-      { medusa_order_id: orderId },
+      { medusa_order_id: orderId, sync_kind: "order" },
       { select: ["id", "ongoing_order_number", "medusa_fulfillment_id"] }
     )
   } catch (error) {
