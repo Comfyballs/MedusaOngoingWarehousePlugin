@@ -105,6 +105,11 @@ export function resolveRetryOutcome(
  * Defaults: BASE=300_000 ms (5 min), factor=2, CAP=3_600_000 ms (60 min).
  * Resulting delays for retries 0..4: 5 / 10 / 20 / 40 / 60 min.
  *
+ * This is the LEDGER-layer backoff (cron re-sweep of a failed OngoingOrderSync row over
+ * minutes/hours). It is a DIFFERENT layer from the transport-layer retry in client.ts
+ * (250ms base, a few quick in-request retries for a transient network blip) — don't
+ * conflate the two time scales when tuning (bead 8jj).
+ *
  * The optional `opts` parameter allows overriding base/cap in unit tests.
  */
 export const BASE_RETRY_BACKOFF_MS = 300_000

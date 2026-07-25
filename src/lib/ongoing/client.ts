@@ -73,6 +73,12 @@ export class OngoingClient {
         }
         // retryAfterMs only exists on an OngoingApiError; a network error has none.
         const retryAfterMs = err instanceof OngoingApiError ? err.retryAfterMs : undefined
+        // This is the TRANSPORT-layer retry (250ms base, a handful of quick in-request
+        // retries for a transient network blip / 429). It is INDEPENDENT of, and must not
+        // be conflated with, the LEDGER-layer retry in retry-policy.ts
+        // (BASE_RETRY_BACKOFF_MS = 5min): that one paces the cron re-sweep of a failed
+        // OngoingOrderSync row across minutes/hours. Two different layers, two different
+        // time scales — tune them separately (bead 8jj).
         const backoff = retryAfterMs ?? 250 * 2 ** attempt
         await this.sleep(backoff)
         attempt++
@@ -272,11 +278,6 @@ export class OngoingClient {
       ongoingOrderId: res?.orderId ?? ongoingOrderId,
       message: res?.message,
     }
-  }
-
-  async testConnection(): Promise<boolean> {
-    await this.getOrderStatuses()
-    return true
   }
 
   // Ongoing paginates by ascending ID cursor, not page number: pass the highest ID seen
