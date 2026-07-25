@@ -12,11 +12,13 @@
  * are right, and that cursor pagination terminates against live data.
  */
 import { OngoingClient } from "../client"
+import { OngoingApiError } from "../errors"
 import type {
   OngoingCredentials,
   OngoingInventoryRow,
   PostArticleModel,
   PostOrderModel,
+  PostReturnOrderModel,
 } from "../types"
 
 const live = process.env.ONGOING_LIVE === "1"
@@ -295,6 +297,78 @@ describeWrites("Ongoing live API — write round-trip (sandbox)", () => {
       const orders = await client.getOrdersByStatus(200, 320)
       const found = orders.find((o) => o.orderNumber === orderNumber)
       expect(found?.ongoingOrderId).toBe(ongoingOrderId)
+    },
+    3 * 60_000
+  )
+
+  // bead 2a6: live round-trip for putReturnOrder — proves Ongoing's real 2xx body
+  // carries a numeric `returnOrderId` (not some other field name), which is the one
+  // thing the mocked unit tests (client.return-orders.test.ts) structurally cannot
+  // verify since they stub the response themselves. A resolved call with a numeric
+  // ongoingReturnOrderId IS the confirmation; a thrown OngoingApiError is logged with
+  // its raw status/body so the failure mode (malformed request vs. sandbox state vs.
+  // genuine field-name drift) is diagnosable from the test output either way.
+  it(
+    "creates a return order against the created order (ProcessReturnOrder)",
+    async () => {
+      if (ongoingOrderId === undefined) {
+        throw new Error("ongoingOrderId was not set by the preceding order-creation test")
+      }
+
+      // Ongoing processes PUT /orders asynchronously, so the order line referencing
+      // `articleNumber` may not be resolvable via GET /orders/{id} immediately after
+      // putOrder resolves. Poll a few times with a short delay instead of failing on
+      // the first miss.
+      let orderLineId: number | undefined
+      for (let attempt = 0; attempt < 10 && orderLineId === undefined; attempt++) {
+        if (attempt > 0) {
+          await new Promise((resolve) => setTimeout(resolve, 3000))
+        }
+        const detail = await client.getOrder(ongoingOrderId)
+        orderLineId = detail.lines.find((l) => l.articleNumber === articleNumber)?.orderLineId
+      }
+      if (orderLineId === undefined) {
+        throw new Error(
+          `order ${ongoingOrderId} never surfaced a line for articleNumber ${articleNumber} ` +
+            "via GET /orders/{id} — cannot resolve customerOrderLine.orderLineId for the return"
+        )
+      }
+
+      const inDate = new Date().toISOString().slice(0, 10) // date-only, per PostReturnOrderModel.inDate
+      const returnOrder: PostReturnOrderModel = {
+        goodsOwnerId: creds.goodsOwnerId,
+        returnOrderNumber: `MEDUSA-IT-RET-${stamp}`,
+        customerOrder: { orderId: ongoingOrderId },
+        inDate,
+        returnOrderLines: [
+          {
+            returnOrderRowNumber: "1",
+            customerOrderLine: { orderLineId },
+            toBeReturnedNumberOfItems: 1,
+          },
+        ],
+      }
+
+      try {
+        const res = await client.putReturnOrder(returnOrder)
+        // eslint-disable-next-line no-console
+        console.log(
+          `[live][2a6] putReturnOrder resolved: ongoingReturnOrderId=${res.ongoingReturnOrderId}`
+        )
+        // A resolved call with a numeric id is itself the confirmation that Ongoing's
+        // live wire response really uses `returnOrderId` (putReturnOrder throws
+        // otherwise — see client.ts).
+        expect(typeof res.ongoingReturnOrderId).toBe("number")
+      } catch (err) {
+        if (err instanceof OngoingApiError) {
+          // eslint-disable-next-line no-console
+          console.error(
+            `[live][2a6] putReturnOrder failed: status=${err.status} kind=${err.kind} ` +
+              `reason=${err.reason} body=${JSON.stringify(err.body)}`
+          )
+        }
+        throw err
+      }
     },
     3 * 60_000
   )
