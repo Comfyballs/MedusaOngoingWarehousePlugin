@@ -4,14 +4,14 @@ This page explains what the integration does automatically end-to-end — order 
 
 The plugin pushes an order to Ongoing when a **Medusa fulfillment is created** using the Ongoing shipping option — not on `order.placed`. This matches Medusa's fulfillment-provider model and supports partial fulfillment (each fulfillment becomes its own Ongoing order).
 
-The push runs **synchronously** inside fulfillment creation, so a failure aborts the fulfillment (Medusa deletes the just-created fulfillment on a thrown error). The push:
+The push runs **asynchronously**, just after the fulfillment is created: Medusa emits `order.fulfillment_created`, and the plugin's subscriber pushes from there. A failure therefore **does not** abort the fulfillment — the fulfillment stands, the attempt is recorded as an `error` sync row, and the retry job picks it up (see [Retries and orphan repair](#retries-and-orphan-repair)). The push:
 
 1. Re-queries the fulfillment, order, and items fresh.
 2. Resolves the integration bound to the fulfillment's stock location.
 3. Resolves each line's Medusa SKU to an Ongoing `articleNumber` (the SKU verbatim; it must be unique).
 4. Upserts each referenced article in Ongoing (`PUT /articles`) before the order.
 5. Builds a deterministic order number, `<order.display_id>-<fulfillment.id>`, and upserts the order (`PUT /orders`). Because it is an upsert keyed on that number, re-pushing is safe and lands on the same Ongoing order.
-6. Records an `OngoingOrderSync` row (`pending` → `sent` or `error`) and stashes the Ongoing order number and id onto the Medusa fulfillment.
+6. Records an `OngoingOrderSync` row (`pending` → `sent` or `error`). That row — keyed by fulfillment id — is where the Ongoing order number and id live; the Medusa fulfillment itself only carries the identifiers the push needs (`location_id`, `medusa_fulfillment_id`).
 
 The delivery date sent to Ongoing is the **push time**. Order lines currently carry only article number and quantity — weight and unit price are not sent even though the underlying mapper supports them.
 
@@ -49,9 +49,9 @@ A block clears automatically on the next successful re-sync for that category �
 
 ## Cancellation
 
-When an order is canceled in Medusa (`order.canceled`), or the fulfillment is canceled through the provider, the plugin runs an idempotent cancel workflow **gated by `cancellable_status_codes`**:
+When an order is canceled in Medusa (`order.canceled`), or a single fulfillment is canceled (`order.fulfillment_canceled`), the plugin runs an idempotent cancel workflow **gated by `cancellable_status_codes`**:
 
-- If Ongoing's current status for the order is **not** in `cancellable_status_codes`, the provider throws, and Medusa does **not** mark the fulfillment canceled — this keeps Medusa and Ongoing from disagreeing while Ongoing keeps shipping.
+- If Ongoing's current status for the order is **not** in `cancellable_status_codes`, the plugin does **not** cancel the Ongoing order — Ongoing keeps shipping it. Medusa still marks its own fulfillment canceled, so **the two sides can disagree here**: watch for the refusal in the sync row and the logs, and resolve it in Ongoing manually. (Cancellation runs asynchronously, after Medusa has already committed the cancel, so the plugin can no longer veto it — see [[Dev Architecture]].)
 - If the status is **unknown** (never polled), the workflow attempts the cancel anyway (the delete is idempotent and swallows an "already cancelled" response).
 
 ## Retries and orphan repair

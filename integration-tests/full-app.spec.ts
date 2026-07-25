@@ -18,7 +18,6 @@ import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 import type {
   IFulfillmentModuleService,
   IOrderModuleService,
-  IProductModuleService,
   IStockLocationService,
   RemoteQueryFunction,
 } from "@medusajs/framework/types"
@@ -40,15 +39,17 @@ import type OngoingModuleService from "../src/modules/ongoing/service"
 //   (wh5.9a) the ongoing-fulfillment provider registers under core
 //     @medusajs/medusa/fulfillment.
 //
-// It also REPRODUCES bug ei4 (wh5.9b, kept as a live `it.failing`): driving
-// createFulfillment/cancelFulfillment through the core FulfillmentModuleService into
-// the ongoing provider throws `AwilixResolutionError: Could not resolve 'ongoing'`,
-// because a fulfillment provider runs in the fulfillment module's ISOLATED container
-// and cannot resolve the sibling `ongoing` module. That is a real production bug this
-// full-app harness is the first test to surface (the unit/module specs inject a fake
-// container that has `ongoing` registered). When ei4 is fixed, wh5.9b flips from
-// expected-failure to passing — convert `it.failing` back to `it` at that point.
-const ONGOING_BASE_URL = "https://ongoing.test/api/v1"
+// It also PROVES bug ei4 is FIXED (wh5.9b): before the fix, driving createFulfillment
+// through the core FulfillmentModuleService into the ongoing provider threw
+// `AwilixResolutionError: Could not resolve 'ongoing'`, because a fulfillment provider
+// runs in the fulfillment module's ISOLATED container and could not resolve the sibling
+// `ongoing` module / workflow engine its createFulfillment then needed. The fix moved
+// that cross-module orchestration OUT of the provider into app-scope subscribers
+// (src/subscribers/fulfillment-created.ts et al.), so the provider's createFulfillment
+// is now thin (validate + stash) and no longer touches a sibling module. wh5.9b asserts
+// that thin, no-throw contract. (The async Ongoing push the subscriber then performs is
+// covered deterministically by the subscriber unit tests; this fixture registers only
+// modules + links, not subscribers, so it intentionally does not exercise the push.)
 const FIXTURE_CWD = path.join(__dirname, "full-app-fixture")
 
 // Per @medusajs/fulfillment's provider loader, a provider's resolvable id (stored on
@@ -67,16 +68,6 @@ type FulfillmentLike = { id: string; data: Record<string, unknown> | null }
 // types create() for the tuple form only — annotate the minimal shape used here.
 type LinkService = {
   create: (link: Record<string, Record<string, unknown>>) => Promise<unknown>
-}
-
-// resolveArticleNumber (src/lib/ongoing/resolve-article-number.ts) requires the
-// fulfillment item's SKU to match EXACTLY ONE real Medusa product_variant via
-// query.graph — used only by the wh5.9b repro (the ongoing push path).
-async function createSkuVariant(productService: IProductModuleService, sku: string) {
-  const [product] = await productService.createProducts([
-    { title: `Test Product ${sku}`, variants: [{ title: sku, sku }] },
-  ])
-  return product
 }
 
 medusaIntegrationTestRunner({
@@ -211,6 +202,93 @@ medusaIntegrationTestRunner({
         })
       })
 
+      // The `order.return_requested` subscriber has only the return id and must reach
+      // the return fulfillment through the `return_fulfillment` remote link. The link
+      // extends `Return` with the PLURAL, list-valued `fulfillments` alias ONLY
+      // (@medusajs/link-modules definitions/order-return-fulfillment.js) — and
+      // query.graph silently DROPS an unknown field instead of throwing. So a singular
+      // `fulfillment.*` selection returns a row with no fulfillment at all and the
+      // subscriber skips every return push without a trace. That is invisible to a unit
+      // test (the mock supplies whatever shape it was written against), so pin the real
+      // shape here, against a booted app.
+      it("ei4: return.fulfillments (plural) is the graph field that reaches a return's fulfillment; singular `fulfillment` resolves to nothing", async () => {
+        const container = getContainer()
+        const query = container.resolve<Omit<RemoteQueryFunction, symbol>>(
+          ContainerRegistrationKeys.QUERY
+        )
+        const link = container.resolve<LinkService>(ContainerRegistrationKeys.LINK)
+        const orderService = container.resolve<IOrderModuleService>(Modules.ORDER)
+        const fulfillmentService = container.resolve<IFulfillmentModuleService>(
+          Modules.FULFILLMENT
+        )
+        const stockLocationService = container.resolve<IStockLocationService>(
+          Modules.STOCK_LOCATION
+        )
+
+        const location = await stockLocationService.createStockLocations({
+          name: "ei4 Return Warehouse",
+        })
+        const [order] = await orderService.createOrders([
+          {
+            currency_code: "usd",
+            email: "ei4-return@example.com",
+            items: [{ title: "Test Product", quantity: 1, unit_price: 20 }],
+          },
+        ])
+        const orderReturn = await orderService.createReturns({
+          order_id: order.id,
+          location_id: location.id,
+        })
+        const returnFulfillment = (await fulfillmentService.createFulfillment({
+          location_id: location.id,
+          provider_id: MANUAL_PROVIDER_ID,
+          delivery_address: {
+            first_name: "Jo",
+            last_name: "Doe",
+            address_1: "1 Main St",
+            city: "Town",
+            postal_code: "0001",
+            country_code: "no",
+            phone: "123",
+          },
+          items: [{ title: "Test Product", quantity: 1, sku: "SKU-EI4R", barcode: "" }],
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } as any)) as unknown as FulfillmentLike
+
+        // Exactly the link core's confirm-return-request creates.
+        await link.create({
+          [Modules.ORDER]: { return_id: orderReturn.id },
+          [Modules.FULFILLMENT]: { fulfillment_id: returnFulfillment.id },
+        })
+
+        // The field selection the subscriber actually uses.
+        const { data: viaPlural } = await query.graph({
+          entity: "return",
+          fields: [
+            "id",
+            "fulfillments.id",
+            "fulfillments.provider_id",
+            "fulfillments.canceled_at",
+          ],
+          filters: { id: orderReturn.id },
+        })
+        expect(viaPlural[0].fulfillments).toEqual([
+          expect.objectContaining({
+            id: returnFulfillment.id,
+            provider_id: MANUAL_PROVIDER_ID,
+          }),
+        ])
+
+        // ...and the shape that silently yields nothing, which is why the guard exists.
+        const { data: viaSingular } = await query.graph({
+          entity: "return",
+          fields: ["id", "fulfillment.id", "fulfillment.provider_id"],
+          filters: { id: orderReturn.id },
+        })
+        expect(viaSingular).toHaveLength(1)
+        expect(viaSingular[0].fulfillment).toBeUndefined()
+      })
+
       it("wh5.9a: the ongoing-fulfillment provider registers under core @medusajs/medusa/fulfillment", async () => {
         const container = getContainer()
         // The provider's `fp_ongoing_ongoing` container registration lives in the
@@ -226,29 +304,29 @@ medusaIntegrationTestRunner({
         expect(ids).toContain(ONGOING_PROVIDER_ID)
       })
 
-      // KNOWN FAILURE — bug ei4 (see MedusaOngoingWarehousePlugin-ei4).
-      // Driving createFulfillment through core FulfillmentModuleService into the
-      // ongoing provider throws `AwilixResolutionError: Could not resolve 'ongoing'`:
-      // the provider runs in the fulfillment module's ISOLATED container and cannot
-      // resolve the sibling `ongoing` module (nor `query` / the workflow engine) that
-      // its createFulfillment needs. This `it.failing` is a live reproduction — it
-      // PASSES while the bug exists and will start FAILING once ei4 is fixed (at which
-      // point convert it back to `it(...)`).
-      it.failing(
-        "wh5.9b: [KNOWN FAILURE / repro of ei4] core FulfillmentModuleService.createFulfillment drives Ongoing through the registered provider",
+      // ei4 FIXED — see MedusaOngoingWarehousePlugin-ei4.
+      // Before the fix, driving createFulfillment through core FulfillmentModuleService
+      // into the ongoing provider threw `AwilixResolutionError: Could not resolve
+      // 'ongoing'`: the provider runs in the fulfillment module's ISOLATED container and
+      // could not resolve the sibling `ongoing` module (nor `query` / the workflow
+      // engine) its createFulfillment then used. The fix moved that orchestration into
+      // app-scope subscribers, so createFulfillment is now thin (validate + stash) and
+      // no longer touches a sibling module. This asserts the thin, no-throw contract:
+      // creating an Ongoing fulfillment through the core module-service succeeds and the
+      // provider stashes only the identifiers the async push subscriber needs. No Ongoing
+      // REST call happens here (the fixture registers modules + links but not
+      // subscribers, so the push does not run in-harness — it is unit-tested separately).
+      it(
+        "wh5.9b: [ei4 fixed] core FulfillmentModuleService.createFulfillment drives the ongoing provider without a module-isolation error",
         async () => {
           const container = getContainer()
           const stockLocationService = container.resolve<IStockLocationService>(
             Modules.STOCK_LOCATION
           )
-          const orderService = container.resolve<IOrderModuleService>(Modules.ORDER)
           const fulfillmentService = container.resolve<IFulfillmentModuleService>(
             Modules.FULFILLMENT
           )
           const ongoingService = container.resolve<OngoingModuleService>(ONGOING_MODULE)
-          const productService = container.resolve<IProductModuleService>(Modules.PRODUCT)
-
-          await createSkuVariant(productService, "SKU-WH59")
 
           const location = await stockLocationService.createStockLocations({
             name: "wh5.9 Test Warehouse",
@@ -258,18 +336,8 @@ medusaIntegrationTestRunner({
             stock_location_id: location.id,
             enabled: true,
           })
-          const [order] = await orderService.createOrders([
-            {
-              currency_code: "usd",
-              email: "wh59@example.com",
-              items: [{ title: "Test Product", quantity: 1, unit_price: 20 }],
-            },
-          ])
 
-          nock(ONGOING_BASE_URL).put("/articles").reply(200, { articleSystemId: 1 })
-          nock(ONGOING_BASE_URL).put("/orders").reply(200, { orderId: 5900 })
-
-          // Throws AwilixResolutionError today (ei4) — the point of this repro.
+          // Pre-fix this threw AwilixResolutionError. Now it resolves cleanly.
           const fulfillment = (await fulfillmentService.createFulfillment({
             location_id: location.id,
             provider_id: ONGOING_PROVIDER_ID,
@@ -283,15 +351,22 @@ medusaIntegrationTestRunner({
               phone: "123",
             },
             items: [{ title: "Test Product", quantity: 1, sku: "SKU-WH59", barcode: "" }],
-            order: { id: order.id },
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
           } as any)) as unknown as FulfillmentLike
 
-          expect(fulfillment.data).toMatchObject({ ongoing_order_id: 5900 })
-          const [syncAfterCreate] = await ongoingService.listOngoingOrderSyncs({
+          // Core createFulfillment updates the row with the provider's returned `data`
+          // but serializes+returns the PRE-update snapshot (fulfillment-module-service
+          // createFulfillment), so re-read the persisted row to see the stash.
+          const persisted = (await fulfillmentService.retrieveFulfillment(
+            fulfillment.id
+          )) as unknown as FulfillmentLike
+
+          // Thin stash: only the identifiers the async push subscriber needs — no
+          // ongoing_order_id (the push has not run in this harness).
+          expect(persisted.data).toMatchObject({
+            location_id: location.id,
             medusa_fulfillment_id: fulfillment.id,
           })
-          expect(syncAfterCreate).toMatchObject({ sync_state: "sent", ongoing_order_id: 5900 })
         }
       )
     })
