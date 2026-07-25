@@ -51,7 +51,9 @@ describeLive("Ongoing live API — read paths", () => {
   })
 
   it("authenticates and returns order statuses", async () => {
-    // testConnection() === getOrderStatuses(); this is the smoke test for creds + base URL.
+    // getOrderStatuses() is the smoke test for creds + base URL (same call the admin
+    // test-connection route makes — there is no separate OngoingClient.testConnection,
+    // removed as dead code in bead 8jj).
     const statuses = await client.getOrderStatuses()
     expect(Array.isArray(statuses)).toBe(true)
     for (const s of statuses) {

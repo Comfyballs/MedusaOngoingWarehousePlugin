@@ -182,5 +182,4 @@ describe("OngoingClient operations", () => {
       client.putArticle({ goodsOwnerId: 7, articleNumber: "SKU-1", articleName: "Tee" })
     ).resolves.toEqual({ articleSystemId: undefined })
   })
-
 })
