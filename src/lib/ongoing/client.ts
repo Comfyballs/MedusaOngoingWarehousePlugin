@@ -251,7 +251,7 @@ export class OngoingClient {
   // collection, is verified against the authoritative spec (bead 2a6). Upserts by
   // `returnOrderNumber`, mirroring putOrder's idempotent-upsert semantics.
   async putReturnOrder(returnOrder: PostReturnOrderModel): Promise<{ ongoingReturnOrderId: number }> {
-    const res = await this.request<{ returnOrderId?: number | null; message?: string }>(
+    const res = await this.request<{ returnOrderId?: number | null; message?: string | null }>(
       "PUT",
       "/returnOrders",
       returnOrder
