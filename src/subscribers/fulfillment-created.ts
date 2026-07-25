@@ -57,7 +57,17 @@ export default async function fulfillmentCreatedHandler({
       fields: ["id", "provider_id"],
       filters: { id: fulfillmentId },
     })
-    providerId = rows?.[0]?.provider_id as string | undefined
+
+    if (!rows?.length) {
+      // Distinct from "another provider's fulfillment" below — log it, or an
+      // unresolvable fulfillment is indistinguishable from a deliberate skip.
+      logger.warn(
+        `[ongoing] order.fulfillment_created: fulfillment ${fulfillmentId} not found via query.graph, skipping`
+      )
+      return
+    }
+
+    providerId = rows[0].provider_id as string | undefined
   } catch (error) {
     logger.error(
       `[ongoing] order.fulfillment_created: failed to load fulfillment ${fulfillmentId} to check its provider: ${

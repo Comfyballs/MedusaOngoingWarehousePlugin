@@ -202,6 +202,93 @@ medusaIntegrationTestRunner({
         })
       })
 
+      // The `order.return_requested` subscriber has only the return id and must reach
+      // the return fulfillment through the `return_fulfillment` remote link. The link
+      // extends `Return` with the PLURAL, list-valued `fulfillments` alias ONLY
+      // (@medusajs/link-modules definitions/order-return-fulfillment.js) — and
+      // query.graph silently DROPS an unknown field instead of throwing. So a singular
+      // `fulfillment.*` selection returns a row with no fulfillment at all and the
+      // subscriber skips every return push without a trace. That is invisible to a unit
+      // test (the mock supplies whatever shape it was written against), so pin the real
+      // shape here, against a booted app.
+      it("ei4: return.fulfillments (plural) is the graph field that reaches a return's fulfillment; singular `fulfillment` resolves to nothing", async () => {
+        const container = getContainer()
+        const query = container.resolve<Omit<RemoteQueryFunction, symbol>>(
+          ContainerRegistrationKeys.QUERY
+        )
+        const link = container.resolve<LinkService>(ContainerRegistrationKeys.LINK)
+        const orderService = container.resolve<IOrderModuleService>(Modules.ORDER)
+        const fulfillmentService = container.resolve<IFulfillmentModuleService>(
+          Modules.FULFILLMENT
+        )
+        const stockLocationService = container.resolve<IStockLocationService>(
+          Modules.STOCK_LOCATION
+        )
+
+        const location = await stockLocationService.createStockLocations({
+          name: "ei4 Return Warehouse",
+        })
+        const [order] = await orderService.createOrders([
+          {
+            currency_code: "usd",
+            email: "ei4-return@example.com",
+            items: [{ title: "Test Product", quantity: 1, unit_price: 20 }],
+          },
+        ])
+        const orderReturn = await orderService.createReturns({
+          order_id: order.id,
+          location_id: location.id,
+        })
+        const returnFulfillment = (await fulfillmentService.createFulfillment({
+          location_id: location.id,
+          provider_id: MANUAL_PROVIDER_ID,
+          delivery_address: {
+            first_name: "Jo",
+            last_name: "Doe",
+            address_1: "1 Main St",
+            city: "Town",
+            postal_code: "0001",
+            country_code: "no",
+            phone: "123",
+          },
+          items: [{ title: "Test Product", quantity: 1, sku: "SKU-EI4R", barcode: "" }],
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } as any)) as unknown as FulfillmentLike
+
+        // Exactly the link core's confirm-return-request creates.
+        await link.create({
+          [Modules.ORDER]: { return_id: orderReturn.id },
+          [Modules.FULFILLMENT]: { fulfillment_id: returnFulfillment.id },
+        })
+
+        // The field selection the subscriber actually uses.
+        const { data: viaPlural } = await query.graph({
+          entity: "return",
+          fields: [
+            "id",
+            "fulfillments.id",
+            "fulfillments.provider_id",
+            "fulfillments.canceled_at",
+          ],
+          filters: { id: orderReturn.id },
+        })
+        expect(viaPlural[0].fulfillments).toEqual([
+          expect.objectContaining({
+            id: returnFulfillment.id,
+            provider_id: MANUAL_PROVIDER_ID,
+          }),
+        ])
+
+        // ...and the shape that silently yields nothing, which is why the guard exists.
+        const { data: viaSingular } = await query.graph({
+          entity: "return",
+          fields: ["id", "fulfillment.id", "fulfillment.provider_id"],
+          filters: { id: orderReturn.id },
+        })
+        expect(viaSingular).toHaveLength(1)
+        expect(viaSingular[0].fulfillment).toBeUndefined()
+      })
+
       it("wh5.9a: the ongoing-fulfillment provider registers under core @medusajs/medusa/fulfillment", async () => {
         const container = getContainer()
         // The provider's `fp_ongoing_ongoing` container registration lives in the

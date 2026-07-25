@@ -17,11 +17,20 @@ type ReturnRequestedPayload = { order_id: string; return_id: string }
  * isolation), so the push runs here.
  *
  * The event carries `{ order_id, return_id }`, not the return-fulfillment id — a
- * Return has no `fulfillment_id` column; the tie is a remote link created by
- * confirm-return-request. So resolve the return fulfillment (and its provider, to
- * gate) via `query.graph` on the `return` entity.
+ * Return has no `fulfillment_id` column; the tie is the `return_fulfillment` remote
+ * link created by confirm-return-request. So resolve the return fulfillment (and its
+ * provider, to gate) via `query.graph` on the `return` entity.
  *
- * KNOWN GAP (follow-up): exchange/claim return legs emit `order.exchange_created` /
+ * The graph field is `fulfillments` (PLURAL, a list) — that is the only alias the
+ * `return_fulfillment` link extends `Return` with (@medusajs/link-modules
+ * definitions/order-return-fulfillment.js, `fieldAlias.fulfillments`, `isList: true`).
+ * There is NO singular `fulfillment` alias, and `query.graph` does not error on an
+ * unknown field — it silently omits it, which would make every return look
+ * fulfillment-less and skip the push without a trace. Guarded by the L2 spec
+ * `return.fulfillments is the graph field ...` in integration-tests/full-app.spec.ts,
+ * which asserts the real shape against a booted app (a unit-test mock cannot).
+ *
+ * KNOWN GAP (bead `pyr`): exchange/claim return legs emit `order.exchange_created` /
  * `order.claim_created` instead of `order.return_requested`, so their return push
  * is not yet wired here. Never-throw + persist-then-sync as elsewhere.
  */
@@ -47,12 +56,31 @@ export default async function returnCreatedHandler({
     )
     const { data: rows } = await query.graph({
       entity: "return",
-      fields: ["id", "fulfillment.id", "fulfillment.provider_id"],
+      fields: [
+        "id",
+        "fulfillments.id",
+        "fulfillments.provider_id",
+        "fulfillments.canceled_at",
+      ],
       filters: { id: returnId },
     })
-    const fulfillment = rows?.[0]?.fulfillment as
-      | { id?: string; provider_id?: string }
-      | undefined
+
+    if (!rows?.length) {
+      // Distinct from "no fulfillment yet": the return itself did not resolve.
+      logger.warn(
+        `[ongoing] order.return_requested: return ${returnId} not found via query.graph, skipping`
+      )
+      return
+    }
+
+    const fulfillments = (rows[0].fulfillments ?? []) as Array<{
+      id?: string
+      provider_id?: string
+      canceled_at?: string | Date | null
+    }>
+    // A return can carry more than one linked fulfillment over its life (a canceled
+    // return shipment followed by a new one). Push the live one.
+    const fulfillment = fulfillments.find((f) => f?.id && !f.canceled_at)
     returnFulfillmentId = fulfillment?.id
     providerId = fulfillment?.provider_id
   } catch (error) {
@@ -87,7 +115,7 @@ export default async function returnCreatedHandler({
     // row (pre-existing design — it only emits RETURN_ORDER_PUSH_FAILED), so there
     // is no automatic retry: a failure here is logged + emitted, not swept.
     // Losing the old synchronous abort-on-failure for returns without a retry
-    // backstop is a known reduction, tracked as a follow-up. Never throw from a
+    // backstop is a known reduction, tracked as bead `8p8`. Never throw from a
     // subscriber.
     logger.error(
       `[ongoing] order.return_requested: return push failed for return fulfillment ${returnFulfillmentId} (return ${returnId}): ${

@@ -232,7 +232,7 @@ class OngoingFulfillmentProviderService extends AbstractFulfillmentProviderServi
    * cancel. A module-isolated provider cannot run the status-gated workflow, so
    * that guard now lives only in the subscriber's ledger/logs — the Medusa
    * fulfillment is marked cancelled regardless, and a refused Ongoing cancel is
-   * surfaced via the OngoingOrderSync row + logs. Tracked as a follow-up.
+   * surfaced via the OngoingOrderSync row + logs. Tracked as bead `eer`.
    */
   async cancelFulfillment(
     data: Record<string, unknown>
