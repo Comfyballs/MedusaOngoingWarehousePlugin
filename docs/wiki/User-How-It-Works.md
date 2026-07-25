@@ -29,7 +29,7 @@ Both write the latest status code and text onto the sync row. When the status re
 The **stock-sync job** runs every minute and, for each enabled integration whose interval has elapsed, pulls inventory from Ongoing and writes Medusa stock levels. Ongoing is the source of truth for on-hand stock.
 
 - It normally does a **delta sweep** (`GET /articles?stockInfoChangedFrom=<cursor>`) using a persisted cursor, so it only fetches articles whose stock changed.
-- It does a **full sweep** when there is no cursor yet, and at least every **6 hours** as a reconciliation fallback that self-heals any missed deltas (a dropped webhook, clock skew).
+- It does a **full sweep** when there is no cursor yet, at least every **6 hours** as a reconciliation fallback that self-heals any missed deltas (a dropped webhook, clock skew), and also if the stored cursor has aged past a **23-hour** safety margin — Ongoing rejects `stockInfoChangedFrom` values older than 24 hours, so a stale cursor degrades to a full sweep instead of erroring.
 - The delta cursor is rewound by a 2-minute overlap buffer to absorb clock skew, and only advances on a successful sync.
 - How Ongoing quantities become Medusa `stocked_quantity` depends on the integration's `stock_reconcile_mode`. See [[User Configuration Reference]].
 

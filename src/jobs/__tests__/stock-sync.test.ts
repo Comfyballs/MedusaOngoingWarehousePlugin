@@ -143,7 +143,9 @@ describe("ongoing stock-sync job", () => {
   })
 
   it("runs a delta sync (changed_since = cursor) when a recent full sweep exists (bead sw8)", async () => {
-    const cursor = "2026-07-15T00:00:00.000Z"
+    // Recent cursor (5 min ago) — well within Ongoing's 24h stockInfoChangedFrom window
+    // so the delta path is actually taken (a >24h cursor would force a full sweep, bead 13f).
+    const cursor = new Date(Date.now() - 5 * 60 * 1000).toISOString()
     const due = integ({
       last_stock_sync_at: new Date(Date.now() - 700000),
       last_stock_delta_cursor: cursor,
@@ -166,6 +168,67 @@ describe("ongoing stock-sync job", () => {
     // Stored cursor is rewound by the ~2min overlap buffer to absorb clock skew (PR#135 review).
     const storedCursor = Date.parse(cursorCall![0].last_stock_delta_cursor as string)
     expect(Date.now() - storedCursor).toBeGreaterThanOrEqual(110_000)
+  })
+
+  it("forces a full sweep when the delta cursor has aged past Ongoing's 24h limit (bead 13f)", async () => {
+    // A recent full sweep would normally select the delta path, but the stored cursor is
+    // >24h old — sending it would 400 ("must be within 24 hours"). The job must degrade to
+    // a full sweep (changed_since=null) instead.
+    const staleCursor = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString() // 25h ago
+    const due = integ({
+      last_stock_sync_at: new Date(Date.now() - 700000),
+      last_stock_delta_cursor: staleCursor,
+      last_full_stock_sync_at: new Date(Date.now() - 60000), // 1 min ago → 6h full-sweep clock NOT due
+    })
+    const h = makeHarness({ integrations: [due] })
+
+    await ongoingStockSyncJob(h.container)
+
+    expect(run).toHaveBeenCalledWith(
+      expect.objectContaining({ input: expect.objectContaining({ changed_since: null }) })
+    )
+    // A full sweep advances the full-sweep clock too.
+    expect(h.service.updateOngoingIntegrations).toHaveBeenCalledWith(
+      expect.objectContaining({
+        last_stock_delta_cursor: expect.any(String),
+        last_full_stock_sync_at: expect.any(Date),
+      })
+    )
+  })
+
+  it("still takes the delta path just under the 23h cursor-age guard (bead 13f)", async () => {
+    // 22h59m old cursor — just inside the safety margin. Must NOT be treated as stale.
+    const justUnderCursor = new Date(Date.now() - (23 * 60 * 60 * 1000 - 60 * 1000)).toISOString()
+    const due = integ({
+      last_stock_sync_at: new Date(Date.now() - 700000),
+      last_stock_delta_cursor: justUnderCursor,
+      last_full_stock_sync_at: new Date(Date.now() - 60000), // 1 min ago → 6h full-sweep clock NOT due
+    })
+    const h = makeHarness({ integrations: [due] })
+
+    await ongoingStockSyncJob(h.container)
+
+    expect(run).toHaveBeenCalledWith(
+      expect.objectContaining({ input: expect.objectContaining({ changed_since: justUnderCursor }) })
+    )
+  })
+
+  it("forces a full sweep exactly at the 23h cursor-age guard boundary (bead 13f)", async () => {
+    // Cursor aged to precisely DELTA_CURSOR_MAX_AGE_MS — the guard is `>=`, so this must
+    // already degrade to a full sweep rather than send a cursor sitting on the boundary.
+    const boundaryCursor = new Date(Date.now() - 23 * 60 * 60 * 1000).toISOString()
+    const due = integ({
+      last_stock_sync_at: new Date(Date.now() - 700000),
+      last_stock_delta_cursor: boundaryCursor,
+      last_full_stock_sync_at: new Date(Date.now() - 60000), // 1 min ago → 6h full-sweep clock NOT due
+    })
+    const h = makeHarness({ integrations: [due] })
+
+    await ongoingStockSyncJob(h.container)
+
+    expect(run).toHaveBeenCalledWith(
+      expect.objectContaining({ input: expect.objectContaining({ changed_since: null }) })
+    )
   })
 
   it("runs a full sweep and advances the full-sweep clock when the last full sweep is stale (bead sw8)", async () => {
@@ -192,7 +255,7 @@ describe("ongoing stock-sync job", () => {
   it("does NOT advance the delta cursor when the workflow throws (bead sw8)", async () => {
     const due = integ({
       last_stock_sync_at: new Date(Date.now() - 700000),
-      last_stock_delta_cursor: "2026-07-15T00:00:00.000Z",
+      last_stock_delta_cursor: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
       last_full_stock_sync_at: new Date(Date.now() - 60000),
     })
     const h = makeHarness({ integrations: [due] })
