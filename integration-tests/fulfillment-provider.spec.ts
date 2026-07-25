@@ -15,13 +15,23 @@ import {
   makeFulfillmentFixture,
 } from "./_shared/l2"
 
-// Layer 2 — wh5.4: the Ongoing fulfillment PROVIDER driving create + cancel against the
-// REAL ongoing module (real Postgres) with Ongoing's REST nock-stubbed. We invoke the
-// provider methods directly on a container holding the real service (registering the
-// provider under the real @medusajs/medusa/fulfillment module + having Medusa's core
-// FulfillmentModuleService call it needs a full app — deferred to bead wh5.9). This
-// proves createFulfillment -> push -> real sync row, and cancelFulfillment -> cancel
-// workflow -> row transition, end-to-end through the real workflows.
+// Layer 2 — the Ongoing fulfillment PROVIDER against the REAL ongoing module (real
+// Postgres), with Ongoing's REST nock-stubbed.
+//
+// REWRITTEN FOR ei4. This spec used to assert the pre-ei4 contract: that
+// createFulfillment itself resolved the integration, pushed to Ongoing and stashed the
+// resulting ids, and that cancelFulfillment cancelled the Ongoing order. That contract is
+// GONE. A fulfillment provider is instantiated by @medusajs/fulfillment's provider loader
+// into the fulfillment module's OWN isolated container, which by Medusa module isolation
+// has no sibling `ongoing` module, no `query` and no workflow engine — so no provider
+// method can do any of that in a real app (it threw AwilixResolutionError; the old spec
+// only passed because it hand-built a container that had `ongoing` registered).
+//
+// The provider is now thin: validate + stash. The push/cancel orchestration moved to
+// app-scope subscribers, and its real-DB coverage lives in subscribers.spec.ts
+// ("order.fulfillment_created" / "order.fulfillment_canceled"). What this spec pins is the
+// thin contract itself — including, importantly, that these methods make NO Ongoing call
+// and touch NO sync row, since that is exactly what module isolation forces.
 const LOCATION_ID = "loc_1"
 
 const spyLogger = {
@@ -50,9 +60,6 @@ moduleIntegrationTestRunner<OngoingModuleService>({
   },
   testSuite: ({ service }) => {
     describe("ongoing-fulfillment provider — Layer 2 (real DB, nock-stubbed Ongoing)", () => {
-      let integrationId: string
-
-      // Provider bound to a container holding the real, DB-backed ongoing service.
       function makeProvider() {
         const { container } = buildContainer({
           service,
@@ -62,22 +69,20 @@ moduleIntegrationTestRunner<OngoingModuleService>({
       }
 
       beforeEach(async () => {
-        const created = await service.createOngoingIntegrations({
+        await service.createOngoingIntegrations({
           credential_key: CREDENTIAL_KEY,
           stock_location_id: LOCATION_ID,
           enabled: true,
         })
-        integrationId = created.id
       })
 
       afterEach(() => {
         nock.cleanAll()
       })
 
-      it("createFulfillment resolves the integration, pushes, and stashes the Ongoing ids", async () => {
-        nock(ONGOING_BASE_URL).put("/articles").reply(200, { articleSystemId: 11 })
-        nock(ONGOING_BASE_URL).put("/orders").reply(200, { orderId: 999 })
-
+      it("[ei4] createFulfillment stashes only the identifiers, makes no Ongoing call and writes no sync row", async () => {
+        // Any outbound Ongoing request would be an unmatched-host error rather than a
+        // silent pass, because nock is active with no interceptor registered for it.
         const provider = makeProvider()
         const result = await provider.createFulfillment(
           {},
@@ -86,62 +91,86 @@ moduleIntegrationTestRunner<OngoingModuleService>({
           { id: "ful_1", location_id: LOCATION_ID } as never
         )
 
-        // Provider returns the stash cancelFulfillment later relies on.
         expect(result.labels).toEqual([])
-        expect(result.data).toMatchObject({
-          ongoing_order_id: 999,
+        expect(result.data).toEqual({
           location_id: LOCATION_ID,
-          credential_key: CREDENTIAL_KEY,
-        })
-        expect(typeof result.data.ongoing_order_number).toBe("string")
-
-        // A real 'sent' OngoingOrderSync row landed in Postgres.
-        const [row] = await service.listOngoingOrderSyncs({
-          ongoing_order_number: result.data.ongoing_order_number as string,
-        })
-        expect(row).toMatchObject({
-          sync_state: "sent",
-          ongoing_order_id: 999,
           medusa_fulfillment_id: "ful_1",
-          integration_id: integrationId,
         })
+        // Pre-ei4 this call left a 'sent' row behind; the push now happens in the
+        // subscriber, so nothing may have been written here.
+        expect(await service.listOngoingOrderSyncs({})).toHaveLength(0)
       })
 
-      it("cancelFulfillment cancels the Ongoing order and marks the sync row cancelled", async () => {
-        // Seed a real 'sent' row (as createFulfillment would have left it).
-        await service.recordSync({
+      it("[ei4] createFulfillment throws INVALID_DATA when location_id is missing rather than guessing a warehouse", async () => {
+        const provider = makeProvider()
+
+        await expect(
+          provider.createFulfillment({}, [{ id: "fi_1" }] as never, undefined, {
+            id: "ful_1",
+          } as never)
+        ).rejects.toThrow(/location_id is missing/)
+      })
+
+      it("[ei4] createFulfillment throws INVALID_DATA when the fulfillment id is missing", async () => {
+        const provider = makeProvider()
+
+        await expect(
+          provider.createFulfillment({}, [{ id: "fi_1" }] as never, undefined, {
+            location_id: LOCATION_ID,
+          } as never)
+        ).rejects.toThrow(/fulfillment\.id is missing/)
+      })
+
+      it("[ei4] cancelFulfillment is a non-throwing no-op: no Ongoing call, sync row untouched", async () => {
+        // A real 'sent' row that the OLD provider would have cancelled directly.
+        const row = await service.recordSync({
           ongoing_order_number: "1001-ful1",
-          integration_id: integrationId,
+          integration_id: (await service.listOngoingIntegrations({}))[0].id,
           medusa_order_id: "order_1",
           medusa_fulfillment_id: "ful_1",
           sync_state: "sent",
           ongoing_order_id: 999,
         })
 
-        const del = nock(ONGOING_BASE_URL).delete("/orders/999").reply(200, { orderId: 999 })
-
         const provider = makeProvider()
-        const result = await provider.cancelFulfillment({
-          ongoing_order_number: "1001-ful1",
-          medusa_fulfillment_id: "ful_1",
-          medusa_order_id: "order_1",
+        const stash = {
           location_id: LOCATION_ID,
-          credential_key: CREDENTIAL_KEY,
-        })
+          medusa_fulfillment_id: "ful_1",
+        }
+        const result = await provider.cancelFulfillment(stash)
 
-        expect(del.isDone()).toBe(true)
-        expect(result).toMatchObject({ canceled: true })
+        // It must not throw — throwing here would abort Medusa's own cancel — and it
+        // hands the stash back untouched. The Ongoing-side cancel is the
+        // order.fulfillment_canceled subscriber's job.
+        expect(result).toEqual(stash)
 
-        const [row] = await service.listOngoingOrderSyncs({ ongoing_order_number: "1001-ful1" })
-        expect(row.sync_state).toBe("cancelled")
+        const [after] = await service.listOngoingOrderSyncs({ id: row.id })
+        expect(after.sync_state).toBe("sent")
       })
 
-      it("cancelFulfillment is an idempotent no-op when the stash has no identifiers", async () => {
+      it("[ei4] cancelFulfillment tolerates an empty/undefined stash", async () => {
         const provider = makeProvider()
-        // No Ongoing call must happen; disable any accidental interception.
-        const result = await provider.cancelFulfillment({ location_id: LOCATION_ID })
 
-        expect(result).toMatchObject({ canceled: false, reason: "no_identifier" })
+        await expect(
+          provider.cancelFulfillment(undefined as never)
+        ).resolves.toEqual({})
+      })
+
+      it("[ei4] createReturnFulfillment stashes the return fulfillment id and makes no Ongoing call", async () => {
+        const provider = makeProvider()
+        const result = await provider.createReturnFulfillment({ id: "ret_ful_1" })
+
+        expect(result.labels).toEqual([])
+        expect(result.data).toEqual({ medusa_return_fulfillment_id: "ret_ful_1" })
+        expect(await service.listOngoingOrderSyncs({})).toHaveLength(0)
+      })
+
+      it("[ei4] createReturnFulfillment throws INVALID_DATA without a return fulfillment id", async () => {
+        const provider = makeProvider()
+
+        await expect(provider.createReturnFulfillment({})).rejects.toThrow(
+          /return fulfillment\.id is missing/
+        )
       })
     })
   },

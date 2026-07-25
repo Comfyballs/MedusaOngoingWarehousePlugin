@@ -39,6 +39,11 @@ export const FAKE_OPTIONS: OngoingPluginOptions = {
 export type FulfillmentFixture = {
   id: string
   location_id: string
+  // The `order.fulfillment_created` subscriber gates on this before pushing (only
+  // `ongoing_*` fulfillments are ours) — see src/subscribers/fulfillment-created.ts.
+  // Per @medusajs/fulfillment's provider loader the resolvable id is
+  // `${identifier}_${config-id}`, so the Ongoing provider is "ongoing_ongoing".
+  provider_id: string
   items: Array<{
     quantity: number
     sku: string | null
@@ -62,6 +67,7 @@ export function makeFulfillmentFixture(
   return {
     id: "ful_1",
     location_id: "loc_1",
+    provider_id: "ongoing_ongoing",
     items: [
       { quantity: 2, sku: "SKU-1", barcode: null, title: "Tee", line_item_id: "li_1" },
     ],

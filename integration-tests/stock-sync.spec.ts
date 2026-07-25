@@ -98,7 +98,11 @@ moduleIntegrationTestRunner<OngoingModuleService>({
       })
 
       it("reconciles inventory in sellable_plus_reserved mode on a delta tick and advances the delta cursor in real Postgres", async () => {
-        const seededCursor = "2026-07-10T00:00:00.000Z"
+        // Must stay RELATIVE to now, not a fixed date: a cursor older than the job's 23h
+        // safety margin degrades to a full sweep (bead 13f), which would send no
+        // stockInfoChangedFrom at all and fail the delta assertion below. A hardcoded
+        // date silently rots into that state as wall-clock time passes.
+        const seededCursor = new Date(Date.now() - 5 * 60 * 1000).toISOString()
         const integration = await service.createOngoingIntegrations({
           credential_key: CREDENTIAL_KEY,
           stock_location_id: STOCK_LOCATION_ID,
@@ -311,13 +315,17 @@ moduleIntegrationTestRunner<OngoingModuleService>({
 
       it("triggers a full sweep (null changed_since) when the last full sweep is stale, and advances both cursors in real Postgres", async () => {
         const staleFullSweep = new Date(Date.now() - 7 * 60 * 60 * 1000) // 7h ago → due (> 6h)
+        // Deliberately RECENT so the stale full-sweep clock is the ONLY reason this tick
+        // is a full sweep. An aged cursor would independently force one (bead 13f), and
+        // the test would then pass without proving the 6h trigger works at all.
+        const freshCursor = new Date(Date.now() - 5 * 60 * 1000).toISOString()
         const integration = await service.createOngoingIntegrations({
           credential_key: CREDENTIAL_KEY,
           stock_location_id: STOCK_LOCATION_ID,
           enabled: true,
           stock_reconcile_mode: "sellable_plus_reserved",
           last_stock_sync_at: new Date(Date.now() - 700_000),
-          last_stock_delta_cursor: "2026-07-10T00:00:00.000Z",
+          last_stock_delta_cursor: freshCursor,
           last_full_stock_sync_at: staleFullSweep,
         })
 
@@ -343,14 +351,16 @@ moduleIntegrationTestRunner<OngoingModuleService>({
         // (2) Real-DB value-add: both the delta cursor AND the full-sweep timestamp
         // advance together on a successful full sweep.
         const refreshed = await service.retrieveOngoingIntegration(integration.id)
-        expect(refreshed.last_stock_delta_cursor).not.toBe("2026-07-10T00:00:00.000Z")
+        expect(refreshed.last_stock_delta_cursor).not.toBe(freshCursor)
         expect(refreshed.last_full_stock_sync_at?.getTime()).toBeGreaterThan(
           staleFullSweep.getTime()
         )
       })
 
       it("does not advance the delta cursor in real Postgres when the workflow's Ongoing request fails", async () => {
-        const seededCursor = "2026-07-10T00:00:00.000Z"
+        // Recent, so this is genuinely a failing DELTA tick rather than a degraded full
+        // sweep (bead 13f) that would assert the same thing for a different reason.
+        const seededCursor = new Date(Date.now() - 5 * 60 * 1000).toISOString()
         const integration = await service.createOngoingIntegrations({
           credential_key: CREDENTIAL_KEY,
           stock_location_id: STOCK_LOCATION_ID,

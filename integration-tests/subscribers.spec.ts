@@ -8,6 +8,8 @@ import OngoingOrderSync from "../src/modules/ongoing/models/order-sync"
 import orderCanceledHandler from "../src/subscribers/order-canceled"
 import orderEditConfirmedHandler from "../src/subscribers/order-edit-confirmed"
 import orderUpdatedHandler from "../src/subscribers/order-updated"
+import fulfillmentCreatedHandler from "../src/subscribers/fulfillment-created"
+import fulfillmentCanceledHandler from "../src/subscribers/fulfillment-canceled"
 import { ONGOING_EVENTS } from "../src/lib/ongoing/events"
 import {
   FAKE_OPTIONS,
@@ -101,6 +103,148 @@ moduleIntegrationTestRunner<OngoingModuleService>({
 
       afterEach(() => {
         nock.cleanAll()
+      })
+
+      // ei4: the Ongoing order push and the single-fulfillment cancel used to live in the
+      // fulfillment provider's createFulfillment/cancelFulfillment, and were covered at L2
+      // by fulfillment-provider.spec.ts. Module isolation forced them out into these
+      // app-scope subscribers, so the real-DB coverage moves here with them. The
+      // subscriber unit tests (src/subscribers/__tests__/*) mock the workflows entirely —
+      // these are the only tests that drive subscriber -> REAL workflow -> REAL Postgres row.
+      describe("order.fulfillment_created -> push-order-to-ongoing workflow", () => {
+        it("pushes and writes a real 'sent' OngoingOrderSync row in Postgres", async () => {
+          nock(ONGOING_BASE_URL).put("/articles").reply(200, { articleSystemId: 11 })
+          const putOrder = nock(ONGOING_BASE_URL).put("/orders").reply(200, { orderId: 999 })
+
+          const { container } = buildContainer({
+            service,
+            query: makeFakeQuery([makeFulfillmentFixture({ id: "ful_20" })]),
+          })
+
+          await fulfillmentCreatedHandler({
+            event: { data: { order_id: "order_1", fulfillment_id: "ful_20" } },
+            container,
+          } as never)
+
+          expect(putOrder.isDone()).toBe(true)
+          const [row] = await service.listOngoingOrderSyncs({
+            medusa_fulfillment_id: "ful_20",
+          })
+          expect(row).toMatchObject({
+            sync_state: "sent",
+            ongoing_order_id: 999,
+            integration_id: integrationId,
+          })
+        })
+
+        it("does not push a fulfillment created by another provider", async () => {
+          // No nock interceptor: any Ongoing call would fail the test outright.
+          const { container } = buildContainer({
+            service,
+            query: makeFakeQuery([
+              makeFulfillmentFixture({ id: "ful_21", provider_id: "manual_manual" }),
+            ]),
+          })
+
+          await fulfillmentCreatedHandler({
+            event: { data: { order_id: "order_1", fulfillment_id: "ful_21" } },
+            container,
+          } as never)
+
+          expect(await service.listOngoingOrderSyncs({})).toHaveLength(0)
+        })
+
+        it("records an 'error' row (and never throws) when Ongoing rejects the push", async () => {
+          nock(ONGOING_BASE_URL).put("/articles").reply(200, { articleSystemId: 11 })
+          // Terminal 400 → no client retry loop, deterministic and fast.
+          nock(ONGOING_BASE_URL).put("/orders").reply(400, { message: "boom" })
+
+          const { container } = buildContainer({
+            service,
+            query: makeFakeQuery([makeFulfillmentFixture({ id: "ful_22" })]),
+          })
+
+          // Never-throw is the contract: the ledger row + retry job carry the failure.
+          await expect(
+            fulfillmentCreatedHandler({
+              event: { data: { order_id: "order_1", fulfillment_id: "ful_22" } },
+              container,
+            } as never)
+          ).resolves.toBeUndefined()
+
+          const [row] = await service.listOngoingOrderSyncs({
+            medusa_fulfillment_id: "ful_22",
+          })
+          expect(row.sync_state).toBe("error")
+        })
+      })
+
+      describe("order.fulfillment_canceled -> cancel-ongoing-order workflow", () => {
+        it("cancels the Ongoing order for that fulfillment and transitions its row to 'cancelled'", async () => {
+          await service.updateOngoingIntegrations({
+            id: integrationId,
+            cancellable_status_codes: [100] as unknown as Record<string, unknown>,
+          })
+          const row = await service.createOngoingOrderSyncs({
+            integration_id: integrationId,
+            medusa_order_id: "order_30",
+            medusa_fulfillment_id: "ful_30",
+            ongoing_order_number: "1030-ful30",
+            ongoing_order_id: 999,
+            latest_status_code: 100,
+            sync_state: "sent",
+          })
+
+          const del = nock(ONGOING_BASE_URL).delete("/orders/999").reply(200, { orderId: 999 })
+          const { container } = buildContainer({ service, query: makeFakeQuery([]) })
+
+          await fulfillmentCanceledHandler({
+            event: { data: { order_id: "order_30", fulfillment_id: "ful_30" } },
+            container,
+          } as never)
+
+          expect(del.isDone()).toBe(true)
+          const [after] = await service.listOngoingOrderSyncs({ id: row.id })
+          expect(after.sync_state).toBe("cancelled")
+        })
+
+        it("is a no-op for a fulfillment that was never pushed to Ongoing (no sync row)", async () => {
+          // No interceptor — an Ongoing call would fail the test.
+          const { container } = buildContainer({ service, query: makeFakeQuery([]) })
+
+          await expect(
+            fulfillmentCanceledHandler({
+              event: { data: { order_id: "order_31", fulfillment_id: "ful_31" } },
+              container,
+            } as never)
+          ).resolves.toBeUndefined()
+        })
+
+        it("leaves the row 'sent' when Ongoing's cached status is not cancellable", async () => {
+          await service.updateOngoingIntegrations({
+            id: integrationId,
+            cancellable_status_codes: [100] as unknown as Record<string, unknown>,
+          })
+          const row = await service.createOngoingOrderSyncs({
+            integration_id: integrationId,
+            medusa_order_id: "order_32",
+            medusa_fulfillment_id: "ful_32",
+            ongoing_order_number: "1032-ful32",
+            ongoing_order_id: 999,
+            latest_status_code: 400, // not in cancellable_status_codes
+            sync_state: "sent",
+          })
+
+          const { container } = buildContainer({ service, query: makeFakeQuery([]) })
+
+          await fulfillmentCanceledHandler({
+            event: { data: { order_id: "order_32", fulfillment_id: "ful_32" } },
+            container,
+          } as never)
+
+          const [after] = await service.listOngoingOrderSyncs({ id: row.id })
+          expect(after.sync_state).toBe("sent")
+        })
       })
 
       describe("order.canceled -> cancel-ongoing-order workflow", () => {
