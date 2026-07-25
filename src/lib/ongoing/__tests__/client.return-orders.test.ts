@@ -63,6 +63,9 @@ describe("OngoingClient.getOrder", () => {
 })
 
 describe("OngoingClient.putReturnOrder", () => {
+  // The 2xx body shape { returnOrderId, message } is verified against the official
+  // Ongoing openapi.json v57 (PostReturnOrderResponse) — bead 2a6. Keep these field
+  // names in lockstep with that schema.
   it("PUTs /returnOrders and returns the ongoing return order id", async () => {
     const fetchImpl = jest.fn().mockResolvedValue(json({ returnOrderId: 321, message: "ok" }))
     const client = new OngoingClient(creds, { fetchImpl })
@@ -89,6 +92,25 @@ describe("OngoingClient.putReturnOrder", () => {
 
   it("throws a retryable OngoingApiError when the 2xx response omits returnOrderId", async () => {
     const fetchImpl = jest.fn().mockResolvedValue(json({ message: "queued" }))
+    const client = new OngoingClient(creds, { fetchImpl })
+
+    await expect(
+      client.putReturnOrder({
+        goodsOwnerId: 7,
+        returnOrderNumber: "RET-1001-ret_1",
+        customerOrder: { orderId: 999 },
+        inDate: "2026-07-17",
+      })
+    ).rejects.toMatchObject({ kind: "retryable" })
+  })
+
+  // dw5: Ongoing serializes an absent member as JSON `null`, not as a missing key.
+  // PostReturnOrderResponse.returnOrderId is `nullable: true` in the openapi v57 spec,
+  // so a live 2xx can legitimately carry `returnOrderId: null` rather than omitting the
+  // field. Pin that this is handled the same way as an omitted id (retryable), not by an
+  // `unexpected_body_shape` schema rejection.
+  it("throws a retryable OngoingApiError when the 2xx response serializes returnOrderId as null", async () => {
+    const fetchImpl = jest.fn().mockResolvedValue(json({ returnOrderId: null, message: null }))
     const client = new OngoingClient(creds, { fetchImpl })
 
     await expect(

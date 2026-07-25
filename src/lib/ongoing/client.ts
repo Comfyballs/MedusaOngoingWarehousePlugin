@@ -250,12 +250,14 @@ export class OngoingClient {
     return mapOrderDetail(raw)
   }
 
-  // PUT /returnOrders (ProcessReturnOrder, confirmed against the official Ongoing
-  // example-requests Postman collection — the live openapi.json was unreachable while
-  // this was built; see PostReturnOrderModel). Upserts by `returnOrderNumber`, mirroring
-  // putOrder's idempotent-upsert semantics.
+  // PUT /returnOrders (ProcessReturnOrder). The 2xx body is
+  // `PostReturnOrderResponse { returnOrderId: int32 nullable, message: string nullable }`
+  // — CONFIRMED against the official Ongoing openapi.json (version 57): the `returnOrderId`
+  // field name, originally inferred by analogy with putOrder's `orderId` from the Postman
+  // collection, is verified against the authoritative spec (bead 2a6). Upserts by
+  // `returnOrderNumber`, mirroring putOrder's idempotent-upsert semantics.
   async putReturnOrder(returnOrder: PostReturnOrderModel): Promise<{ ongoingReturnOrderId: number }> {
-    const res = await this.request<{ returnOrderId?: number | null; message?: string }>(
+    const res = await this.request<{ returnOrderId?: number | null; message?: string | null }>(
       "PUT",
       "/returnOrders",
       returnOrder
