@@ -34,7 +34,8 @@ describe("OngoingFulfillmentProviderService.validateFulfillmentData (carrier con
 
 describe("OngoingFulfillmentProviderService extension-point stubs", () => {
   // createReturnFulfillment is no longer a stub — see
-  // __tests__/create-return-fulfillment.test.ts for its real (workflow-backed) behavior.
+  // __tests__/create-return-fulfillment.test.ts for its thin, module-isolation-safe
+  // behavior (ei4: the Ongoing return push runs in the order.return_requested subscriber).
 
   describe("getFulfillmentDocuments", () => {
     it("resolves to an empty array", async () => {
