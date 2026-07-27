@@ -289,6 +289,75 @@ medusaIntegrationTestRunner({
         expect(viaSingular[0].fulfillment).toBeUndefined()
       })
 
+      // pyr wired `order.exchange_created` / `order.claim_created` to the return push by
+      // resolving the return leg via query.graph on `order_exchange` / `order_claim`
+      // (fields ["id", "return_id", "return.id"] in resolveReturnIdFor,
+      // src/lib/push-return-to-ongoing.ts). Same silent-drop hazard as the ei4
+      // return.fulfillments pin above: query.graph OMITS an unknown field instead of
+      // throwing, so a wrong field name would make resolveReturnIdFor return undefined
+      // and skip every exchange/claim return push without a trace — invisible to the
+      // unit-mocked subscriber tests. Pin the real graph shape against a booted app:
+      // both the `return_id` FK and the `return.id` relation traversal must resolve to
+      // the created return.
+      it("xwp: order_exchange / order_claim expose return_id (FK) and return.id (relation) via query.graph", async () => {
+        const container = getContainer()
+        const query = container.resolve<Omit<RemoteQueryFunction, symbol>>(
+          ContainerRegistrationKeys.QUERY
+        )
+        const orderService = container.resolve<IOrderModuleService>(Modules.ORDER)
+        const stockLocationService = container.resolve<IStockLocationService>(
+          Modules.STOCK_LOCATION
+        )
+
+        const location = await stockLocationService.createStockLocations({
+          name: "xwp Exchange/Claim Warehouse",
+        })
+        const [order] = await orderService.createOrders([
+          {
+            currency_code: "usd",
+            email: "xwp-exchange@example.com",
+            items: [{ title: "Test Product", quantity: 1, unit_price: 20 }],
+          },
+        ])
+        const orderReturn = await orderService.createReturns({
+          order_id: order.id,
+          location_id: location.id,
+        })
+
+        // return_id is the FK column of the `return` hasOne(foreignKey:true) relation on
+        // both models — set it directly so the graph reads a populated value (a null
+        // would be indistinguishable from a silently-dropped unknown field).
+        const exchange = await orderService.createOrderExchanges({
+          order_id: order.id,
+          return_id: orderReturn.id,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } as any)
+        const claim = await orderService.createOrderClaims({
+          order_id: order.id,
+          type: "refund",
+          return_id: orderReturn.id,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } as any)
+
+        const { data: exchangeRows } = await query.graph({
+          entity: "order_exchange",
+          fields: ["id", "return_id", "return.id"],
+          filters: { id: exchange.id },
+        })
+        expect(exchangeRows).toHaveLength(1)
+        expect(exchangeRows[0].return_id).toBe(orderReturn.id)
+        expect(exchangeRows[0].return?.id).toBe(orderReturn.id)
+
+        const { data: claimRows } = await query.graph({
+          entity: "order_claim",
+          fields: ["id", "return_id", "return.id"],
+          filters: { id: claim.id },
+        })
+        expect(claimRows).toHaveLength(1)
+        expect(claimRows[0].return_id).toBe(orderReturn.id)
+        expect(claimRows[0].return?.id).toBe(orderReturn.id)
+      })
+
       it("wh5.9a: the ongoing-fulfillment provider registers under core @medusajs/medusa/fulfillment", async () => {
         const container = getContainer()
         // The provider's `fp_ongoing_ongoing` container registration lives in the

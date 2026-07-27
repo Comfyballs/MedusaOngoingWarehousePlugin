@@ -1,5 +1,6 @@
 import { createStep, StepResponse } from "@medusajs/framework/workflows-sdk"
 import type { MedusaContainer } from "@medusajs/framework/types"
+import { MedusaError } from "@medusajs/framework/utils"
 import { ONGOING_MODULE } from "../../modules/ongoing"
 import type OngoingModuleService from "../../modules/ongoing/service"
 
@@ -43,7 +44,16 @@ function buildFilter(input: DecideCancelInput): Record<string, string> {
   if (input.medusa_order_id) {
     return { medusa_order_id: input.medusa_order_id, sync_kind: "order" }
   }
-  return {}
+  // lgs: with none of the three lookup keys we cannot build a scoped filter. Never
+  // fall through to `{}` — listOngoingOrderSyncs({}) returns EVERY sync row (across
+  // credential keys and both sync_kinds), and syncs?.[0] could then pick an unrelated
+  // row — including a sync_kind="return" row, the exact leak class 8p8 closed for the
+  // populated paths. Both callers always populate at least one key today, so reaching
+  // here is a caller-contract violation: fail loud rather than silently mis-resolve.
+  throw new MedusaError(
+    MedusaError.Types.INVALID_DATA,
+    "decide-ongoing-cancel requires at least one of ongoing_order_number, medusa_fulfillment_id, or medusa_order_id"
+  )
 }
 
 export const decideOngoingCancelHandler = async (

@@ -104,6 +104,19 @@ describe("decideOngoingCancelStep", () => {
     expect(res.output.reason).toBe("no_sync_row")
   })
 
+  // lgs: an input carrying none of the three lookup keys must never reach an
+  // unfiltered listOngoingOrderSyncs({}) — that would return every sync row (any
+  // credential key, any sync_kind) and syncs?.[0] could pick a sync_kind="return"
+  // row, the leak class 8p8 closed. The step throws before querying instead.
+  it("throws INVALID_DATA (never lists unfiltered) when no lookup key is supplied", async () => {
+    const service = makeService()
+    await expect(invoke({}, service)).rejects.toThrow(
+      /ongoing_order_number.*medusa_fulfillment_id.*medusa_order_id/
+    )
+    // The guard fires before any DB read — no unfiltered list is ever issued.
+    expect(service.listOngoingOrderSyncs).not.toHaveBeenCalled()
+  })
+
   it("treats empty/null cancellable_status_codes as nothing-cancellable", async () => {
     const res = await invoke(
       { ongoing_order_number: "1001-abc" },

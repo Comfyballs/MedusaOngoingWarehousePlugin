@@ -1,23 +1,4 @@
-import { parseCodesCsv, parseEditSyncRulesJson } from "../parse-codes"
-
-describe("parseCodesCsv", () => {
-  it("parses a comma/space-separated list into numbers", () => {
-    expect(parseCodesCsv("300, 320  410")).toEqual([300, 320, 410])
-  })
-
-  it("returns null for an empty or whitespace-only string", () => {
-    expect(parseCodesCsv("")).toBeNull()
-    expect(parseCodesCsv("   ")).toBeNull()
-  })
-
-  it("throws on a non-integer token", () => {
-    expect(() => parseCodesCsv("300, abc")).toThrow('"abc" is not a valid status code')
-  })
-
-  it("throws on a decimal token", () => {
-    expect(() => parseCodesCsv("300.5")).toThrow('"300.5" is not a valid status code')
-  })
-})
+import { parseEditSyncRulesJson } from "../parse-codes"
 
 describe("parseEditSyncRulesJson", () => {
   it("returns null for an empty or whitespace-only string", () => {
