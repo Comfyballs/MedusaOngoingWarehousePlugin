@@ -38,6 +38,8 @@ const IntegrationsSettingsPage = () => {
   // bead 8bs item 3: the table showed the raw stock_location_id (e.g. "sloc_01J…"),
   // which is meaningless to an operator. Resolve ids to names via the core stock-location
   // list; fall back to the raw id while loading or if a location can't be resolved.
+  // The single unpaginated page (cap 1000) comfortably covers this plugin's scale (one
+  // integration per warehouse); a location beyond the cap simply falls back to its id.
   const { data: locationData } = useQuery({
     queryFn: () => sdk.admin.stockLocation.list({ limit: 1000 }),
     queryKey: ["ongoing-stock-locations"],

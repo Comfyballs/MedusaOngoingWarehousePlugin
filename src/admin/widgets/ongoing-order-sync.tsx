@@ -37,14 +37,16 @@ type SyncResponse = { syncs: OngoingOrderSyncRow[] }
 type RepushResponse = { ongoing_order_id: number; ongoing_order_number: string }
 
 // bead 8bs item 5: `cancelled` previously shared grey with `pending`, so a cancelled
-// order was visually indistinguishable from a not-yet-sent one. `cancelled` is now
-// purple, matching the dashboard's summary/table colour for the same state.
+// order was visually indistinguishable from a not-yet-sent one. Colours now match the
+// dashboard's summary/table map (SYNC_STATE_BADGE_COLOR) exactly so a state reads the
+// same on the order widget and the ops dashboard: pending grey, sent orange (was blue),
+// shipped green, cancelled purple (was grey), error red.
 const STATE_BADGE_COLOR: Record<
   OngoingSyncState,
-  "grey" | "blue" | "green" | "red" | "orange" | "purple"
+  "grey" | "green" | "red" | "orange" | "purple"
 > = {
   pending: "grey",
-  sent: "blue",
+  sent: "orange",
   shipped: "green",
   cancelled: "purple",
   error: "red",

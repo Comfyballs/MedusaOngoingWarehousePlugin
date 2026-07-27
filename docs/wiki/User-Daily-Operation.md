@@ -31,7 +31,7 @@ On a Medusa order's detail page, the **Ongoing Warehouse** widget appears in the
 
 Per sync row it shows:
 
-- The Ongoing order number and a colored state badge (pending = grey, sent = blue, shipped = green, cancelled = purple, error = red).
+- The Ongoing order number and a colored state badge (pending = grey, sent = orange, shipped = green, cancelled = purple, error = red) — the same colours as the dashboard.
 - The latest Ongoing status text and code, and the last-synced time.
 - An orange **Edit blocked** callout when an edit was blocked, with a human-readable reason.
 - Tracking numbers (linked when a tracking URL was captured).
