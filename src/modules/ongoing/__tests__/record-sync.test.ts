@@ -89,6 +89,31 @@ describe("OngoingModuleService.recordSync", () => {
     })
   })
 
+  it("does NOT zero retry_count on a pending transition mid-retry (bead i85 regression)", async () => {
+    // The retry job CAS-advances retry_count on the still-error row, then the push
+    // re-runs and records `pending` BEFORE the PUT. Zeroing retry_count here would pin
+    // it at 0 forever → no backoff growth, no dead-lettering.
+    const svc = makeService()
+    ;(svc as any).listOngoingOrderSyncs.mockResolvedValue([
+      { id: "oos_7", sync_state: "error", error_class: "retryable", retry_count: 3, last_error: "boom" },
+    ])
+    ;(svc as any).updateOngoingOrderSyncs.mockResolvedValue({ id: "oos_7" })
+
+    await svc.recordSync({
+      ongoing_order_number: "1001-abc",
+      integration_id: "int_1",
+      medusa_order_id: "order_1",
+      sync_state: "pending",
+    })
+
+    const update = (svc as any).updateOngoingOrderSyncs.mock.calls[0][0]
+    // recordSync must not touch retry_count / error_class / last_error on a pending row.
+    expect(update).not.toHaveProperty("retry_count")
+    expect(update).not.toHaveProperty("error_class")
+    expect(update).not.toHaveProperty("last_error")
+    expect(update).toMatchObject({ sync_state: "pending" })
+  })
+
   it("does not reset failure bookkeeping while staying in the error state", async () => {
     const svc = makeService()
     ;(svc as any).listOngoingOrderSyncs.mockResolvedValue([{ id: "oos_6" }])

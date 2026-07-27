@@ -48,6 +48,12 @@ export type CleanupOngoingLocationOutput = {
 // It does NOT delete the OngoingIntegration row itself; that remains the job of
 // deleteOngoingIntegrationWorkflow. The returned report lists exactly what was removed and
 // what was preserved (with reasons) so the admin action can show it to the operator.
+//
+// The plan is built from a snapshot read just before the deletes; a fulfillment created in
+// the small window between snapshot and delete would not be seen (a shipping option could
+// then be deleted while newly referenced). Acceptable for an opt-in, operator-initiated
+// admin action on an integration being torn down; the delete steps have no compensation
+// (an un-delete is not meaningful here).
 export const cleanupOngoingLocationWorkflow = createWorkflow(
   "cleanup-ongoing-location",
   function (input: CleanupOngoingLocationInput) {
