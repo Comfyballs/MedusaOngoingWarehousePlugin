@@ -80,7 +80,10 @@ export function EditIntegrationDrawer({ integration, onClose }: Props) {
       toast.success("Integration updated")
       onClose()
     },
-    onError: (err: Error) => setError(err.message),
+    onError: (err: Error) => {
+      setError(err.message)
+      toast.error(err.message)
+    },
   })
 
   const handleSubmit = () => {
@@ -119,6 +122,7 @@ export function EditIntegrationDrawer({ integration, onClose }: Props) {
             testConnection={testConnection}
             testResult={testResult}
             error={error}
+            disabled={updateMutation.isPending}
           />
         </Drawer.Body>
         <Drawer.Footer>

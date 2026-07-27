@@ -39,6 +39,15 @@ export function toResponse(
 // Returns a real WHATWG `Response`, so OngoingClient.doFetch (res.ok / res.status /
 // res.text() / res.headers.get()) and the unit tests (which inject Response-returning
 // fetch stubs) see an identical shape.
+//
+// DIVERGENCE FROM WHATWG fetch (bead 568): this adapter is NOT a full fetch replacement.
+// It intentionally does NOT (a) negotiate compression — it never sends Accept-Encoding,
+// so responses always come back uncompressed and no gzip/deflate/br decoding happens; and
+// (b) follow 3xx redirects — a redirect status is returned verbatim as the Response rather
+// than being transparently followed. Neither matters against Ongoing today (it does not
+// redirect and does not require compression), but a future maintainer must not assume
+// parity with fetch on these two behaviors. Add explicit handling here if Ongoing (or a
+// proxy in front of it) ever starts redirecting or requiring compressed transfer.
 export const nodeHttpsFetch: typeof fetch = (input, init) => {
   const url = typeof input === "string" ? input : input.toString()
   const u = new URL(url)

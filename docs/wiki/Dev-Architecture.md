@@ -53,9 +53,9 @@ Table `ongoing_integration`. One row per warehouse integration: one Ongoing good
 | `last_full_stock_sync_at` | dateTime, nullable | Drives the 6-hour full-reconciliation fallback so missed deltas self-heal. |
 | `sync_lock_until` | dateTime, nullable | Advisory lock TTL for the status-poll job. |
 | `stock_sync_lock_until` | dateTime, nullable | Advisory lock TTL for the stock-sync job — independent of `sync_lock_until` so the two jobs never block each other (bead `mjy`). |
-| `created_fulfillment_set_id` | text, nullable | Fulfillment set `setupOngoingLocationWorkflow` **created**; null when the set was reused (pre-existing/shared). Recorded so a future guarded cleanup can target exactly our artifacts (bead `pud` slice a). |
-| `created_service_zone_id` | text, nullable | Service zone created by setup. |
-| `created_shipping_option_ids` | json, nullable | Shipping option ids created by setup (string array). |
+| `created_fulfillment_set_id` | text, nullable | Fulfillment set `setupOngoingLocationWorkflow` **created**; null when the set was reused (pre-existing/shared). Read by the guarded `cleanup-ongoing-location` workflow so it targets exactly our artifacts (bead `pud` slice a). |
+| `created_service_zone_id` | text, nullable | Service zone created by setup; consumed by `cleanup-ongoing-location`. |
+| `created_shipping_option_ids` | json, nullable | Shipping option ids created by setup (string array); consumed by `cleanup-ongoing-location`. |
 
 Bookkeeping columns (`last_stock_sync_at`, `last_status_poll_at`) record the last tick.
 
@@ -169,8 +169,9 @@ Source: [`src/workflows/`](https://github.com/Comfyballs/MedusaOngoingWarehouseP
 | `retry-ongoing-syncs` | admin bulk-retry | Reset `last_synced_at: null` on eligible `error/retryable` rows so the sweep picks them up. |
 | `flag-orphaned-order-syncs` | `POST /admin/ongoing/syncs/repair-orphaned` | Flip `sent`-with-null-`ongoing_order_id` rows to `error/retryable`. Idempotent. |
 | `mark-order-sync-edit-blocked` | edit subscribers | Set or clear the `edit_blocked_*` columns. |
-| Integration CRUD | admin routes | `create` (compensation deletes the row; step 2 runs `setup-location` as a saga), `update`, `delete` (Medusa-side row only). |
+| Integration CRUD | admin routes | `create` (compensation deletes the row; step 2 runs `setup-location` as a saga), `update`, `delete` (Medusa-side row only — see `cleanup-ongoing-location` below for the still-manual artifact cleanup). |
 | `setup-ongoing-location` | nested in create, or directly | Provisions the fulfilment set, service zone, shipping option, integration-location write (with compensation), and the stock-location link. |
+| `cleanup-ongoing-location` | none yet (reusable; not wired into delete) | Guarded reverse of `setup-location` (bead `pud` slice b). Reads the `created_*` artifact ids (slice a), dismisses the stock-location↔integration link, then deletes **only** artifacts it created and that are safe: shipping options not referenced by a live fulfillment, the service zone if it ends up empty, and the fulfillment set only when `created_fulfillment_set_id` is set (i.e. not reused) and it ends up empty. Never deletes a reused/shared set. Does **not** delete the `OngoingIntegration` row. Returns a report of what was deleted vs preserved (with reasons). Intentionally **not** called on delete by default — the opt-in admin cascade is deferred slice c, pending product sign-off. |
 
 The push chain in detail. **Module isolation (bug ei4):** a fulfillment provider is
 instantiated inside the fulfillment module's *isolated* container, so it can resolve
@@ -246,7 +247,7 @@ Source: [`src/api/`](https://github.com/Comfyballs/MedusaOngoingWarehousePlugin/
 
 Admin routes cover credential-key listing, integration CRUD (update is `POST` with PATCH semantics — Medusa forbids PUT/PATCH), per-order repush and sync read, the dashboard `syncs` list with a five-state summary, bulk retry, orphan repair (no UI entry point), and `test-connection` (which returns **HTTP 200** even on an Ongoing failure, distinguishing a bad request from a reachable-but-erroring Ongoing).
 
-The create and update integration validators are both **strict** (bead on2): each rejects a wrong-typed field with `MedusaError(INVALID_DATA)` rather than silently coercing it — create previously swallowed a bad `enabled`/interval value into the default, which diverged from update. The create-vs-update *default* behaviour still differs intentionally (create fills defaults for absent fields; update leaves absent fields untouched). `GET /admin/ongoing/syncs` defaults to the actionable `error`/`sent`/`pending` view but accepts a repeatable/comma-separated `?state=` filter over any of the five summarised states (so `shipped`/`cancelled` counts are drillable); the applied states echo back in the response as `states` (bead on2). Two known gaps left as follow-ups (bead on2 notes): bulk-retry's response reports `skipped` ids without a per-id reason (terminal vs already-synced vs not-found — only the UI currently distinguishes them), and the `test-connection` 200-on-failure contract is deliberate but can confuse status-code monitors.
+The create and update integration validators are both **strict** (bead on2): each rejects a wrong-typed field with `MedusaError(INVALID_DATA)` rather than silently coercing it — create previously swallowed a bad `enabled`/interval value into the default, which diverged from update. The create-vs-update *default* behaviour still differs intentionally (create fills defaults for absent fields; update leaves absent fields untouched). `GET /admin/ongoing/syncs` defaults to the actionable `error`/`sent`/`pending` view but accepts a repeatable/comma-separated `?state=` filter over any of the five summarised states (so `shipped`/`cancelled` counts are drillable); the applied states echo back in the response as `states` (bead on2). Its `?limit` is clamped to a `MAX_LIMIT` of 100 (`Math.min`) so a caller can't request an unbounded page and pull the entire ledger in one request (bead i85). Two known gaps left as follow-ups (bead on2 notes): bulk-retry's response reports `skipped` ids without a per-id reason (terminal vs already-synced vs not-found — only the UI currently distinguishes them), and the `test-connection` 200-on-failure contract is deliberate but can confuse status-code monitors.
 
 ### Webhook auth and dispatch
 

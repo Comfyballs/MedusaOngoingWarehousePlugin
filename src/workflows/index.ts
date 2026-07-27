@@ -35,6 +35,21 @@ export { updateOngoingIntegrationWorkflow } from "./update-ongoing-integration"
 export type { UpdateOngoingIntegrationInput } from "./update-ongoing-integration"
 export { deleteOngoingIntegrationWorkflow } from "./delete-ongoing-integration"
 export type { DeleteOngoingIntegrationInput } from "./delete-ongoing-integration"
+export {
+  cleanupOngoingLocationWorkflow,
+  default as cleanupOngoingLocation,
+} from "./cleanup-location/cleanup-location"
+export type {
+  CleanupOngoingLocationInput,
+  CleanupOngoingLocationOutput,
+} from "./cleanup-location/cleanup-location"
+export { buildCleanupPlan, requireIntegrationForCleanup } from "./cleanup-location/helpers"
+export type {
+  CleanupPlan,
+  PreservedArtifact,
+  CleanupInputArtifacts,
+  CleanupCurrentState,
+} from "./cleanup-location/helpers"
 export { retryOngoingSyncsWorkflow } from "./retry-ongoing-syncs"
 export type {
   RetryOngoingSyncsInput,

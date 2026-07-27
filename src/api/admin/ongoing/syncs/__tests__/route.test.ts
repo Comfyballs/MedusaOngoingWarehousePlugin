@@ -59,6 +59,18 @@ describe("GET /admin/ongoing/syncs", () => {
     )
   })
 
+  it("clamps limit to the MAX_LIMIT of 100 so a caller can't request an unbounded page (bead i85)", async () => {
+    const service = makeService()
+    const res = makeRes()
+
+    await GET(makeReq({ query: { limit: "100000", offset: "0" }, service }), res)
+
+    expect(service.listAndCountOngoingOrderSyncs).toHaveBeenCalledWith(
+      { sync_state: ["error", "sent", "pending"] },
+      { skip: 0, take: 100, order: { last_synced_at: "DESC" } }
+    )
+  })
+
   it("falls back to defaults for non-numeric or negative query values", async () => {
     const service = makeService()
     const res = makeRes()

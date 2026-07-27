@@ -128,7 +128,11 @@ const IntegrationsSettingsPage = () => {
                 <Table.Cell>
                   <DropdownMenu>
                     <DropdownMenu.Trigger asChild>
-                      <IconButton size="small" variant="transparent">
+                      <IconButton
+                        size="small"
+                        variant="transparent"
+                        aria-label={`Actions for ${integration.credential_key}`}
+                      >
                         <EllipsisHorizontal />
                       </IconButton>
                     </DropdownMenu.Trigger>
