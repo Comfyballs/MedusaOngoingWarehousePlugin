@@ -30,6 +30,16 @@ const OngoingIntegration = model.define("ongoing_integration", {
   // acquireSyncLock/releaseSyncLock in service.ts.
   sync_lock_until: model.dateTime().nullable(),
   stock_sync_lock_until: model.dateTime().nullable(),
+  // pud slice (a): record which fulfillment set / service zone / shipping options
+  // setupOngoingLocationWorkflow actually CREATED, so a future guarded cleanup
+  // (pud slice b) can target exactly our artifacts on integration delete without
+  // touching pre-existing/shared ones. created_fulfillment_set_id is null when the
+  // set was reused (must be preserved on cleanup); the service zone and shipping
+  // options are always created by setup. This slice only persists — it performs no
+  // cleanup/deletion (that remains deferred pending product sign-off).
+  created_fulfillment_set_id: model.text().nullable(),
+  created_service_zone_id: model.text().nullable(),
+  created_shipping_option_ids: model.json().nullable(),
 })
 
 export default OngoingIntegration

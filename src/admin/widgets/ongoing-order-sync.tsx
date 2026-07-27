@@ -1,9 +1,9 @@
 import { defineWidgetConfig } from "@medusajs/admin-sdk"
 import type { DetailWidgetProps, AdminOrder } from "@medusajs/framework/types"
 import { Badge, Button, Container, Text, toast } from "@medusajs/ui"
-import { Spinner } from "@medusajs/icons"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { sdk } from "../lib/sdk"
+import { QueryStateView, useOngoingQuery } from "../lib/use-ongoing-query"
 
 type OngoingSyncState = "pending" | "sent" | "shipped" | "cancelled" | "error"
 
@@ -104,16 +104,26 @@ function RepushButton({ orderId, sync }: { orderId: string; sync: OngoingOrderSy
 }
 
 const OngoingOrderSyncWidget = ({ data }: DetailWidgetProps<AdminOrder>) => {
-  const { data: response, isLoading, isError, error } = useQuery<SyncResponse>({
+  const {
+    data: response,
+    isLoading,
+    isError,
+    isEmpty,
+    error,
+  } = useOngoingQuery<SyncResponse>({
     queryKey: queryKeyFor(data.id),
     queryFn: () => sdk.client.fetch<SyncResponse>(`/admin/ongoing/orders/${data.id}/sync`),
+    isEmpty: (d) => (d.syncs?.length ?? 0) === 0,
   })
 
-  const syncs = response?.syncs ?? []
-
-  if (!isLoading && !isError && syncs.length === 0) {
+  // Bespoke: unlike the dashboard surfaces, the widget hides itself entirely
+  // when the order has no Ongoing sync rows rather than rendering an empty-state
+  // message — hence the early return instead of QueryStateView's emptyMessage.
+  if (isEmpty) {
     return null
   }
+
+  const syncs = response?.syncs ?? []
 
   return (
     <Container className="divide-y p-0">
@@ -122,19 +132,12 @@ const OngoingOrderSyncWidget = ({ data }: DetailWidgetProps<AdminOrder>) => {
           Ongoing Warehouse
         </Text>
       </div>
-      {isLoading && (
-        <div className="flex items-center justify-center px-6 py-4">
-          <Spinner className="animate-spin text-ui-fg-subtle" />
-        </div>
-      )}
-      {isError && (
-        <div className="px-6 py-4">
-          <Text size="small" className="text-ui-fg-error">
-            Failed to load Ongoing sync status
-            {error instanceof Error && error.message ? `: ${error.message}` : "."}
-          </Text>
-        </div>
-      )}
+      <QueryStateView
+        isLoading={isLoading}
+        isError={isError}
+        error={error}
+        errorMessage="Failed to load Ongoing sync status"
+      >
       {syncs.map((sync) => (
         <div key={sync.id} className="flex flex-col gap-y-2 px-6 py-4">
           <div className="flex items-center justify-between">
@@ -218,6 +221,7 @@ const OngoingOrderSyncWidget = ({ data }: DetailWidgetProps<AdminOrder>) => {
           </div>
         </div>
       ))}
+      </QueryStateView>
     </Container>
   )
 }

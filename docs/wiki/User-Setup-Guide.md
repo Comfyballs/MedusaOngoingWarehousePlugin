@@ -97,8 +97,8 @@ Open **Settings → Ongoing Warehouse** in the Medusa admin. Click **Create inte
 7. **Stock reconcile mode** — usually `sellable_plus_reserved`. See [[User Configuration Reference]].
 8. **Edit sync rules (JSON)** — optional at creation, but note edits are blocked until you set it. See the JSON shape in [[User Configuration Reference]].
 
-> **Caution**
-> The status-code pickers are populated **only** from the most recent Test connection click in the current form session. If you open the form (or the Edit drawer later) and do not click Test connection, the pickers show "Run 'Test connection' to load statuses from Ongoing" and no checkboxes — even for codes you already selected. Always click Test connection first when you want to see or change status codes.
+> **Note**
+> When you open the **Edit** drawer for an existing integration, any status codes already stored show up immediately as checkboxes — as bare code numbers (without their text label) until you click **Test connection**, which loads the full live list and adds the labels. You only need Test connection to *discover new* codes or see their labels; you never need it just to view or un-check codes you already saved. On the **create** form there are no stored codes yet, so click Test connection first to load the list.
 
 On save, the plugin runs a workflow that **auto-provisions everything the location needs to fulfill via Ongoing**:
 

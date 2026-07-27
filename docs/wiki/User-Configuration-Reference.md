@@ -121,11 +121,11 @@ An edit re-pushes only when the order's current Ongoing status code is listed un
 
 ## Status-code selection
 
-`shipped_status_codes` and `cancellable_status_codes` are number arrays chosen in the admin from the live status list returned by **Test connection**. The picker only shows checkboxes after you click Test connection in the current form session — see the walkthrough in [[User Setup Guide]] for this quirk.
+`shipped_status_codes` and `cancellable_status_codes` are number arrays chosen in the admin from the live status list returned by **Test connection**. Codes already stored on an integration stay visible and editable as soon as you open the form — they render as bare code checkboxes (without a label) until you click **Test connection**, which loads the full status list from Ongoing and enriches each code with its text. See the walkthrough in [[User Setup Guide]].
 
 ## Migrations
 
-The module ships three migrations. After installing or updating the plugin in your app, apply them:
+The module ships several migrations. After installing or updating the plugin in your app, apply them:
 
 ```bash
 npx medusa db:migrate
