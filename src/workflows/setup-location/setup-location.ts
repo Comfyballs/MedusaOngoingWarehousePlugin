@@ -19,6 +19,7 @@ import {
   ONGOING_FULFILLMENT_SET_NAME,
 } from "./constants"
 import {
+  buildCreatedArtifacts,
   composeProviderId,
   decideReuse,
   extractFulfillmentSetId,
@@ -175,12 +176,13 @@ export const setupOngoingLocationWorkflow = createWorkflow(
     //     set is pre-existing/shared and must be preserved by any future cleanup.
     const createdArtifacts = transform(
       { reuseDecision, fulfillmentSetId, serviceZoneId, shippingOptionIds },
-      (data) => ({
-        created_fulfillment_set_id:
-          data.reuseDecision.reuse === true ? null : data.fulfillmentSetId,
-        created_service_zone_id: data.serviceZoneId,
-        created_shipping_option_ids: data.shippingOptionIds,
-      })
+      (data) =>
+        buildCreatedArtifacts({
+          reused: data.reuseDecision.reuse === true,
+          fulfillmentSetId: data.fulfillmentSetId,
+          serviceZoneId: data.serviceZoneId,
+          shippingOptionIds: data.shippingOptionIds,
+        })
     )
 
     upsertIntegrationLocationStep(
