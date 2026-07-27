@@ -1,6 +1,6 @@
 import * as http from "node:http"
 import type { AddressInfo } from "node:net"
-import { nodeHttpsFetch } from "../http-transport"
+import { nodeHttpsFetch, toResponse } from "../http-transport"
 
 // Regression guard for the transport swap (bead 9sp): Ongoing's server 500s on undici
 // fetch's request signature, so OngoingClient defaults to this http/https adapter instead.
@@ -91,5 +91,38 @@ describe("nodeHttpsFetch", () => {
     await expect(
       nodeHttpsFetch(`${base}/thing`, { method: "GET", signal: controller.signal })
     ).rejects.toBeDefined()
+  })
+})
+
+// The Response ctor throws a RangeError if a body is paired with a null-body status
+// (204/205/304). In the live transport this throw would fire inside an async 'end'
+// callback and hang the fetch Promise forever, so `toResponse` must never throw. Node's
+// own HTTP client parser refuses to deliver a body on those statuses, so this branch is
+// only reachable via a malformed upstream — hence a direct unit test of the builder (bead 0y1).
+describe("toResponse", () => {
+  it("drops a stray body on a null-body status instead of throwing (204-with-body)", async () => {
+    const res = toResponse(204, Buffer.from("hello"), { "content-type": "text/plain" })
+    expect(res.status).toBe(204)
+    expect(await res.text()).toBe("")
+  })
+
+  it.each([205, 304])("drops a stray body on %d as well", async (status) => {
+    const res = toResponse(status, Buffer.from("stray"), {})
+    expect(res.status).toBe(status)
+    expect(await res.text()).toBe("")
+  })
+
+  it("keeps the body for an ordinary 200", async () => {
+    const res = toResponse(200, Buffer.from(JSON.stringify({ ok: true })), {
+      "content-type": "application/json",
+    })
+    expect(res.status).toBe(200)
+    expect(JSON.parse(await res.text())).toEqual({ ok: true })
+  })
+
+  it("passes an empty body through unchanged (bare 204)", async () => {
+    const res = toResponse(204, Buffer.alloc(0), {})
+    expect(res.status).toBe(204)
+    expect(await res.text()).toBe("")
   })
 })

@@ -1,13 +1,14 @@
 import { OngoingApiError, classifyHttpStatus, classifyError } from "../errors"
 
 describe("classifyHttpStatus", () => {
-  it("treats 429 and 5xx as retryable", () => {
+  it("treats 408, 429 and 5xx as retryable", () => {
+    expect(classifyHttpStatus(408)).toBe("retryable")
     expect(classifyHttpStatus(429)).toBe("retryable")
     expect(classifyHttpStatus(500)).toBe("retryable")
     expect(classifyHttpStatus(503)).toBe("retryable")
   })
 
-  it("treats 4xx (except 429) as terminal", () => {
+  it("treats 4xx (except 408/429) as terminal", () => {
     expect(classifyHttpStatus(400)).toBe("terminal")
     expect(classifyHttpStatus(401)).toBe("terminal")
     expect(classifyHttpStatus(404)).toBe("terminal")

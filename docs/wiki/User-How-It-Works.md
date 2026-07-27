@@ -61,7 +61,7 @@ A failed push lands the sync row in `error` with an `error_class`:
 - **`retryable`** — transient (a 5xx, a 429, a network error, or an unclassified default). The retry job picks it up.
 - **`terminal`** — deterministic (a validation error, an unresolvable SKU, a 4xx). The retry job ignores it; it needs a data fix and a manual retry.
 
-The **retry-failed-syncs job** runs every minute and sweeps `error` + `retryable` rows that are due, using exponential backoff of **5, 10, 20, 40, 60 minutes** across attempts 0–4. After 5 failed attempts the row is **dead-lettered** (`error_class` flips to `terminal`, emits `ongoing.sync.order_dead_lettered`) and the job stops touching it.
+The **retry-failed-syncs job** runs every minute and sweeps `error` + `retryable` rows that are due, using exponential backoff of roughly **5, 10, 20, 40, 60 minutes** across attempts 0–4 (each with a small random jitter so many rows failing during one outage don't all retry at the same instant). After 5 failed attempts the row is **dead-lettered** (`error_class` flips to `terminal`, emits `ongoing.sync.order_dead_lettered`) and the job stops touching it.
 
 **Orphan repair** is a safety net for a fixed historical bug where a row could be stuck `sent` with no Ongoing order id. Running `POST /admin/ongoing/syncs/repair-orphaned` flips any such rows back to `error` + `retryable` so the normal retry job repairs them. It is idempotent and safe to run repeatedly. New installs should never need it. See [[User Troubleshooting]].
 

@@ -251,7 +251,10 @@ function ConnectionHealthPanel() {
     useOngoingQuery<OngoingIntegrationsListResponse>({
       queryFn: () =>
         sdk.client.fetch<OngoingIntegrationsListResponse>("/admin/ongoing/integrations"),
-      queryKey: ["ongoing-integrations-health"],
+      // Shared key with the settings page (same endpoint) so that create/edit/delete
+      // mutations there — which all invalidate ["ongoing-integrations"] — also refresh
+      // this dashboard health panel when both are mounted (bead ckb).
+      queryKey: ["ongoing-integrations"],
       isEmpty: (d) => (d.integrations ?? []).length === 0,
     })
 
