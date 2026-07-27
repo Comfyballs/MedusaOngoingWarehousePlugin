@@ -2,6 +2,7 @@ import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { Server, Spinner } from "@medusajs/icons"
 import {
   Badge,
+  Button,
   Container,
   DataTable,
   DataTableRowSelectionState,
@@ -9,6 +10,7 @@ import {
   Heading,
   Text,
   Tooltip,
+  clx,
   createDataTableColumnHelper,
   createDataTableCommandHelper,
   toast,
@@ -24,7 +26,10 @@ import {
   type OngoingIntegrationsListResponse,
 } from "./connection-health"
 
-type OngoingSyncState = "pending" | "sent" | "error"
+// All five ledger states -- the table can now be filtered to any of them via the
+// `?state=` drill-through (bead 7tq), so a fetched row may carry `shipped`/`cancelled`,
+// not just the three actionable states of the default view.
+type OngoingSyncState = "pending" | "sent" | "shipped" | "cancelled" | "error"
 type OngoingErrorClass = "retryable" | "terminal"
 
 type OngoingSyncRow = {
@@ -61,10 +66,18 @@ type RetrySyncsResponse = {
   skipped: string[]
 }
 
-const SYNC_STATE_BADGE_COLOR: Record<OngoingSyncState, "red" | "orange" | "grey"> = {
+// Kept in lockstep with SUMMARY_BADGE_COLOR so a state reads the same colour in the
+// summary strip and the table (a `shipped` row and the `shipped` tile match). All five
+// states are distinct colours -- no two share one (bead 8bs item 5).
+const SYNC_STATE_BADGE_COLOR: Record<
+  OngoingSyncState,
+  "red" | "orange" | "grey" | "green" | "purple"
+> = {
   error: "red",
   sent: "orange",
   pending: "grey",
+  shipped: "green",
+  cancelled: "purple",
 }
 
 const ERROR_CLASS_BADGE_COLOR: Record<OngoingErrorClass, "orange" | "red"> = {
@@ -172,32 +185,62 @@ const commandHelper = createDataTableCommandHelper()
 // Spec §11 "success/failure counters" (deferred to this issue by #44). Pure
 // presentational component -- summary is fetched by the same query as the
 // syncs table (OngoingSyncsTable), no separate request.
+//
+// bead 7tq: each count is a drill-through control. Clicking a tile filters the syncs
+// table to that state via `?state=`; clicking the active tile clears the filter back to
+// the default actionable view. The summary counts themselves are unaffected -- the
+// backend computes them over the full ledger regardless of the table's state filter.
 function SyncStateSummaryStrip({
   summary,
   isLoading,
   isError,
+  selectedState,
+  onSelectState,
 }: {
   summary: OngoingSyncStateSummary | undefined
   isLoading: boolean
   isError: boolean
+  selectedState: OngoingSyncState | null
+  onSelectState: (state: OngoingSyncState | null) => void
 }) {
   return (
-    <Container className="flex items-center gap-x-6 px-6 py-4">
-      {isLoading || (!isError && !summary) ? (
+    <Container className="flex items-center gap-x-3 px-6 py-4">
+      {/* bead 8bs item 6: spin ONLY while the request is in flight. A settled response
+          that lacks `summary` (isLoading=false, isError=false, summary=undefined) must
+          fall through to the error message, not spin forever. */}
+      {isLoading ? (
         <Spinner className="animate-spin" />
       ) : isError || !summary ? (
         <Text size="small" className="text-ui-fg-error">
           Failed to load sync summary
         </Text>
       ) : (
-        SUMMARY_STATE_ORDER.map((state) => (
-          <div key={state} className="flex items-center gap-x-2">
-            <Badge color={SUMMARY_BADGE_COLOR[state]}>{state}</Badge>
-            <Text size="small" weight="plus">
-              {summary[state]}
-            </Text>
-          </div>
-        ))
+        SUMMARY_STATE_ORDER.map((state) => {
+          const isSelected = selectedState === state
+          return (
+            <button
+              key={state}
+              type="button"
+              onClick={() => onSelectState(isSelected ? null : state)}
+              aria-pressed={isSelected}
+              title={
+                isSelected
+                  ? `Clear filter — show the default actionable states`
+                  : `Filter the syncs table to ${state}`
+              }
+              className={clx(
+                "flex items-center gap-x-2 rounded-md px-2 py-1 transition-fg outline-none",
+                "hover:bg-ui-bg-base-hover focus-visible:shadow-borders-focus",
+                isSelected && "bg-ui-bg-base-pressed"
+              )}
+            >
+              <Badge color={SUMMARY_BADGE_COLOR[state]}>{state}</Badge>
+              <Text size="small" weight="plus">
+                {summary[state]}
+              </Text>
+            </button>
+          )
+        })
       )}
     </Container>
   )
@@ -248,6 +291,7 @@ function ConnectionHealthPanel() {
 function OngoingSyncsTable() {
   const queryClient = useQueryClient()
   const [rowSelection, setRowSelection] = useState<DataTableRowSelectionState>({})
+  const [selectedState, setSelectedState] = useState<OngoingSyncState | null>(null)
   const [pagination, setPagination] = useState<DataTablePaginationState>({
     pageIndex: 0,
     pageSize: 20,
@@ -256,12 +300,21 @@ function OngoingSyncsTable() {
   const limit = pagination.pageSize
   const offset = pagination.pageIndex * limit
 
+  // Selecting a state resets to the first page -- the row count changes, so the current
+  // offset may point past the end of the filtered set.
+  const handleSelectState = (state: OngoingSyncState | null) => {
+    setSelectedState(state)
+    setPagination((prev) => ({ ...prev, pageIndex: 0 }))
+    setRowSelection({})
+  }
+
   const { data, isLoading, isError, error } = useOngoingQuery<ListSyncsResponse>({
     queryFn: () =>
       sdk.client.fetch<ListSyncsResponse>("/admin/ongoing/syncs", {
-        query: { limit, offset },
+        // Omit `state` for the default view (backend falls back to error/sent/pending).
+        query: selectedState ? { limit, offset, state: selectedState } : { limit, offset },
       }),
-    queryKey: ["ongoing-syncs", limit, offset],
+    queryKey: ["ongoing-syncs", limit, offset, selectedState ?? "default"],
     placeholderData: keepPreviousData,
   })
 
@@ -320,10 +373,27 @@ function OngoingSyncsTable() {
 
   return (
     <>
-      <SyncStateSummaryStrip summary={data?.summary} isLoading={isLoading} isError={isError} />
+      <SyncStateSummaryStrip
+        summary={data?.summary}
+        isLoading={isLoading}
+        isError={isError}
+        selectedState={selectedState}
+        onSelectState={handleSelectState}
+      />
       <Container className="divide-y p-0">
         <div className="flex items-center justify-between px-6 py-4">
-          <Heading level="h2">Failed &amp; pending syncs</Heading>
+          <Heading level="h2">
+            {selectedState ? `Syncs — ${selectedState}` : "Failed & pending syncs"}
+          </Heading>
+          {selectedState ? (
+            <Button
+              size="small"
+              variant="secondary"
+              onClick={() => handleSelectState(null)}
+            >
+              Clear filter
+            </Button>
+          ) : null}
         </div>
         {/* A failed fetch must not render as an empty "0 syncs" table. Loading and
             empty are handled by the DataTable itself; QueryStateView only injects
