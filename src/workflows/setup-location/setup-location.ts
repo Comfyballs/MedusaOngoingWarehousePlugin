@@ -19,6 +19,7 @@ import {
   ONGOING_FULFILLMENT_SET_NAME,
 } from "./constants"
 import {
+  buildCreatedArtifacts,
   composeProviderId,
   decideReuse,
   extractFulfillmentSetId,
@@ -169,11 +170,30 @@ export const setupOngoingLocationWorkflow = createWorkflow(
       data.shippingOptions.map((o: { id: string }) => o.id)
     )
 
-    // (7) write the unique stock_location_id column on the integration
-    upsertIntegrationLocationStep({
-      integration_id: input.integration_id,
-      stock_location_id: input.stock_location_id,
-    })
+    // (7) write the unique stock_location_id column on the integration, plus the
+    //     ids of the artifacts we just CREATED (pud slice a). The fulfillment set
+    //     id is only recorded as "created by us" when it was NOT reused — a reused
+    //     set is pre-existing/shared and must be preserved by any future cleanup.
+    const createdArtifacts = transform(
+      { reuseDecision, fulfillmentSetId, serviceZoneId, shippingOptionIds },
+      (data) =>
+        buildCreatedArtifacts({
+          reused: data.reuseDecision.reuse === true,
+          fulfillmentSetId: data.fulfillmentSetId,
+          serviceZoneId: data.serviceZoneId,
+          shippingOptionIds: data.shippingOptionIds,
+        })
+    )
+
+    upsertIntegrationLocationStep(
+      transform({ input, createdArtifacts }, (data) => ({
+        integration_id: data.input.integration_id,
+        stock_location_id: data.input.stock_location_id,
+        created_fulfillment_set_id: data.createdArtifacts.created_fulfillment_set_id,
+        created_service_zone_id: data.createdArtifacts.created_service_zone_id,
+        created_shipping_option_ids: data.createdArtifacts.created_shipping_option_ids,
+      }))
+    )
 
     // (8) create the OngoingIntegration <-> stock_location link (stock_location FIRST)
     createRemoteLinkStep(

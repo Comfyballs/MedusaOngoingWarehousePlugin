@@ -133,6 +133,29 @@ export function extractFulfillmentSetId(location: QueriedLocation): string {
   return sets[0].id
 }
 
+// pud slice (a): decide which artifact ids to record on the integration as
+// "created by setup". The service zone and shipping options are always created
+// by this workflow, so they are always recorded. The fulfillment set is only
+// ours when it was NOT reused — a reused set is pre-existing/shared and must be
+// preserved by any future cleanup, so we record null for it. Kept as a pure
+// helper (not inline in the workflow transform) so the reuse rule is unit-tested.
+export function buildCreatedArtifacts(args: {
+  reused: boolean
+  fulfillmentSetId: string
+  serviceZoneId: string
+  shippingOptionIds: string[]
+}): {
+  created_fulfillment_set_id: string | null
+  created_service_zone_id: string
+  created_shipping_option_ids: string[]
+} {
+  return {
+    created_fulfillment_set_id: args.reused ? null : args.fulfillmentSetId,
+    created_service_zone_id: args.serviceZoneId,
+    created_shipping_option_ids: args.shippingOptionIds,
+  }
+}
+
 export function buildServiceZoneInput(args: {
   fulfillmentSetId: string
   countryCode: string

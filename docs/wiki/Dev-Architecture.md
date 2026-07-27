@@ -53,8 +53,13 @@ Table `ongoing_integration`. One row per warehouse integration: one Ongoing good
 | `last_full_stock_sync_at` | dateTime, nullable | Drives the 6-hour full-reconciliation fallback so missed deltas self-heal. |
 | `sync_lock_until` | dateTime, nullable | Advisory lock TTL for the status-poll job. |
 | `stock_sync_lock_until` | dateTime, nullable | Advisory lock TTL for the stock-sync job — independent of `sync_lock_until` so the two jobs never block each other (bead `mjy`). |
+| `created_fulfillment_set_id` | text, nullable | Fulfillment set `setupOngoingLocationWorkflow` **created**; null when the set was reused (pre-existing/shared). Recorded so a future guarded cleanup can target exactly our artifacts (bead `pud` slice a). |
+| `created_service_zone_id` | text, nullable | Service zone created by setup. |
+| `created_shipping_option_ids` | json, nullable | Shipping option ids created by setup (string array). |
 
 Bookkeeping columns (`last_stock_sync_at`, `last_status_poll_at`) record the last tick.
+
+The `created_*` columns are populated by setup but not yet consumed: integration delete still leaves these artifacts behind (the known accepted gap the admin delete prompt warns about). They exist so a future opt-in cleanup workflow (bead `pud` slices b/c, deferred pending product sign-off) can delete exactly what setup created — never a reused/shared set.
 
 ### Data model: OngoingOrderSync
 
@@ -96,7 +101,7 @@ The `error_class` (`retryable` | `terminal`) decides whether the retry job touch
 
 ### Migrations
 
-Four migrations under [`src/modules/ongoing/migrations/`](https://github.com/Comfyballs/MedusaOngoingWarehousePlugin/blob/main/src/modules/ongoing/migrations): the base tables and indexes, the `edit_blocked_*` columns, the delta-stock-sync columns, and the `stock_sync_lock_until` column (bead `mjy`). See [[Dev Gotchas]] for the `plugin:db:generate` recipe when you change a model.
+Several migrations under [`src/modules/ongoing/migrations/`](https://github.com/Comfyballs/MedusaOngoingWarehousePlugin/blob/main/src/modules/ongoing/migrations): the base tables and indexes, the `edit_blocked_*` columns, the delta-stock-sync columns, the `stock_sync_lock_until` column (bead `mjy`), the `cancel_refused_*` and `sync_kind` columns, and the `created_*` setup-artifact columns (bead `pud` slice a). See [[Dev Gotchas]] for the `plugin:db:generate` recipe when you change a model.
 
 ## Ongoing REST client stack
 

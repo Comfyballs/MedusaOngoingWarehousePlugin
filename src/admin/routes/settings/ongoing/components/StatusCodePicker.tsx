@@ -1,5 +1,6 @@
 import { Checkbox, Label, Text } from "@medusajs/ui"
 import { toggleStatusCode } from "../utils/toggle-status-code"
+import { mergeStatusOptions } from "../utils/merge-status-options"
 
 export interface StatusCodePickerOption {
   number: number
@@ -25,18 +26,30 @@ export const StatusCodePicker = ({
     onChange(toggleStatusCode(selected, statusNumber, checked))
   }
 
+  // Union of the live status list and the codes already stored on the
+  // integration, so stored codes stay visible and editable before (and without)
+  // a live "Test connection" round-trip. Label-less entries enrich once a live
+  // fetch resolves. See merge-status-options for the merge rules.
+  const options = mergeStatusOptions(statuses, selected)
+
   return (
     <div className="flex flex-col gap-y-2">
       <Label size="small" weight="plus">
         {label}
       </Label>
-      {statuses.length === 0 ? (
+      {options.length === 0 ? (
         <Text size="small" className="text-ui-fg-subtle">
           Run &quot;Test connection&quot; to load statuses from Ongoing.
         </Text>
       ) : (
         <div className="flex flex-col gap-y-2">
-          {statuses.map((status) => {
+          {statuses.length === 0 && (
+            <Text size="small" className="text-ui-fg-subtle">
+              Showing stored codes. Run &quot;Test connection&quot; to load their
+              labels and the full list from Ongoing.
+            </Text>
+          )}
+          {options.map((status) => {
             const inputId = `${label}-status-${status.number}`
             return (
               <div key={status.number} className="flex items-center gap-x-2">
@@ -49,7 +62,7 @@ export const StatusCodePicker = ({
                   }
                 />
                 <Label htmlFor={inputId} size="small">
-                  {status.number} — {status.text}
+                  {status.text ? `${status.number} — ${status.text}` : status.number}
                 </Label>
               </div>
             )

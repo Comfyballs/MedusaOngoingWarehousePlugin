@@ -1,4 +1,5 @@
 import {
+  buildCreatedArtifacts,
   composeProviderId,
   decideReuse,
   extractFulfillmentSetId,
@@ -16,6 +17,49 @@ import {
   ONGOING_SHIPPING_OPTION_NAME,
   ONGOING_SEED_OPTION_TYPE,
 } from "../constants"
+
+describe("buildCreatedArtifacts", () => {
+  it("records the fulfillment set id when it was created (not reused)", () => {
+    expect(
+      buildCreatedArtifacts({
+        reused: false,
+        fulfillmentSetId: "fset_1",
+        serviceZoneId: "sz_1",
+        shippingOptionIds: ["so_1", "so_2"],
+      })
+    ).toEqual({
+      created_fulfillment_set_id: "fset_1",
+      created_service_zone_id: "sz_1",
+      created_shipping_option_ids: ["so_1", "so_2"],
+    })
+  })
+
+  it("records a null fulfillment set id when the set was reused (must be preserved on cleanup)", () => {
+    expect(
+      buildCreatedArtifacts({
+        reused: true,
+        fulfillmentSetId: "fset_existing",
+        serviceZoneId: "sz_1",
+        shippingOptionIds: ["so_1"],
+      })
+    ).toEqual({
+      created_fulfillment_set_id: null,
+      created_service_zone_id: "sz_1",
+      created_shipping_option_ids: ["so_1"],
+    })
+  })
+
+  it("always records the service zone and shipping options, since setup always creates them", () => {
+    const result = buildCreatedArtifacts({
+      reused: true,
+      fulfillmentSetId: "fset_existing",
+      serviceZoneId: "sz_9",
+      shippingOptionIds: [],
+    })
+    expect(result.created_service_zone_id).toBe("sz_9")
+    expect(result.created_shipping_option_ids).toEqual([])
+  })
+})
 
 describe("composeProviderId", () => {
   it("joins identifier and option id with an underscore", () => {
