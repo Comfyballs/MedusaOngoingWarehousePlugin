@@ -442,22 +442,6 @@
           "enumItems": [],
           "mappedType": "text"
         },
-        "integration_id": {
-          "name": "integration_id",
-          "type": "text",
-          "unsigned": false,
-          "autoincrement": false,
-          "primary": false,
-          "nullable": false,
-          "unique": false,
-          "length": null,
-          "precision": null,
-          "scale": null,
-          "default": null,
-          "comment": null,
-          "enumItems": [],
-          "mappedType": "text"
-        },
         "sync_kind": {
           "name": "sync_kind",
           "type": "text",
@@ -476,6 +460,22 @@
             "return"
           ],
           "mappedType": "enum"
+        },
+        "integration_id": {
+          "name": "integration_id",
+          "type": "text",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "text"
         },
         "medusa_order_id": {
           "name": "medusa_order_id",
@@ -814,6 +814,15 @@
       "schema": "public",
       "indexes": [
         {
+          "keyName": "IDX_ongoing_order_sync_integration_id",
+          "columnNames": [],
+          "composite": false,
+          "constraint": false,
+          "primary": false,
+          "unique": false,
+          "expression": "CREATE INDEX IF NOT EXISTS \"IDX_ongoing_order_sync_integration_id\" ON \"ongoing_order_sync\" (\"integration_id\") WHERE deleted_at IS NULL"
+        },
+        {
           "keyName": "IDX_ongoing_order_sync_medusa_order_id",
           "columnNames": [],
           "composite": false,
@@ -848,6 +857,15 @@
           "primary": false,
           "unique": false,
           "expression": "CREATE INDEX IF NOT EXISTS \"IDX_ongoing_order_sync_deleted_at\" ON \"ongoing_order_sync\" (\"deleted_at\") WHERE deleted_at IS NULL"
+        },
+        {
+          "keyName": "IDX_ongoing_order_sync_sync_state_error_class",
+          "columnNames": [],
+          "composite": false,
+          "constraint": false,
+          "primary": false,
+          "unique": false,
+          "expression": "CREATE INDEX IF NOT EXISTS \"IDX_ongoing_order_sync_sync_state_error_class\" ON \"ongoing_order_sync\" (\"sync_state\", \"error_class\") WHERE deleted_at IS NULL"
         },
         {
           "keyName": "ongoing_order_sync_pkey",

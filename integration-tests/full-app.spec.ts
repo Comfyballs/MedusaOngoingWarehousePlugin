@@ -202,6 +202,82 @@ medusaIntegrationTestRunner({
         })
       })
 
+      it("607: order -> ongoing_order_sync is 1:many (isList) — a query.graph join from order returns ALL sync rows", async () => {
+        const container = getContainer()
+        const query = container.resolve<Omit<RemoteQueryFunction, symbol>>(
+          ContainerRegistrationKeys.QUERY
+        )
+        const link = container.resolve<LinkService>(ContainerRegistrationKeys.LINK)
+        const ongoingService = container.resolve<OngoingModuleService>(ONGOING_MODULE)
+        const stockLocationService = container.resolve<IStockLocationService>(
+          Modules.STOCK_LOCATION
+        )
+        const orderService = container.resolve<IOrderModuleService>(Modules.ORDER)
+
+        const location = await stockLocationService.createStockLocations({
+          name: "607 Test Warehouse",
+        })
+        const integration = await ongoingService.createOngoingIntegrations({
+          credential_key: "test-607",
+          stock_location_id: location.id,
+          enabled: true,
+        })
+        const [order] = await orderService.createOrders([
+          {
+            currency_code: "usd",
+            email: "b607@example.com",
+            items: [{ title: "Test Product", quantity: 1, unit_price: 20 }],
+          },
+        ])
+
+        // TWO sync rows for the SAME order (per-fulfillment + return rows share one
+        // medusa_order_id in production). Before the isList fix, a query.graph join from
+        // `order` collapsed these to a single/ambiguous row.
+        const syncA = await ongoingService.createOngoingOrderSyncs({
+          integration_id: integration.id,
+          medusa_order_id: order.id,
+          ongoing_order_number: "B607-A",
+          sync_state: "sent",
+        })
+        const syncB = await ongoingService.createOngoingOrderSyncs({
+          integration_id: integration.id,
+          medusa_order_id: order.id,
+          ongoing_order_number: "B607-B",
+          sync_kind: "return",
+          sync_state: "sent",
+        })
+
+        await link.create({
+          [ONGOING_MODULE]: { ongoing_order_sync_id: syncA.id },
+          [Modules.ORDER]: { order_id: order.id },
+        })
+        await link.create({
+          [ONGOING_MODULE]: { ongoing_order_sync_id: syncB.id },
+          [Modules.ORDER]: { order_id: order.id },
+        })
+
+        // With isList:true the order side exposes the PLURAL, list-valued
+        // `ongoing_order_syncs` alias (query.graph silently DROPS the singular
+        // `ongoing_order_sync` — the pre-fix 1:1 shape — rather than throwing).
+        const { data: orderWithSyncs } = await query.graph({
+          entity: "order",
+          fields: [
+            "id",
+            "ongoing_order_syncs.id",
+            "ongoing_order_syncs.ongoing_order_number",
+          ],
+          filters: { id: order.id },
+        })
+
+        expect(orderWithSyncs).toHaveLength(1)
+        // isList: the join returns an ARRAY holding BOTH rows, not a single object.
+        expect(Array.isArray(orderWithSyncs[0].ongoing_order_syncs)).toBe(true)
+        const numbers = orderWithSyncs[0].ongoing_order_syncs
+          .map((s: { ongoing_order_number: string }) => s.ongoing_order_number)
+          .sort()
+        expect(numbers).toEqual(["B607-A", "B607-B"])
+      })
+
       // The `order.return_requested` subscriber has only the return id and must reach
       // the return fulfillment through the `return_fulfillment` remote link. The link
       // extends `Return` with the PLURAL, list-valued `fulfillments` alias ONLY

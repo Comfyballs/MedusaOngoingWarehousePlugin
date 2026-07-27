@@ -11,7 +11,20 @@ const baseInput = {
   medusa_fulfillment_id: "ful_1",
 }
 
-function makeContainer({ putOrder, putArticle }: { putOrder: jest.Mock; putArticle?: jest.Mock }) {
+function makeContainer({
+  putOrder,
+  putArticle,
+  // x5n: canceled_at seen by the pre-putOrder re-check. Default null (nothing
+  // canceled) so all pre-existing tests behave as before. `orderCanceledAt` /
+  // `fulfillmentCanceledAt` set the respective query.graph result.
+  orderCanceledAt = null,
+  fulfillmentCanceledAt = null,
+}: {
+  putOrder: jest.Mock
+  putArticle?: jest.Mock
+  orderCanceledAt?: Date | null
+  fulfillmentCanceledAt?: Date | null
+}) {
   const recordSync = jest.fn().mockResolvedValue({ id: "oos_1" })
   const article = putArticle ?? jest.fn().mockResolvedValue({ articleSystemId: 1 })
   const service = {
@@ -21,6 +34,16 @@ function makeContainer({ putOrder, putArticle }: { putOrder: jest.Mock; putArtic
   const logger = { info: jest.fn(), warn: jest.fn(), error: jest.fn() }
   const emit = jest.fn().mockResolvedValue(undefined)
   const eventBus = { emit }
+  const graph = jest.fn(async ({ entity }: { entity: string }) => {
+    if (entity === "order") {
+      return { data: [{ canceled_at: orderCanceledAt }] }
+    }
+    if (entity === "fulfillment") {
+      return { data: [{ canceled_at: fulfillmentCanceledAt }] }
+    }
+    return { data: [] }
+  })
+  const query = { graph }
   const container = {
     resolve: jest.fn((key: string) => {
       switch (key) {
@@ -28,12 +51,14 @@ function makeContainer({ putOrder, putArticle }: { putOrder: jest.Mock; putArtic
           return logger
         case "event_bus":
           return eventBus
+        case "query":
+          return query
         default:
           return service
       }
     }),
   }
-  return { container, recordSync, service, logger, emit, article }
+  return { container, recordSync, service, logger, emit, article, graph }
 }
 
 // The createStep wrapper does not expose its invoke fn; test the exported handler.
@@ -179,6 +204,9 @@ describe("pushOrderRecordSyncStep", () => {
     }
     const logger = { info: jest.fn(), warn: jest.fn(), error: jest.fn() }
     const emit = jest.fn().mockResolvedValue(undefined)
+    const query = {
+      graph: jest.fn(async () => ({ data: [{ canceled_at: null }] })),
+    }
     const container = {
       resolve: jest.fn((key: string) => {
         switch (key) {
@@ -186,6 +214,8 @@ describe("pushOrderRecordSyncStep", () => {
             return logger
           case "event_bus":
             return { emit }
+          case "query":
+            return query
           default:
             return service
         }
@@ -269,5 +299,66 @@ describe("pushOrderRecordSyncStep", () => {
     expect(logger.error).toHaveBeenCalledWith(
       expect.stringContaining("event bus unavailable")
     )
+  })
+
+  // x5n: a cancel (order.canceled / fulfillment.canceled) can land in the window
+  // after this push started but before putOrder. The step re-checks canceled_at
+  // immediately before the PUT and must abort WITHOUT creating a live Ongoing order.
+  describe("x5n: cancel racing the push window", () => {
+    it("aborts before putOrder and records the row cancelled when the order is canceled_at", async () => {
+      const putOrder = jest.fn().mockResolvedValue({ ongoingOrderId: 999 })
+      const putArticle = jest.fn().mockResolvedValue({ articleSystemId: 1 })
+      const { container, recordSync, service } = makeContainer({
+        putOrder,
+        putArticle,
+        orderCanceledAt: new Date("2026-07-27T00:00:00.000Z"),
+      })
+
+      await expect(
+        invoke(
+          { ...baseInput, articles: [{ articleNumber: "SKU-A", articleName: "Alpha" }] },
+          { container }
+        )
+      ).rejects.toMatchObject({ type: "not_allowed" })
+
+      // No live Ongoing order created, and no articles pushed for a canceled order.
+      expect(putOrder).not.toHaveBeenCalled()
+      expect(putArticle).not.toHaveBeenCalled()
+      expect(service.getClient).not.toHaveBeenCalled()
+
+      // Ledger converges to cancelled (not error/retryable — nothing to retry).
+      const lastRecord = recordSync.mock.calls.at(-1)![0]
+      expect(lastRecord).toMatchObject({
+        sync_state: "cancelled",
+        error_class: null,
+        last_error: null,
+      })
+    })
+
+    it("aborts when only the fulfillment is canceled_at", async () => {
+      const putOrder = jest.fn().mockResolvedValue({ ongoingOrderId: 999 })
+      const { container, recordSync, service } = makeContainer({
+        putOrder,
+        fulfillmentCanceledAt: new Date("2026-07-27T00:00:00.000Z"),
+      })
+
+      await expect(invoke(baseInput, { container })).rejects.toMatchObject({
+        type: "not_allowed",
+      })
+
+      expect(putOrder).not.toHaveBeenCalled()
+      expect(service.getClient).not.toHaveBeenCalled()
+      expect(recordSync.mock.calls.at(-1)![0]).toMatchObject({ sync_state: "cancelled" })
+    })
+
+    it("pushes normally when neither the order nor the fulfillment is canceled", async () => {
+      const putOrder = jest.fn().mockResolvedValue({ ongoingOrderId: 999 })
+      const { container } = makeContainer({ putOrder })
+
+      const output = await invoke(baseInput, { container })
+
+      expect(output).toEqual({ ongoingOrderId: 999, orderNumber: "1001-ful1" })
+      expect(putOrder).toHaveBeenCalledWith(baseInput.model)
+    })
   })
 })
