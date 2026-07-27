@@ -1,7 +1,7 @@
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 import type { MedusaContainer, IEventBusModuleService } from "@medusajs/framework/types"
 import { ONGOING_MODULE } from "../modules/ongoing"
-import { pushOrderToOngoing } from "../workflows"
+import { pushOrderToOngoing, pushReturnOrderToOngoing } from "../workflows"
 import {
   resolveRetryOutcome,
   computeRetryBackoffMs,
@@ -17,6 +17,7 @@ import type {
 // (src/modules/ongoing/models/order-sync.ts).
 type ErrorSyncRow = {
   id: string
+  sync_kind?: "order" | "return" | null
   medusa_fulfillment_id: string | null
   last_synced_at: Date | string | null
   retry_count: number
@@ -163,12 +164,21 @@ async function processRow(
     return
   }
 
-  await pushOrderToOngoing(container).run({
-    input: { fulfillment_id: row.medusa_fulfillment_id },
-  })
+  // Re-push through the matching workflow: a return row (8p8) carries its return
+  // fulfillment id in medusa_fulfillment_id and must go through the return push;
+  // everything else is an outbound order push.
+  if (row.sync_kind === "return") {
+    await pushReturnOrderToOngoing(container).run({
+      input: { return_fulfillment_id: row.medusa_fulfillment_id },
+    })
+  } else {
+    await pushOrderToOngoing(container).run({
+      input: { fulfillment_id: row.medusa_fulfillment_id },
+    })
+  }
 
   logger.info(
-    `[ongoing] retry: re-invoked push for row ${row.id} (attempt ${outcome.retry_count})`
+    `[ongoing] retry: re-invoked ${row.sync_kind === "return" ? "return " : ""}push for row ${row.id} (attempt ${outcome.retry_count})`
   )
   // Best-effort emit: the re-invocation above already ran to completion — an
   // event-bus outage here must not surface as a "row failed" log for a row

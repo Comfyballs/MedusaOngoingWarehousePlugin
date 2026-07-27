@@ -37,6 +37,9 @@ export type RecordSyncInput = {
   integration_id: string
   medusa_order_id: string
   medusa_fulfillment_id?: string | null
+  // Omitted for outbound order pushes (defaults to "order" at the DB); return
+  // pushes pass "return" so the retry job re-pushes them via the return workflow (8p8).
+  sync_kind?: "order" | "return"
   sync_state: "pending" | "sent" | "shipped" | "cancelled" | "error"
   ongoing_order_id?: number | null
   error_class?: "retryable" | "terminal" | null

@@ -55,6 +55,8 @@ function buildContainer({
     getIntegrationByLocation: jest.fn().mockResolvedValue({ id: "int_1", credential_key: "wh-a" }),
     getCredentials: jest.fn().mockReturnValue({ goodsOwnerId: 7 }),
     listOngoingOrderSyncs,
+    // 8p8: return pushes now record an OngoingOrderSync row (sync_kind="return").
+    recordSync: jest.fn().mockResolvedValue({ id: "oos_ret_1" }),
     getClient: jest.fn().mockReturnValue({ getOrder, putReturnOrder }),
   }
   const container: any = createMedusaContainer()
@@ -88,6 +90,20 @@ describe("pushReturnOrderToOngoing workflow", () => {
     expect(service.getIntegrationByLocation).toHaveBeenCalledWith("loc_1")
     expect(getOrder).toHaveBeenCalledWith(999)
     expect(putReturnOrder).toHaveBeenCalledTimes(1)
+
+    // 8p8: records a "pending" return row before the PUT and flips it to "sent" after,
+    // keyed by the returnOrderNumber with the return fulfillment id and sync_kind="return".
+    const states = service.recordSync.mock.calls.map((c) => c[0].sync_state)
+    expect(states).toEqual(["pending", "sent"])
+    expect(service.recordSync).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        ongoing_order_number: "RET-1001-ret_ful_1",
+        medusa_fulfillment_id: "ret_ful_1",
+        sync_kind: "return",
+        sync_state: "sent",
+        ongoing_order_id: 555,
+      })
+    )
   })
 
   it("throws and never calls the client when the return fulfillment has no items", async () => {
@@ -122,17 +138,28 @@ describe("pushReturnOrderToOngoing workflow", () => {
     expect(putReturnOrder).not.toHaveBeenCalled()
   })
 
-  it("retryable client error propagates (workflow rejects)", async () => {
+  it("retryable client error propagates (workflow rejects) and records an error/retryable return row (8p8)", async () => {
     const getOrder = jest
       .fn()
       .mockResolvedValue({ ongoingOrderId: 999, lines: [{ orderLineId: 111, articleNumber: "ART-1" }] })
     const putReturnOrder = jest
       .fn()
       .mockRejectedValue(new OngoingApiError("503", { kind: "retryable", status: 503 }))
-    const { container } = buildContainer({ putReturnOrder, getOrder })
+    const { container, service } = buildContainer({ putReturnOrder, getOrder })
 
     await expect(
       pushReturnOrderToOngoing(container).run({ input: { return_fulfillment_id: "ret_ful_1" } })
     ).rejects.toBeDefined()
+
+    // A failed return push must leave a retryable ledger row for retry-failed-syncs.
+    expect(service.recordSync).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        ongoing_order_number: "RET-1001-ret_ful_1",
+        medusa_fulfillment_id: "ret_ful_1",
+        sync_kind: "return",
+        sync_state: "error",
+        error_class: "retryable",
+      })
+    )
   })
 })

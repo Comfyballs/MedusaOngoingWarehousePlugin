@@ -27,6 +27,8 @@ type OngoingOrderSyncRow = {
   edit_blocked_at: string | null
   edit_blocked_category: "address_contact" | "line_items" | null
   edit_blocked_reason: string | null
+  cancel_refused_at: string | null
+  cancel_refused_reason: string | null
   tracking: OngoingOrderSyncTracking[]
 }
 
@@ -162,6 +164,23 @@ const OngoingOrderSyncWidget = ({ data }: DetailWidgetProps<AdminOrder>) => {
                 {sync.edit_blocked_reason
                   ? (EDIT_BLOCKED_REASON_LABEL[sync.edit_blocked_reason] ?? sync.edit_blocked_reason)
                   : "Reason not recorded"}
+              </Text>
+            </div>
+          )}
+
+          {sync.cancel_refused_at && (
+            <div className="bg-ui-tag-red-bg border-ui-tag-red-border flex flex-col gap-y-1 rounded-md border px-3 py-2">
+              <div className="flex items-center gap-x-2">
+                <Badge color="red" size="2xsmall">
+                  Cancel refused
+                </Badge>
+                <Text size="small" leading="compact" weight="plus" className="text-ui-tag-red-text">
+                  Ongoing may still ship this order
+                </Text>
+              </div>
+              <Text size="small" leading="compact" className="text-ui-tag-red-text">
+                {sync.cancel_refused_reason ??
+                  "Ongoing declined the cancel because its status is not cancellable. Reconcile it in Ongoing."}
               </Text>
             </div>
           )}

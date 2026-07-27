@@ -11,6 +11,7 @@ import {
 } from "./steps/decide-ongoing-cancel"
 import { cancelOngoingOrderStep } from "./steps/cancel-ongoing-order"
 import { markOrderSyncCancelledStep } from "./steps/mark-order-sync-cancelled"
+import { markOrderSyncCancelRefusedStep } from "./steps/mark-order-sync-cancel-refused"
 
 export type CancelOngoingOrderInput = DecideCancelInput
 
@@ -33,6 +34,19 @@ export const cancelOngoingOrderWorkflow = createWorkflow(
 
       markOrderSyncCancelledStep(markInput)
     })
+
+    // ei4 fallout (eer): Ongoing refused the cancel (status not cancellable) but
+    // Medusa already committed its own cancel. Flag the divergence for operators.
+    when(decision, (d: CancelDecision) => d.reason === "status_not_cancellable").then(
+      () => {
+        const refusedInput = transform({ decision }, (data) => ({
+          order_sync_id: data.decision.orderSyncId as string,
+          reason: data.decision.refusedReason,
+        }))
+
+        markOrderSyncCancelRefusedStep(refusedInput)
+      }
+    )
 
     return new WorkflowResponse(decision)
   }

@@ -65,7 +65,7 @@ describe("order.canceled subscriber", () => {
     await orderCanceledHandler(args)
 
     expect(listOngoingOrderSyncs).toHaveBeenCalledWith(
-      { medusa_order_id: "order_1" },
+      { medusa_order_id: "order_1", sync_kind: "order" },
       { select: ["id", "ongoing_order_number", "medusa_fulfillment_id"] }
     )
     expect(run).toHaveBeenCalledTimes(2)

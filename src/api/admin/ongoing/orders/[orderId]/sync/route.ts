@@ -20,6 +20,8 @@ export type OngoingOrderSyncRow = {
   edit_blocked_at: string | Date | null
   edit_blocked_category: "address_contact" | "line_items" | null
   edit_blocked_reason: string | null
+  cancel_refused_at: string | Date | null
+  cancel_refused_reason: string | null
 }
 
 export type OngoingOrderSyncTracking = {
@@ -34,6 +36,7 @@ export type OngoingOrderSyncWithTracking = OngoingOrderSyncRow & {
 type OngoingServiceLike = {
   listOngoingOrderSyncs: (filter: {
     medusa_order_id: string
+    sync_kind?: "order" | "return"
   }) => Promise<OngoingOrderSyncRow[]>
 }
 
@@ -53,8 +56,14 @@ type QueryLike = {
 export async function GET(req: MedusaRequest, res: MedusaResponse): Promise<void> {
   const ongoing = req.scope.resolve(ONGOING_MODULE) as OngoingServiceLike
 
+  // Only outbound order rows: the order-detail widget's Re-push button runs the
+  // ORDER push, which would be wrong for a return row (8p8 stores return pushes in
+  // this same ledger keyed by the original order id). Return rows are still visible
+  // and retryable via the syncs dashboard, whose bulk-retry routes through the
+  // retry job's sync_kind-aware re-push.
   const syncs = await ongoing.listOngoingOrderSyncs({
     medusa_order_id: req.params.orderId,
+    sync_kind: "order",
   })
 
   if (syncs.length === 0) {

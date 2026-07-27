@@ -223,7 +223,10 @@ export class OngoingClient {
   }
 
   async putOrder(order: PostOrderModel): Promise<{ ongoingOrderId: number }> {
-    const res = await this.request<{ orderId?: number | null; message?: string }>(
+    // openapi v57: both members are nullable (PostOrderResponse { orderId int32
+    // nullable, message string nullable }) — mirrors putReturnOrder below (bead
+    // 5u8). Harmless today: the guard only reads orderId, already null-tolerant.
+    const res = await this.request<{ orderId?: number | null; message?: string | null }>(
       "PUT",
       "/orders",
       order

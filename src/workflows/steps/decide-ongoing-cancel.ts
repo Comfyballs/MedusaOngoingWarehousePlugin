@@ -23,17 +23,25 @@ export type CancelDecision = {
   orderSyncId?: string
   ongoingOrderId?: number
   credentialKey?: string
+  // Operator-facing explanation, set only when reason is "status_not_cancellable".
+  refusedReason?: string
 }
 
+// Every branch pins sync_kind:"order" (8p8): return rows now live in this ledger
+// (sync_kind="return") keyed by their returnOrderNumber / return fulfillment id /
+// original order id. Without this filter, canceling an order (order-canceled.ts) or a
+// return fulfillment (fulfillment-canceled.ts) would resolve a return row, DELETE the
+// RETURN order in Ongoing, and flip the return ledger row to "cancelled" while emitting
+// a bogus ORDER_CANCELLED. Only outbound order rows are cancellable through this workflow.
 function buildFilter(input: DecideCancelInput): Record<string, string> {
   if (input.ongoing_order_number) {
-    return { ongoing_order_number: input.ongoing_order_number }
+    return { ongoing_order_number: input.ongoing_order_number, sync_kind: "order" }
   }
   if (input.medusa_fulfillment_id) {
-    return { medusa_fulfillment_id: input.medusa_fulfillment_id }
+    return { medusa_fulfillment_id: input.medusa_fulfillment_id, sync_kind: "order" }
   }
   if (input.medusa_order_id) {
-    return { medusa_order_id: input.medusa_order_id }
+    return { medusa_order_id: input.medusa_order_id, sync_kind: "order" }
   }
   return {}
 }
@@ -82,10 +90,14 @@ export const decideOngoingCancelHandler = async (
     // swallow (cancel step) gives idempotent safety. The strict
     // cancellable_status_codes gate only applies once the status is known.
     if (statusKnown && !codes.includes(status)) {
+      const statusLabel = sync.latest_status_text
+        ? `${status} (${sync.latest_status_text})`
+        : `${status}`
       return new StepResponse({
         shouldCancel: false,
         reason: "status_not_cancellable",
         orderSyncId: sync.id,
+        refusedReason: `Ongoing status ${statusLabel} is not in cancellable_status_codes — the Ongoing order was not cancelled and may still ship. Reconcile it in Ongoing.`,
       })
     }
 

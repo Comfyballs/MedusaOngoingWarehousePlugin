@@ -19,6 +19,9 @@ export const markOrderSyncCancelledHandler = async (
     error_class: null,
     last_error: null,
     last_synced_at: new Date(),
+    // A successful cancel supersedes any prior refusal (eer) — clear the flag.
+    cancel_refused_at: null,
+    cancel_refused_reason: null,
   })
 
   return new StepResponse({ orderSyncId: input.orderSyncId })

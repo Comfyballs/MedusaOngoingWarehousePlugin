@@ -78,6 +78,7 @@ describe("POST /admin/ongoing/orders/:orderId/repush", () => {
     expect(ongoingService.listOngoingOrderSyncs).toHaveBeenCalledWith({
       medusa_order_id: "order_1",
       medusa_fulfillment_id: "ful_from_other_order",
+      sync_kind: "order",
     })
     expect(pushOrderToOngoing).not.toHaveBeenCalled()
     expect(workflowRun).not.toHaveBeenCalled()
@@ -99,6 +100,7 @@ describe("POST /admin/ongoing/orders/:orderId/repush", () => {
     expect(ongoingService.listOngoingOrderSyncs).toHaveBeenCalledWith({
       medusa_order_id: "order_1",
       medusa_fulfillment_id: "ful_1",
+      sync_kind: "order",
     })
     expect(pushOrderToOngoing).toHaveBeenCalledWith(req.scope)
     expect(workflowRun).toHaveBeenCalledWith({ input: { fulfillment_id: "ful_1" } })
