@@ -87,6 +87,10 @@ type Props = {
   testConnection: UseMutationResult<TestConnectionResult, Error, string>
   testResult: string | null
   error: string | null
+  // Disables every editable field while a create/update mutation is in flight, so
+  // the operator can't mutate form state mid-submit (bead i85). The immutable edit-mode
+  // credential-key / stock-location Inputs stay disabled regardless.
+  disabled?: boolean
 }
 
 // Placeholder that distinguishes "loading" and "fetch failed" from a genuinely
@@ -124,20 +128,21 @@ export function IntegrationFormFields({
   testConnection,
   testResult,
   error,
+  disabled,
 }: Props) {
   return (
     <div className="flex flex-col gap-y-4">
       <div className="flex flex-col gap-y-2">
-        <Label>Credential key</Label>
+        <Label htmlFor="ongoing-credential-key">Credential key</Label>
         {isEdit ? (
-          <Input value={form.credential_key} disabled />
+          <Input id="ongoing-credential-key" value={form.credential_key} disabled />
         ) : (
           <Select
             value={form.credential_key}
-            disabled={credentialKeysLoading || credentialKeysError}
+            disabled={disabled || credentialKeysLoading || credentialKeysError}
             onValueChange={(value) => setForm({ ...form, credential_key: value })}
           >
-            <Select.Trigger>
+            <Select.Trigger id="ongoing-credential-key">
               <Select.Value
                 placeholder={selectPlaceholder(
                   credentialKeysLoading,
@@ -165,16 +170,16 @@ export function IntegrationFormFields({
       </div>
 
       <div className="flex flex-col gap-y-2">
-        <Label>Stock location</Label>
+        <Label htmlFor="ongoing-stock-location">Stock location</Label>
         {isEdit ? (
-          <Input value={form.stock_location_id} disabled />
+          <Input id="ongoing-stock-location" value={form.stock_location_id} disabled />
         ) : (
           <Select
             value={form.stock_location_id}
-            disabled={stockLocationsLoading || stockLocationsError}
+            disabled={disabled || stockLocationsLoading || stockLocationsError}
             onValueChange={(value) => setForm({ ...form, stock_location_id: value })}
           >
-            <Select.Trigger>
+            <Select.Trigger id="ongoing-stock-location">
               <Select.Value
                 placeholder={selectPlaceholder(
                   stockLocationsLoading,
@@ -208,48 +213,57 @@ export function IntegrationFormFields({
       </div>
 
       <div className="flex items-center justify-between">
-        <Label>Enabled</Label>
+        <Label htmlFor="ongoing-enabled">Enabled</Label>
         <Switch
+          id="ongoing-enabled"
           checked={form.enabled}
+          disabled={disabled}
           onCheckedChange={(checked) => setForm({ ...form, enabled: checked })}
         />
       </div>
 
       <div className="flex items-center justify-between">
-        <Label>Stock sync enabled</Label>
+        <Label htmlFor="ongoing-stock-sync-enabled">Stock sync enabled</Label>
         <Switch
+          id="ongoing-stock-sync-enabled"
           checked={form.stock_sync_enabled}
+          disabled={disabled}
           onCheckedChange={(checked) => setForm({ ...form, stock_sync_enabled: checked })}
         />
       </div>
 
       <div className="flex flex-col gap-y-2">
-        <Label>Stock sync interval (ms)</Label>
+        <Label htmlFor="ongoing-stock-sync-interval">Stock sync interval (ms)</Label>
         <Input
+          id="ongoing-stock-sync-interval"
           value={form.stock_sync_interval}
+          disabled={disabled}
           onChange={(e) => setForm({ ...form, stock_sync_interval: e.target.value })}
           placeholder="e.g. 300000"
         />
       </div>
 
       <div className="flex flex-col gap-y-2">
-        <Label>Status poll interval (ms)</Label>
+        <Label htmlFor="ongoing-status-poll-interval">Status poll interval (ms)</Label>
         <Input
+          id="ongoing-status-poll-interval"
           value={form.status_poll_interval}
+          disabled={disabled}
           onChange={(e) => setForm({ ...form, status_poll_interval: e.target.value })}
           placeholder="e.g. 60000"
         />
       </div>
 
       <div className="flex flex-col gap-y-2">
-        <Label>Stock reconcile mode</Label>
+        <Label htmlFor="ongoing-stock-reconcile-mode">Stock reconcile mode</Label>
         <Select
           value={form.stock_reconcile_mode}
+          disabled={disabled}
           onValueChange={(value) =>
             setForm({ ...form, stock_reconcile_mode: value as StockReconcileMode })
           }
         >
-          <Select.Trigger>
+          <Select.Trigger id="ongoing-stock-reconcile-mode">
             <Select.Value />
           </Select.Trigger>
           <Select.Content>
@@ -263,10 +277,12 @@ export function IntegrationFormFields({
       {/* MVP editor: raw JSON. Out of scope for #40/#41 to build a structured
           rule builder. */}
       <div className="flex flex-col gap-y-2">
-        <Label>Edit sync rules (JSON)</Label>
+        <Label htmlFor="ongoing-edit-sync-rules">Edit sync rules (JSON)</Label>
         <Textarea
+          id="ongoing-edit-sync-rules"
           rows={6}
           value={form.edit_sync_rules_json}
+          disabled={disabled}
           onChange={(e) => setForm({ ...form, edit_sync_rules_json: e.target.value })}
           placeholder='{"address": "resync", "line_items": "cancel_and_recreate"}'
         />
@@ -276,6 +292,7 @@ export function IntegrationFormFields({
         label="Shipped status codes"
         statuses={testConnection.data?.statuses ?? []}
         selected={form.shipped_status_codes}
+        disabled={disabled}
         onChange={(next) => setForm({ ...form, shipped_status_codes: next })}
       />
 
@@ -283,6 +300,7 @@ export function IntegrationFormFields({
         label="Cancellable status codes"
         statuses={testConnection.data?.statuses ?? []}
         selected={form.cancellable_status_codes}
+        disabled={disabled}
         onChange={(next) => setForm({ ...form, cancellable_status_codes: next })}
       />
 
@@ -290,7 +308,7 @@ export function IntegrationFormFields({
         <Button
           size="small"
           variant="secondary"
-          disabled={!form.credential_key || testConnection.isPending}
+          disabled={disabled || !form.credential_key || testConnection.isPending}
           isLoading={testConnection.isPending}
           onClick={() => testConnection.mutate(form.credential_key)}
         >

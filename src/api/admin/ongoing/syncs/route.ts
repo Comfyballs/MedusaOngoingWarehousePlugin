@@ -9,6 +9,9 @@ import {
 
 const DEFAULT_LIMIT = 20
 const DEFAULT_OFFSET = 0
+// Upper bound on `?limit=` so a caller can't request an unbounded page (a huge `take`
+// would let a single request pull the entire ledger and pin the DB) — bead i85.
+const MAX_LIMIT = 100
 // The default dashboard view surfaces the actionable states; `shipped`/`cancelled` are
 // summarised but omitted here unless the caller asks for them via `?state=` (bead on2).
 const DASHBOARD_SYNC_STATES = ["error", "sent", "pending"] as const
@@ -55,7 +58,7 @@ function parseStatesParam(value: unknown): readonly string[] {
 }
 
 export async function GET(req: MedusaRequest, res: MedusaResponse): Promise<void> {
-  const take = parseIntParam(req.query.limit, DEFAULT_LIMIT)
+  const take = Math.min(parseIntParam(req.query.limit, DEFAULT_LIMIT), MAX_LIMIT)
   const skip = parseIntParam(req.query.offset, DEFAULT_OFFSET)
   const states = parseStatesParam(req.query.state)
 

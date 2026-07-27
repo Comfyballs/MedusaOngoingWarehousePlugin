@@ -115,9 +115,34 @@ class OngoingModuleService extends MedusaService({
       ongoing_order_number: input.ongoing_order_number,
     })
 
-    const data = { ...input, last_synced_at: new Date() }
+    const data: Record<string, unknown> = { ...input, last_synced_at: new Date() }
 
     if (existing) {
+      // Reaching a terminal success (sent / shipped / cancelled) clears the previous
+      // failed attempt's bookkeeping so a now-successful row does not keep surfacing a
+      // stale retry_count / error_class / last_error on the dashboard and order widget
+      // (bead i85). An explicit value in the input still wins.
+      //
+      // CRITICAL: this must NOT fire on "pending". A retry re-runs the push, which calls
+      // recordSync({ sync_state: "pending" }) BEFORE the PUT (push-order-record-sync.ts)
+      // while the retry job has already CAS-advanced retry_count on the still-"error" row.
+      // Zeroing retry_count here would pin it at 0 forever → backoff never grows and the
+      // dead-letter threshold is never reached. retry_count is owned by the retry job
+      // (attemptRetrySyncTransition); recordSync only clears it once the push actually
+      // succeeds. "error" and "pending" are both left untouched.
+      const isTerminalSuccess =
+        input.sync_state === "sent" ||
+        input.sync_state === "shipped" ||
+        input.sync_state === "cancelled"
+      if (isTerminalSuccess) {
+        data.retry_count = 0
+        if (input.error_class === undefined) {
+          data.error_class = null
+        }
+        if (input.last_error === undefined) {
+          data.last_error = null
+        }
+      }
       // Single-object input -> auto-CRUD returns a single entity (not an array).
       const updated = await this.updateOngoingOrderSyncs({ id: existing.id, ...data })
       return { id: updated.id }

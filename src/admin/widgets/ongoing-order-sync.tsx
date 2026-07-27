@@ -116,6 +116,16 @@ const OngoingOrderSyncWidget = ({ data }: DetailWidgetProps<AdminOrder>) => {
     isEmpty: (d) => (d.syncs?.length ?? 0) === 0,
   })
 
+  // Render nothing until the first response resolves. This widget sits on EVERY
+  // order detail page, but most orders have no Ongoing sync rows; showing the
+  // Container + header + spinner during the initial fetch flashes an empty panel
+  // on non-Ongoing orders before it resolves to null. `isLoading` is only true on
+  // the first load (background refetches keep cached data, so content never blinks
+  // out later), so this suppresses the flicker without hiding refreshes (bead i85).
+  if (isLoading) {
+    return null
+  }
+
   // Bespoke: unlike the dashboard surfaces, the widget hides itself entirely
   // when the order has no Ongoing sync rows rather than rendering an empty-state
   // message — hence the early return instead of QueryStateView's emptyMessage.

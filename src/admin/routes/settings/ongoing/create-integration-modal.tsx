@@ -50,7 +50,7 @@ export function CreateIntegrationModal({ open, onClose }: Props) {
     isLoading: stockLocationsLoading,
     isError: stockLocationsError,
   } = useQuery({
-    queryFn: () => sdk.admin.stockLocation.list({ limit: 100 }),
+    queryFn: () => sdk.admin.stockLocation.list({ limit: 1000 }),
     queryKey: ["ongoing-stock-locations-for-create"],
     enabled: open,
   })
@@ -85,11 +85,28 @@ export function CreateIntegrationModal({ open, onClose }: Props) {
       toast.success("Integration created")
       onClose()
     },
-    onError: (err: Error) => setError(err.message),
+    onError: (err: Error) => {
+      setError(err.message)
+      toast.error(err.message)
+    },
   })
 
   const handleSubmit = () => {
     setError(null)
+
+    // Client-side required-field validation before the round-trip: credential key
+    // and stock location are both mandatory and immutable after creation, so catch
+    // an empty selection here with a clear message instead of surfacing a raw
+    // server error (bead i85).
+    if (!form.credential_key) {
+      setError("Select a credential key before saving.")
+      return
+    }
+    if (!form.stock_location_id) {
+      setError("Select a stock location before saving.")
+      return
+    }
+
     let edit_sync_rules: Record<string, unknown> | null
     try {
       edit_sync_rules = parseEditSyncRulesJson(form.edit_sync_rules_json)
@@ -133,6 +150,7 @@ export function CreateIntegrationModal({ open, onClose }: Props) {
               testConnection={testConnection}
               testResult={testResult}
               error={error}
+              disabled={createMutation.isPending}
             />
           </FocusModal.Body>
           <FocusModal.Footer>
