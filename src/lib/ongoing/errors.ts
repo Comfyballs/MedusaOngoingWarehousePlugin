@@ -7,7 +7,9 @@ export type OngoingErrorKind = "retryable" | "terminal"
 export type OngoingApiErrorReason = "unexpected_body_shape"
 
 export function classifyHttpStatus(status: number): OngoingErrorKind {
-  if (status === 429 || status >= 500) {
+  // 408 Request Timeout: some gateways/WAFs emit it on slow client writes; it is
+  // transient like 429/5xx, so retry rather than dead-letter (bead gbl).
+  if (status === 408 || status === 429 || status >= 500) {
     return "retryable"
   }
   return "terminal"

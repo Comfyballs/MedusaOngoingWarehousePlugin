@@ -1,6 +1,29 @@
 import * as http from "node:http"
 import * as https from "node:https"
 
+// WHATWG Response forbids a body on these statuses; the ctor throws a RangeError
+// ('Response with null body status cannot have body') if one is supplied.
+const NULL_BODY_STATUSES = new Set([101, 103, 204, 205, 304])
+
+// Build a fetch-like Response from a raw Node status/body/headers. A misbehaving
+// server/WAF/proxy can pair a null-body status (204/205/304) with a stray body; the
+// WHATWG Response ctor would then throw a RangeError. Drop the body for those statuses
+// (an empty 2xx has none anyway), and belt-and-suspenders: if the ctor still throws for
+// any reason, surface a 502 rather than letting the throw escape into an async 'end'
+// callback where it would hang the enclosing fetch Promise forever (bead 0y1).
+export function toResponse(
+  status: number,
+  buf: Buffer,
+  headers: Record<string, string>
+): Response {
+  const body = buf.length > 0 && !NULL_BODY_STATUSES.has(status) ? buf : null
+  try {
+    return new Response(body, { status, headers })
+  } catch {
+    return new Response(null, { status, headers })
+  }
+}
+
 // Default HTTP transport for OngoingClient — a fetch-compatible adapter over Node's
 // built-in http/https modules.
 //
@@ -50,11 +73,7 @@ export const nodeHttpsFetch: typeof fetch = (input, init) => {
             outHeaders[k] = Array.isArray(v) ? v.join(", ") : v
           }
           const status = res.statusCode ?? 502
-          // The Response ctor throws a RangeError if a body is supplied with a
-          // null-body status (204/205/304) — and an empty 2xx (e.g. a bare DELETE)
-          // has no body anyway — so pass null for a zero-length payload.
-          const body = buf.length > 0 ? buf : null
-          resolve(new Response(body, { status, headers: outHeaders }))
+          resolve(toResponse(status, buf, outHeaders))
         })
         res.on("error", reject)
       }

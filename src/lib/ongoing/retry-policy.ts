@@ -110,16 +110,27 @@ export function resolveRetryOutcome(
  * (250ms base, a few quick in-request retries for a transient network blip) — don't
  * conflate the two time scales when tuning (bead 8jj).
  *
- * The optional `opts` parameter allows overriding base/cap in unit tests.
+ * A randomized jitter is added on top so that many failed rows sharing a single
+ * Ongoing outage don't all become due on the same cron tick and retry in lockstep
+ * (bead e6f). Jitter is purely ADDITIVE ([0, jitterRatio * delay]) so a row never
+ * becomes eligible EARLIER than its intended exponential backoff — it only spreads
+ * the synchronized burst forward in time.
+ *
+ * The optional `opts` parameter allows overriding base/cap and injecting a
+ * deterministic `rng` in unit tests.
  */
 export const BASE_RETRY_BACKOFF_MS = 300_000
 export const MAX_RETRY_BACKOFF_MS = 3_600_000
+export const RETRY_JITTER_RATIO = 0.2
 
 export function computeRetryBackoffMs(
   retryCount: number,
-  opts: { baseMs?: number; capMs?: number } = {}
+  opts: { baseMs?: number; capMs?: number; jitterRatio?: number; rng?: () => number } = {}
 ): number {
   const base = opts.baseMs ?? BASE_RETRY_BACKOFF_MS
   const cap = opts.capMs ?? MAX_RETRY_BACKOFF_MS
-  return Math.min(cap, base * 2 ** retryCount)
+  const jitterRatio = opts.jitterRatio ?? RETRY_JITTER_RATIO
+  const rng = opts.rng ?? Math.random
+  const delay = Math.min(cap, base * 2 ** retryCount)
+  return Math.round(delay + delay * jitterRatio * rng())
 }

@@ -74,35 +74,70 @@ describe("resolveRetryOutcome", () => {
 })
 
 describe("computeRetryBackoffMs", () => {
+  // rng: () => 0 pins jitter to zero so the exponential schedule is asserted exactly.
+  const noJitter = { rng: () => 0 }
+
   it("retry 0 → BASE (5 min = 300_000 ms)", () => {
-    expect(computeRetryBackoffMs(0)).toBe(300_000)
+    expect(computeRetryBackoffMs(0, noJitter)).toBe(300_000)
   })
 
   it("retry 1 → 2× BASE (10 min = 600_000 ms)", () => {
-    expect(computeRetryBackoffMs(1)).toBe(600_000)
+    expect(computeRetryBackoffMs(1, noJitter)).toBe(600_000)
   })
 
   it("retry 2 → 4× BASE (20 min = 1_200_000 ms)", () => {
-    expect(computeRetryBackoffMs(2)).toBe(1_200_000)
+    expect(computeRetryBackoffMs(2, noJitter)).toBe(1_200_000)
   })
 
   it("retry 3 → 8× BASE (40 min = 2_400_000 ms)", () => {
-    expect(computeRetryBackoffMs(3)).toBe(2_400_000)
+    expect(computeRetryBackoffMs(3, noJitter)).toBe(2_400_000)
   })
 
   it("retry 4 → capped at MAX (60 min = 3_600_000 ms)", () => {
-    expect(computeRetryBackoffMs(4)).toBe(3_600_000)
+    expect(computeRetryBackoffMs(4, noJitter)).toBe(3_600_000)
   })
 
   it("retry 10 → still capped at MAX (3_600_000 ms)", () => {
-    expect(computeRetryBackoffMs(10)).toBe(3_600_000)
+    expect(computeRetryBackoffMs(10, noJitter)).toBe(3_600_000)
   })
 
   it("retry 0 with explicit opts base=1000, cap=4000 → 1000", () => {
-    expect(computeRetryBackoffMs(0, { baseMs: 1_000, capMs: 4_000 })).toBe(1_000)
+    expect(computeRetryBackoffMs(0, { baseMs: 1_000, capMs: 4_000, rng: () => 0 })).toBe(1_000)
   })
 
   it("retry 2 with explicit opts base=1000, cap=4000 → capped at 4000", () => {
-    expect(computeRetryBackoffMs(2, { baseMs: 1_000, capMs: 4_000 })).toBe(4_000)
+    expect(computeRetryBackoffMs(2, { baseMs: 1_000, capMs: 4_000, rng: () => 0 })).toBe(4_000)
+  })
+
+  describe("jitter (bead e6f)", () => {
+    it("adds full +20% jitter when rng returns 1", () => {
+      // 300_000 + 300_000 * 0.2 * 1 = 360_000
+      expect(computeRetryBackoffMs(0, { rng: () => 1 })).toBe(360_000)
+    })
+
+    it("adds half the jitter band when rng returns 0.5", () => {
+      // 300_000 + 300_000 * 0.2 * 0.5 = 330_000
+      expect(computeRetryBackoffMs(0, { rng: () => 0.5 })).toBe(330_000)
+    })
+
+    it("jitter is purely additive — never earlier than the base exponential delay", () => {
+      const base = computeRetryBackoffMs(2, { rng: () => 0 })
+      for (const r of [0, 0.25, 0.5, 0.75, 1]) {
+        expect(computeRetryBackoffMs(2, { rng: () => r })).toBeGreaterThanOrEqual(base)
+      }
+    })
+
+    it("respects an explicit jitterRatio override", () => {
+      // 300_000 + 300_000 * 0.5 * 1 = 450_000
+      expect(computeRetryBackoffMs(0, { jitterRatio: 0.5, rng: () => 1 })).toBe(450_000)
+    })
+
+    it("defaults to Math.random and stays within [delay, delay*1.2]", () => {
+      for (let i = 0; i < 50; i++) {
+        const v = computeRetryBackoffMs(1)
+        expect(v).toBeGreaterThanOrEqual(600_000)
+        expect(v).toBeLessThanOrEqual(720_000)
+      }
+    })
   })
 })

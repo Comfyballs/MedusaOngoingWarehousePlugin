@@ -1,4 +1,4 @@
-import { OngoingClient } from "../client"
+import { OngoingClient, parseRetryAfter } from "../client"
 import { OngoingApiError } from "../errors"
 import type { OngoingCredentials } from "../types"
 
@@ -153,5 +153,46 @@ describe("OngoingClient.request", () => {
     // @ts-expect-error private
     const data = await client.request("DELETE", "/orders/1")
     expect(data).toBeUndefined()
+  })
+
+  it("retries an explicit 408 Request Timeout (classified retryable, bead gbl)", async () => {
+    const fetchImpl = jest
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(408, { error: "timeout" }))
+      .mockResolvedValueOnce(jsonResponse(200, { ok: 1 }))
+    const sleep = jest.fn().mockResolvedValue(undefined)
+    const client = new OngoingClient(creds, { fetchImpl, sleep, maxRetries: 2 })
+    // @ts-expect-error private
+    const data = await client.request("GET", "/x")
+    expect(data).toEqual({ ok: 1 })
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe("parseRetryAfter (bead gbl)", () => {
+  const now = Date.parse("2026-07-27T12:00:00Z")
+
+  it("returns undefined for a missing header", () => {
+    expect(parseRetryAfter(null, now)).toBeUndefined()
+  })
+
+  it("parses the delta-seconds form to milliseconds", () => {
+    expect(parseRetryAfter("2", now)).toBe(2000)
+    expect(parseRetryAfter("  120 ", now)).toBe(120_000)
+    expect(parseRetryAfter("0", now)).toBe(0)
+  })
+
+  it("parses the HTTP-date form relative to now", () => {
+    // 30 seconds into the future.
+    expect(parseRetryAfter("Mon, 27 Jul 2026 12:00:30 GMT", now)).toBe(30_000)
+  })
+
+  it("clamps a past HTTP-date to 0 (retry now)", () => {
+    expect(parseRetryAfter("Mon, 27 Jul 2026 11:59:00 GMT", now)).toBe(0)
+  })
+
+  it("returns undefined for an unparseable header (falls back to backoff)", () => {
+    expect(parseRetryAfter("not-a-date", now)).toBeUndefined()
+    expect(parseRetryAfter("", now)).toBeUndefined()
   })
 })

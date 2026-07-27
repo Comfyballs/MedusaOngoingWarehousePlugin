@@ -427,10 +427,22 @@ function safeJsonForDiagnostics(text: string): unknown {
   }
 }
 
-function parseRetryAfter(header: string | null): number | undefined {
+// Per RFC 7231 Retry-After is EITHER a non-negative delta-seconds integer OR an
+// HTTP-date. Handle both: the numeric form maps straight to ms; the date form is
+// resolved against the current clock and clamped to >= 0 (a past date -> retry now).
+// An unparseable header yields undefined, letting the caller fall back to backoff (bead gbl).
+export function parseRetryAfter(header: string | null, nowMs: number = Date.now()): number | undefined {
   if (!header) {
     return undefined
   }
-  const seconds = Number(header)
-  return Number.isFinite(seconds) ? seconds * 1000 : undefined
+  const trimmed = header.trim()
+  // delta-seconds form: an all-digits token (Number("") is 0, so guard emptiness).
+  if (/^\d+$/.test(trimmed)) {
+    return Number(trimmed) * 1000
+  }
+  const dateMs = Date.parse(trimmed)
+  if (Number.isFinite(dateMs)) {
+    return Math.max(0, dateMs - nowMs)
+  }
+  return undefined
 }
