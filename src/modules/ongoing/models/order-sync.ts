@@ -2,13 +2,16 @@ import { model } from "@medusajs/framework/utils"
 
 const OngoingOrderSync = model.define("ongoing_order_sync", {
   id: model.id().primaryKey(),
-  integration_id: model.text(),
   // Discriminates an outbound order push from a return push (8p8). Return rows
   // reuse this ledger so the retry-failed-syncs job gives them the same
   // backoff/dead-letter machinery; the job branches its re-push on this field.
   // For a return row, medusa_fulfillment_id holds the RETURN fulfillment id and
   // ongoing_order_number holds the returnOrderNumber.
   sync_kind: model.enum(["order", "return"]).default("order"),
+  // w0a: status-poll.ts runs listOngoingOrderSyncs({ integration_id }) every
+  // minute per integration; without this index that tick full-scans a table
+  // that only grows with order volume.
+  integration_id: model.text().index(),
   medusa_order_id: model.text().index(),
   medusa_fulfillment_id: model.text().index().nullable(),
   ongoing_order_number: model.text().unique(),
@@ -32,6 +35,13 @@ const OngoingOrderSync = model.define("ongoing_order_sync", {
   // order widget and reconciles in Ongoing. Cleared on the next successful cancel.
   cancel_refused_at: model.dateTime().nullable(),
   cancel_refused_reason: model.text().nullable(),
-})
+}).indexes([
+  // w0a: retry-failed-syncs.ts runs listOngoingOrderSyncs({ sync_state: "error",
+  // error_class: "retryable" }) every minute. A composite index on both columns
+  // keeps that every-tick sweep off a full table scan as the ledger grows.
+  {
+    on: ["sync_state", "error_class"],
+  },
+])
 
 export default OngoingOrderSync
