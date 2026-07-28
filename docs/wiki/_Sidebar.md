@@ -6,6 +6,7 @@
 - [[Setup guide|User-Setup-Guide]]
 - [[Configuration reference|User-Configuration-Reference]]
 - [[How it works|User-How-It-Works]]
+- [[Sync reference|User-Sync-Reference]]
 - [[Daily operation|User-Daily-Operation]]
 - [[Troubleshooting|User-Troubleshooting]]
 - [[Verification|User-Verification]]

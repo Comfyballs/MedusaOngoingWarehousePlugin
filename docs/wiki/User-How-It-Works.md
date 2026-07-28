@@ -1,4 +1,4 @@
-This page explains what the integration does automatically end-to-end — order push, shipment and tracking, inventory sync, order edits, cancellation, retries and orphan repair — and the sync-state machine that ties it together. Read it to understand the moving parts before operating the plugin day to day (see [[User Daily Operation]]) or debugging it (see [[User Troubleshooting]]).
+This page explains what the integration does automatically end-to-end — order push, shipment and tracking, inventory sync, order edits, cancellation, retries and orphan repair — and the sync-state machine that ties it together. Read it to understand the moving parts before operating the plugin day to day (see [[User Daily Operation]]) or debugging it (see [[User Troubleshooting]]). For a quick lookup — a trigger-to-action map, exactly how status codes are interpreted, and the tracking-label shape — see [[User Sync Reference]].
 
 ## Order push — triggered by fulfillment, not order placement
 
@@ -100,10 +100,11 @@ The webhook route always returns `200` after authentication, even if the interna
 
 ## Domain events for custom alerting
 
-The plugin emits best-effort `ongoing.sync.*` events you can subscribe to in your own app: `order_pushed`, `push_failed`, `shipment_applied`, `order_cancelled`, `order_retried`, `order_dead_lettered`, `inventory_synced`, and `edit_blocked`. They are observability signals — the plugin itself does not consume them. Subscribing to `order_dead_lettered` or `edit_blocked` is a good basis for ops alerting.
+The plugin emits best-effort `ongoing.sync.*` events you can subscribe to in your own app: `order_pushed`, `push_failed`, `shipment_applied`, `order_cancelled`, `order_retried`, `order_dead_lettered`, `inventory_synced`, `edit_blocked`, `return_order_pushed`, `return_order_push_failed`, and `return_status_received`. They are observability signals — the plugin itself does not consume them. Subscribing to `order_dead_lettered` or `edit_blocked` is a good basis for ops alerting, and `return_status_received` is the current hook for return activity (the plugin logs and emits it but does not auto-mutate the Medusa return — see [[User Sync Reference]]).
 
 ## Related pages
 
+- [[User Sync Reference]]
 - [[User Daily Operation]]
 - [[User Configuration Reference]]
 - [[User Troubleshooting]]

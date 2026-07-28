@@ -8,6 +8,7 @@ Install and operate the integration in your Medusa app:
 - [[User Setup Guide]] — full recommended setup, including Ongoing-side webhook configuration
 - [[User Configuration Reference]] — every plugin option, default, and validation rule
 - [[User How It Works]] — what happens automatically: order push, shipments, inventory, edits, cancellations, retries
+- [[User Sync Reference]] — trigger-to-action map, how status codes are interpreted, how tracking is stored
 - [[User Daily Operation]] — the admin dashboard and order sync widget
 - [[User Troubleshooting]] — sync states, common failures, and fixes
 - [[User Verification]] — confirm the integration works end to end
