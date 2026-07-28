@@ -4,7 +4,21 @@ This page explains the Ongoing Warehouse concepts you need to know before settin
 
 A **goods owner** (`goodsOwnerId`) is Ongoing's tenant concept. Every article, order, and inventory record in an Ongoing warehouse belongs to a specific goods owner. Your Ongoing REST credentials are scoped to one goods owner.
 
-In this plugin, **one goods owner maps to one Medusa stock location**. Each entry in the plugin's `integrations` option describes a single goods owner, and creating an integration in the admin binds that goods owner to exactly one stock location.
+In this plugin the relationship is strictly **one-to-one all the way down**:
+
+```text
+goods owner  ⇄  credential key  ⇄  Medusa stock location  ⇄  integration row
+(goodsOwnerId)   (key)             (stock_location_id)        (one per pair)
+```
+
+- Each entry in the plugin's `integrations` option describes **one goods owner** and carries its `goodsOwnerId` plus a unique credential `key`.
+- Creating an integration in the admin binds one credential `key` to **exactly one** Medusa stock location.
+- Both sides are **unique and exclusive**: a credential key can be used by only one integration, and a stock location can be served by only one goods owner. You **cannot** point two goods owners at the same location, and the database enforces this — so a location you create is effectively *dedicated* to the single goods owner you bind it to.
+- The binding is **immutable after creation** — to change which location a goods owner uses, delete the integration and create a new one.
+
+**To serve one goods owner:** create a Medusa stock location, add that goods owner to the `integrations` option, then create an integration binding the two. See [[User Setup Guide]].
+
+**To serve several goods owners:** repeat the whole pattern once per goods owner — N goods owners means N `integrations` entries, N stock locations, and N integration rows. There is no shared-location or many-to-one arrangement.
 
 ## Articles
 

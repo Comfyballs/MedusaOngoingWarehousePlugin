@@ -4,7 +4,7 @@ This page walks you through a recommended setup: install the plugin, register it
 
 - A Medusa v2 app on **2.16.0** (the version this plugin is pinned to), Node **20 or newer**.
 - Ongoing REST API credentials for at least one goods owner (base URL including `/api/v1`, username, password, and goods-owner id). These come from Ongoing — see [[User Ongoing Concepts]].
-- At least one Medusa **stock location** to bind the warehouse to.
+- At least one Medusa **stock location** to bind the warehouse to. Each goods owner needs its own dedicated location — the binding is one-to-one and a location cannot be shared between goods owners (see [[User Ongoing Concepts]]).
 
 ## Step 1 — install the plugin
 

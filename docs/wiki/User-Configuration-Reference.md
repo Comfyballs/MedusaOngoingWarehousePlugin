@@ -6,7 +6,7 @@ You pass these in the consuming app's `medusa-config.ts` under the plugin's `opt
 
 | Option | Type | Required | Default | Controls |
 |---|---|---|---|---|
-| `integrations` | `OngoingCredentials[]` | Yes (array, may be empty) | — | One entry per Ongoing goods owner. See the per-integration table below. |
+| `integrations` | `OngoingCredentials[]` | Yes (array, may be empty) | — | One entry per Ongoing goods owner; each binds one-to-one to a single Medusa stock location. See the per-integration table below and the mapping in [[User Ongoing Concepts]]. |
 | `defaultStockSyncInterval` | `string` (milliseconds, as a decimal string) | No | `"600000"` (10 minutes) | Fallback stock-sync interval used when an integration row leaves `stock_sync_interval` blank. |
 | `defaultStatusPollInterval` | `string` (milliseconds) | No | `"60000"` (1 minute) | Fallback status-poll interval used when an integration row leaves `status_poll_interval` blank. |
 | `rateLimitConcurrency` | `number` | No | `1` | Maximum concurrent Ongoing API calls per goods owner. Ongoing recommends fully sequential calls — leave at `1` unless Ongoing support advises otherwise. |
