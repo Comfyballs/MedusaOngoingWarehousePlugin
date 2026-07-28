@@ -73,17 +73,23 @@ export async function resolveReturnOriginHandler(
   )
 
   // A return can only be pushed once the ORIGINAL order actually reached Ongoing
-  // (sent) or has already shipped there — pick the most recently synced row in
-  // either state that carries a usable ongoing_order_id. Rows still `pending`,
-  // `error`, or `cancelled` are not eligible origins.
+  // (sent) or has moved past that toward completion — pick the most recently
+  // synced row in an eligible state that carries a usable ongoing_order_id.
+  // `delivered` (pickup collected, 500) is included: returns most often follow
+  // delivery, and a delivered order is still a valid return origin (bead 18m).
+  // Rows still `pending`, `error`, or `cancelled` are not eligible origins.
   const origin = rows.find(
-    (r) => (r.sync_state === "shipped" || r.sync_state === "sent") && typeof r.ongoing_order_id === "number"
+    (r) =>
+      (r.sync_state === "shipped" ||
+        r.sync_state === "delivered" ||
+        r.sync_state === "sent") &&
+      typeof r.ongoing_order_id === "number"
   )
 
   if (!origin || typeof origin.ongoing_order_id !== "number") {
     throw new MedusaError(
       MedusaError.Types.NOT_FOUND,
-      `[ongoing] order "${order.id}" has no sent/shipped Ongoing order to return against ` +
+      `[ongoing] order "${order.id}" has no sent/shipped/delivered Ongoing order to return against ` +
         `(cannot resolve customerOrder.orderId for the return)`
     )
   }
