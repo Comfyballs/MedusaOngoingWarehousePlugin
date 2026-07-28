@@ -18,14 +18,23 @@ const OngoingOrderSync = model.define("ongoing_order_sync", {
   ongoing_order_id: model.number().nullable(),
   latest_status_code: model.number().nullable(),
   latest_status_text: model.text().nullable(),
+  // "delivered" is a post-"shipped" terminal stage for pickup orders: the order
+  // was sent (450 -> shipped), then collected at the pickup point (500). It is a
+  // distinct state so the 450 -> 500 transition is recorded rather than swallowed
+  // by the shipped short-circuit (bead 18m). See src/lib/ongoing/status-semantics.ts.
   sync_state: model
-    .enum(["pending", "sent", "shipped", "cancelled", "error"])
+    .enum(["pending", "sent", "shipped", "delivered", "cancelled", "error"])
     .default("pending"),
   error_class: model.enum(["retryable", "terminal"]).nullable(),
   last_synced_at: model.dateTime().nullable(),
   last_error: model.text().nullable(),
   retry_count: model.number().default(0),
   shipped_at: model.dateTime().nullable(),
+  // Set when a pickup order is collected at the pickup point (Ongoing status 500 /
+  // stage "delivered"). Distinct from shipped_at so the delivery seam is idempotent
+  // (a repeated 500 webhook/poll is a no-op) and so "shipped" vs "delivered" is a
+  // real distinction, not an overloaded flag (bead 18m).
+  delivered_at: model.dateTime().nullable(),
   edit_blocked_at: model.dateTime().nullable(),
   edit_blocked_category: model.enum(["address_contact", "line_items"]).nullable(),
   edit_blocked_reason: model.text().nullable(),

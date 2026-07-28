@@ -11,7 +11,7 @@ export type OngoingOrderSyncRow = {
   ongoing_order_id: number | null
   latest_status_code: number | null
   latest_status_text: string | null
-  sync_state: "pending" | "sent" | "shipped" | "cancelled" | "error"
+  sync_state: "pending" | "sent" | "shipped" | "delivered" | "cancelled" | "error"
   error_class: "retryable" | "terminal" | null
   last_synced_at: string | Date | null
   last_error: string | null

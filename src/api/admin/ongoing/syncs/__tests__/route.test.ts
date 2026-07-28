@@ -123,7 +123,7 @@ describe("GET /admin/ongoing/syncs", () => {
     expect(filter).toEqual({ sync_state: ["error", "sent", "pending"] })
   })
 
-  it("responds with { syncs, count, limit, offset, states, summary } — summary covers all 5 states", async () => {
+  it("responds with { syncs, count, limit, offset, states, summary } — summary covers all 6 states", async () => {
     const rows = [
       {
         id: "oos_1",
@@ -139,7 +139,7 @@ describe("GET /admin/ongoing/syncs", () => {
     const service = makeService({
       rows,
       count: 1,
-      summaryCounts: { pending: 2, sent: 1, shipped: 5, cancelled: 3, error: 1 },
+      summaryCounts: { pending: 2, sent: 1, shipped: 5, delivered: 4, cancelled: 3, error: 1 },
     })
     const res = makeRes()
 
@@ -151,7 +151,7 @@ describe("GET /admin/ongoing/syncs", () => {
       limit: 5,
       offset: 0,
       states: ["error", "sent", "pending"],
-      summary: { pending: 2, sent: 1, shipped: 5, cancelled: 3, error: 1 },
+      summary: { pending: 2, sent: 1, shipped: 5, delivered: 4, cancelled: 3, error: 1 },
     })
   })
 })

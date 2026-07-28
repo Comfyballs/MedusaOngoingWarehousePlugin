@@ -170,6 +170,22 @@
           "enumItems": [],
           "mappedType": "json"
         },
+        "delivered_status_codes": {
+          "name": "delivered_status_codes",
+          "type": "jsonb",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "json"
+        },
         "cancellable_status_codes": {
           "name": "cancellable_status_codes",
           "type": "jsonb",
@@ -590,6 +606,7 @@
             "pending",
             "sent",
             "shipped",
+            "delivered",
             "cancelled",
             "error"
           ],
@@ -664,6 +681,22 @@
         },
         "shipped_at": {
           "name": "shipped_at",
+          "type": "timestamptz",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": 6,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "datetime"
+        },
+        "delivered_at": {
+          "name": "delivered_at",
           "type": "timestamptz",
           "unsigned": false,
           "autoincrement": false,

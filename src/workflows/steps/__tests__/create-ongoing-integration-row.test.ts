@@ -16,6 +16,7 @@ const validInput: CreateOngoingIntegrationRowInput = {
   stock_reconcile_mode: "sellable_plus_reserved",
   edit_sync_rules: null,
   shipped_status_codes: null,
+  delivered_status_codes: null,
   cancellable_status_codes: null,
 }
 

@@ -26,10 +26,10 @@ import {
   type OngoingIntegrationsListResponse,
 } from "./connection-health"
 
-// All five ledger states -- the table can now be filtered to any of them via the
-// `?state=` drill-through (bead 7tq), so a fetched row may carry `shipped`/`cancelled`,
-// not just the three actionable states of the default view.
-type OngoingSyncState = "pending" | "sent" | "shipped" | "cancelled" | "error"
+// All six ledger states -- the table can now be filtered to any of them via the
+// `?state=` drill-through (bead 7tq), so a fetched row may carry `shipped`/`delivered`/
+// `cancelled`, not just the three actionable states of the default view.
+type OngoingSyncState = "pending" | "sent" | "shipped" | "delivered" | "cancelled" | "error"
 type OngoingErrorClass = "retryable" | "terminal"
 
 type OngoingSyncRow = {
@@ -49,7 +49,7 @@ type OngoingSyncRow = {
 // tsconfig from src/api's Node16 server build, so this file intentionally does
 // not reach into src/api/**.
 type OngoingSyncStateSummary = Record<
-  "pending" | "sent" | "shipped" | "cancelled" | "error",
+  "pending" | "sent" | "shipped" | "delivered" | "cancelled" | "error",
   number
 >
 
@@ -67,16 +67,18 @@ type RetrySyncsResponse = {
 }
 
 // Kept in lockstep with SUMMARY_BADGE_COLOR so a state reads the same colour in the
-// summary strip and the table (a `shipped` row and the `shipped` tile match). All five
-// states are distinct colours -- no two share one (bead 8bs item 5).
+// summary strip and the table (a `shipped` row and the `shipped` tile match). All six
+// states are distinct colours -- no two share one (bead 8bs item 5). `delivered` is
+// blue: a distinct settled colour next to shipped's green (bead 18m).
 const SYNC_STATE_BADGE_COLOR: Record<
   OngoingSyncState,
-  "red" | "orange" | "grey" | "green" | "purple"
+  "red" | "orange" | "grey" | "green" | "blue" | "purple"
 > = {
   error: "red",
   sent: "orange",
   pending: "grey",
   shipped: "green",
+  delivered: "blue",
   cancelled: "purple",
 }
 
@@ -92,17 +94,19 @@ const SUMMARY_STATE_ORDER: (keyof OngoingSyncStateSummary)[] = [
   "pending",
   "sent",
   "shipped",
+  "delivered",
   "cancelled",
 ]
 
 const SUMMARY_BADGE_COLOR: Record<
   keyof OngoingSyncStateSummary,
-  "red" | "grey" | "orange" | "green" | "purple"
+  "red" | "grey" | "orange" | "green" | "blue" | "purple"
 > = {
   error: "red",
   pending: "grey",
   sent: "orange",
   shipped: "green",
+  delivered: "blue",
   cancelled: "purple",
 }
 

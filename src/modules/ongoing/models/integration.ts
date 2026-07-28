@@ -13,6 +13,10 @@ const OngoingIntegration = model.define("ongoing_integration", {
     .default("sellable_plus_reserved"),
   edit_sync_rules: model.json().nullable(),
   shipped_status_codes: model.json().nullable(),
+  // Ongoing status codes that mark a pickup order as collected/delivered (canonical:
+  // 500 "Hentet"). Parallel to shipped_status_codes; null/empty falls back to the
+  // canonical defaults in src/lib/ongoing/status-semantics.ts (bead 18m).
+  delivered_status_codes: model.json().nullable(),
   cancellable_status_codes: model.json().nullable(),
   last_stock_sync_at: model.dateTime().nullable(),
   // Delta-sync cursor: ISO timestamp passed as GET /articles?stockInfoChangedFrom on the

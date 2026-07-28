@@ -11,6 +11,7 @@ export type CreateIntegrationInput = {
   stock_reconcile_mode: StockReconcileMode
   edit_sync_rules: Record<string, unknown> | null
   shipped_status_codes: number[] | null
+  delivered_status_codes: number[] | null
   cancellable_status_codes: number[] | null
 }
 
@@ -47,6 +48,13 @@ export function validateCreateIntegrationInput(body: unknown): CreateIntegration
     !isNumberArray(b.shipped_status_codes)
   ) {
     invalid("shipped_status_codes must be an array of numbers")
+  }
+  if (
+    b.delivered_status_codes !== undefined &&
+    b.delivered_status_codes !== null &&
+    !isNumberArray(b.delivered_status_codes)
+  ) {
+    invalid("delivered_status_codes must be an array of numbers")
   }
   if (
     b.cancellable_status_codes !== undefined &&
@@ -100,6 +108,7 @@ export function validateCreateIntegrationInput(body: unknown): CreateIntegration
     stock_reconcile_mode: (b.stock_reconcile_mode as StockReconcileMode) ?? "sellable_plus_reserved",
     edit_sync_rules: (b.edit_sync_rules as Record<string, unknown> | null) ?? null,
     shipped_status_codes: (b.shipped_status_codes as number[] | null) ?? null,
+    delivered_status_codes: (b.delivered_status_codes as number[] | null) ?? null,
     cancellable_status_codes: (b.cancellable_status_codes as number[] | null) ?? null,
   }
 }

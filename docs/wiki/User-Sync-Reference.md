@@ -93,18 +93,27 @@ Cancellation sends **no body** — just Ongoing's internal order id in the URL. 
 
 ## How Ongoing status codes are interpreted
 
-Ongoing tracks each order through a tenant-specific numeric status lifecycle (see [[User Ongoing Concepts]]). The plugin reads those numbers in four **independent** ways. Three of them are lists you configure per integration; the fourth is not code-based at all.
+Ongoing tracks each order through a tenant-specific numeric status lifecycle (see [[User Ongoing Concepts]] for the canonical code→stage table). The plugin interprets those numbers **semantically** — each code resolves to a stage (`shipped`, `delivered`, or `other`) rather than being tested against a single flat list. It reads the numbers in several **independent** ways: three configurable lists (shipped / delivered / cancellable), the edit allow-lists, and flag-based return detection.
 
 ### Polling range: 100–999
 
 The status-poll job asks Ongoing for every order in status **100 through 999** (`getOrdersByStatus(100, 999)`). The range is deliberately wide because the poll does double duty — it refreshes the stored status for edit/cancel gating on *active* orders, not only shipped ones. In the known status map it covers everything from `200` (Åpen) through `500` (Hentet) and **excludes only `1000` (Annullert)** — a cancelled order is terminal, so the poll stops tracking it.
 
-### Shipped codes — exact membership, triggers the shipment
+### Shipped codes — triggers the shipment
 
-`shipped_status_codes` is a list. When an order's current Ongoing status number is **exactly one of** those codes, the plugin runs the shipment workflow (once — guarded by `shipped_at`). Semantics:
+`shipped_status_codes` is a list. When an order's current Ongoing status resolves to the **shipped** stage, the plugin runs the shipment workflow (once — guarded by `shipped_at`). Semantics:
 
 - The check is exact membership, not a range or threshold.
-- If `shipped_status_codes` is **null or empty**, no status ever counts as shipped, so a shipment is **never** created. The webhook logs a warning in this case; the poll job simply does nothing. Configure the list before you expect shipments.
+- If `shipped_status_codes` is **null or empty**, it **falls back to the canonical shipped defaults** (`425`, `450`, `451`) rather than doing nothing — a fresh integration ships without hand-picked codes. Set the list to override the defaults.
+
+### Delivered codes — records pickup collection (450 → 500)
+
+`delivered_status_codes` marks the **delivered** stage — a pickup order collected at the pickup point (canonical: `500`, Hentet). This models the pickup two-step: an order is *sent* (a shipped code, e.g. `450`, creates the Medusa shipment) and later *picked up* (`500`, recorded as delivered on the sync row: `sync_state = "delivered"`, `delivered_at` stamped, `ongoing.sync.order_delivered` emitted). Semantics:
+
+- A **delivered** code always takes precedence over a shipped code for the same number.
+- If `delivered_status_codes` is null or empty, it **falls back to the canonical delivered default** (`500`).
+- If a delivered code arrives without the plugin ever having recorded a shipment (a missed poll skipped the shipped code), the plugin **backfills the Medusa shipment first**, then records delivery — the transition is never dropped.
+- Recording delivery is idempotent: a repeated `500` (re-poll or re-delivered webhook) is a no-op once `delivered_at` is set.
 
 ### Cancellable codes — a gate, with an unknown-status exception
 
@@ -132,9 +141,9 @@ Returns are **not** detected from a status code. A webhook can carry return acti
 
 ### Refresh vs shipment, and where status is stored
 
-- **Poll job:** every tracked, non-terminal order is **always** refreshed (its `latest_status_code` / `latest_status_text` updated), and **additionally** shipped when the status is a shipped code — these are not mutually exclusive.
-- **Webhook:** it is **either/or** — a shipped code applies the shipment; any other code just refreshes the status.
-- Both stop refreshing once the row reaches a **terminal** state (`shipped` or `cancelled`).
+- **Poll job:** every tracked, non-terminal order is **always** refreshed (its `latest_status_code` / `latest_status_text` updated), and **additionally** shipped (shipped stage) or recorded as delivered (delivered stage) — refresh and the stage action are not mutually exclusive.
+- **Webhook:** it is **one branch** — a delivered code records delivery, a shipped code applies the shipment, and any other code just refreshes the status.
+- Both stop refreshing once the row reaches a **terminal** state (`delivered` or `cancelled`). **`shipped` is deliberately *not* terminal** — a pickup order still advances `shipped` (450) → `delivered` (500), so the plugin keeps polling a shipped row until it reaches a truly terminal state. (Before this, a `shipped` row was treated as terminal and the `500` pickup was silently swallowed.)
 - The current status is stored on the `OngoingOrderSync` row as **`latest_status_code`** (number) and **`latest_status_text`** (text).
 
 ## How shipment tracking is stored

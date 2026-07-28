@@ -1,4 +1,10 @@
-export type OngoingSyncState = "pending" | "sent" | "shipped" | "cancelled" | "error"
+export type OngoingSyncState =
+  | "pending"
+  | "sent"
+  | "shipped"
+  | "delivered"
+  | "cancelled"
+  | "error"
 
 export type OngoingSyncStateSummary = Record<OngoingSyncState, number>
 
@@ -6,6 +12,7 @@ export const ALL_SYNC_STATES: readonly OngoingSyncState[] = [
   "pending",
   "sent",
   "shipped",
+  "delivered",
   "cancelled",
   "error",
 ]
@@ -23,7 +30,7 @@ export type OngoingSyncsCountService = {
 
 // Spec §11 requires "success/failure counters" feeding the dashboard (#44 defers
 // producing these to this issue). One count-only query per sync_state (take: 0 --
-// rows are discarded, only the total is used) run in parallel; 5 states is a
+// rows are discarded, only the total is used) run in parallel; the state set is a
 // fixed, small fan-out, not an unbounded N+1.
 export async function computeSyncStateSummary(
   ongoing: OngoingSyncsCountService

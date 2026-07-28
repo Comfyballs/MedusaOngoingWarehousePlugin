@@ -66,7 +66,7 @@ describe("refreshOrderSyncStatusStep", () => {
     expect(res.output).toEqual({ refreshed: false, reason: "no_sync_row" })
   })
 
-  it.each(["shipped", "cancelled"])(
+  it.each(["delivered", "cancelled"])(
     "no-ops when the row is in terminal state %s",
     async (sync_state) => {
       const { container, ongoing } = makeContainer({
@@ -77,4 +77,15 @@ describe("refreshOrderSyncStatusStep", () => {
       expect(res.output).toEqual({ refreshed: false, reason: "terminal_state" })
     }
   )
+
+  it("still refreshes a shipped row — shipped is no longer terminal (pickup 450 -> 500)", async () => {
+    const { container, ongoing } = makeContainer({
+      rows: [{ id: "sync_1", sync_state: "shipped" }],
+    })
+    const res = await refreshOrderSyncStatusHandler(BASE, { container } as any)
+    expect(ongoing.updateOngoingOrderSyncs).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "sync_1", latest_status_code: 210 })
+    )
+    expect(res.output).toEqual({ refreshed: true })
+  })
 })

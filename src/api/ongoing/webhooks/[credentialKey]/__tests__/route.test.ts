@@ -8,6 +8,10 @@ jest.mock("../dispatch-shipment", () => ({
   __esModule: true,
   dispatchVerifiedShipment: jest.fn().mockResolvedValue(undefined),
 }))
+jest.mock("../dispatch-delivery", () => ({
+  __esModule: true,
+  dispatchVerifiedDelivery: jest.fn().mockResolvedValue(undefined),
+}))
 jest.mock("../dispatch-status-refresh", () => ({
   __esModule: true,
   dispatchStatusRefresh: jest.fn().mockResolvedValue(undefined),
@@ -19,12 +23,17 @@ jest.mock("../dispatch-return-status", () => ({
 
 import { POST } from "../route"
 import { dispatchVerifiedShipment as dispatchVerifiedShipmentImport } from "../dispatch-shipment"
+import { dispatchVerifiedDelivery as dispatchVerifiedDeliveryImport } from "../dispatch-delivery"
 import { dispatchStatusRefresh as dispatchStatusRefreshImport } from "../dispatch-status-refresh"
 import { dispatchReturnStatus as dispatchReturnStatusImport } from "../dispatch-return-status"
 
 const dispatchVerifiedShipment =
   dispatchVerifiedShipmentImport as jest.MockedFunction<
     typeof dispatchVerifiedShipmentImport
+  >
+const dispatchVerifiedDelivery =
+  dispatchVerifiedDeliveryImport as jest.MockedFunction<
+    typeof dispatchVerifiedDeliveryImport
   >
 const dispatchStatusRefresh =
   dispatchStatusRefreshImport as jest.MockedFunction<
@@ -37,6 +46,7 @@ const dispatchReturnStatus =
 
 beforeEach(() => {
   dispatchVerifiedShipment.mockClear()
+  dispatchVerifiedDelivery.mockClear()
   dispatchStatusRefresh.mockClear()
   dispatchReturnStatus.mockClear()
   logger.info.mockClear()
@@ -80,7 +90,11 @@ const makeCreds = (overrides: Record<string, unknown> = {}) => ({
 
 const makeService = (opts: {
   credentials?: ReturnType<typeof makeCreds> | null
-  integrations?: Array<{ id: string; shipped_status_codes: number[] | null }>
+  integrations?: Array<{
+    id: string
+    shipped_status_codes: number[] | null
+    delivered_status_codes?: number[] | null
+  }>
 }) => ({
   getCredentials: jest.fn(() => {
     if (opts.credentials === null || opts.credentials === undefined) {
@@ -251,18 +265,48 @@ describe("POST /ongoing/webhooks/:credentialKey", () => {
     expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("no integration bound"))
   })
 
-  it("warns when the integration has no shipped_status_codes configured (bead tfk)", async () => {
+  it("falls back to canonical shipped codes when none are configured (bead 18m)", async () => {
+    // Null shipped_status_codes now derives sensible defaults (425/450/451) rather
+    // than treating every status as out-of-band. A canonical shipped code ships.
     const service = makeService({
       credentials: makeCreds(),
       integrations: [{ id: "int_1", shipped_status_codes: null }],
     })
     const res = makeRes()
-    await POST(makeReq({ token: SECRET, service }), res)
+    const body = { ...validBody(), orderStatus: { number: 450, text: "Sendt" } }
+    await POST(makeReq({ token: SECRET, body, service }), res)
     expect(res.sendStatus).toHaveBeenCalledWith(200)
-    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("no shipped_status_codes"))
-    // Empty codes => every status treated out-of-band, never a shipment dispatch.
+    expect(dispatchVerifiedShipment).toHaveBeenCalledTimes(1)
+    expect(dispatchVerifiedDelivery).not.toHaveBeenCalled()
+    expect(dispatchStatusRefresh).not.toHaveBeenCalled()
+    expect(dispatchReturnStatus).toHaveBeenCalledTimes(1)
+  })
+
+  it("routes a canonical delivered code (500) to the delivery dispatcher (bead 18m)", async () => {
+    // Even with only shipped codes configured, a delivered code (500) resolves to
+    // the delivery seam — this is the 450 -> 500 pickup transition that used to be
+    // swallowed by the shipped short-circuit.
+    const service = makeService({
+      credentials: makeCreds(),
+      integrations: [
+        { id: "int_1", shipped_status_codes: [450], delivered_status_codes: null },
+      ],
+    })
+    const res = makeRes()
+    const body = { ...validBody(), orderStatus: { number: 500, text: "Hentet" } }
+    await POST(makeReq({ token: SECRET, body, service }), res)
+    expect(res.sendStatus).toHaveBeenCalledWith(200)
+    expect(dispatchVerifiedDelivery).toHaveBeenCalledTimes(1)
+    expect(dispatchVerifiedDelivery).toHaveBeenCalledWith(expect.anything(), {
+      payload: expect.objectContaining({
+        goodsOwnerId: GOODS_OWNER,
+        orderStatus: { number: 500, text: "Hentet" },
+      }),
+      integrationId: "int_1",
+      credentialKey: "wh-1",
+    })
     expect(dispatchVerifiedShipment).not.toHaveBeenCalled()
-    expect(dispatchStatusRefresh).toHaveBeenCalledTimes(1)
+    expect(dispatchStatusRefresh).not.toHaveBeenCalled()
     expect(dispatchReturnStatus).toHaveBeenCalledTimes(1)
   })
 

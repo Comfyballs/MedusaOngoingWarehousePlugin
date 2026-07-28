@@ -2,12 +2,20 @@ import type { MedusaContainer } from "@medusajs/framework/types"
 
 // Mock the workflows barrel: named exports are factories (container) => { run }.
 const run = jest.fn().mockResolvedValue({ result: {} })
+const deliveryRun = jest.fn().mockResolvedValue({ result: {} })
 const refreshRun = jest.fn().mockResolvedValue({ result: {} })
 jest.mock("../../workflows", () => ({
   __esModule: true,
   syncOngoingShipmentWorkflow: jest.fn(() => ({ run })),
+  syncOngoingDeliveryWorkflow: jest.fn(() => ({ run: deliveryRun })),
   refreshOngoingOrderStatusWorkflow: jest.fn(() => ({ run: refreshRun })),
 }))
+
+beforeEach(() => {
+  run.mockClear()
+  deliveryRun.mockClear()
+  refreshRun.mockClear()
+})
 
 import ongoingStatusPollJob, { config } from "../status-poll"
 
@@ -27,6 +35,7 @@ type Integration = {
   status_poll_interval: string | null
   last_status_poll_at: Date | null
   shipped_status_codes: number[] | null
+  delivered_status_codes: number[] | null
 }
 
 type Row = {
@@ -85,6 +94,7 @@ const integ = (over: Partial<Integration> = {}): Integration => ({
   status_poll_interval: "60000",
   last_status_poll_at: null,
   shipped_status_codes: [400],
+  delivered_status_codes: null,
   ...over,
 })
 
@@ -123,7 +133,8 @@ describe("ongoing status-poll job", () => {
       { id: "r_open", integration_id: "int_1", ongoing_order_number: "1001-aaa", sync_state: "sent", shipped_at: null },
       { id: "r_ship_unshipped", integration_id: "int_1", ongoing_order_number: "1001-bbb", sync_state: "sent", shipped_at: null },
       { id: "r_ship_already", integration_id: "int_1", ongoing_order_number: "1001-ccc", sync_state: "sent", shipped_at: new Date() },
-      { id: "r_terminal", integration_id: "int_1", ongoing_order_number: "1001-ddd", sync_state: "shipped", shipped_at: new Date() },
+      // "delivered" is terminal; a "shipped" row is NOT (it can still reach 500).
+      { id: "r_terminal", integration_id: "int_1", ongoing_order_number: "1001-ddd", sync_state: "delivered", shipped_at: new Date() },
     ]
     const orders: TrackedOrder[] = [
       { ongoingOrderId: 1, orderNumber: "1001-aaa", statusNumber: 200, statusText: "Open", trackingNumbers: [] },
@@ -160,7 +171,7 @@ describe("ongoing status-poll job", () => {
         status_code: 400, status_text: "Sent",
       },
     })
-    // Terminal row (sync_state "shipped") and the untracked order are ignored.
+    // Terminal row (sync_state "delivered") and the untracked order are ignored.
     const refreshedOrderNumbers = refreshRun.mock.calls.map(
       (c) => (c as { input: { ongoing_order_number: string } }[])[0].input.ongoing_order_number
     )
@@ -186,6 +197,83 @@ describe("ongoing status-poll job", () => {
       last_status_poll_at: expect.any(Date),
     })
     expect(h.service.releaseSyncLock).toHaveBeenCalledWith("int_1", "status_poll")
+  })
+
+  it("keeps polling a shipped row and routes a 500 pickup to the delivery workflow (450 -> 500)", async () => {
+    // Canonical: null shipped/delivered codes fall back to shipped [425,450,451],
+    // delivered [500]. A row already shipped (shipped_at set, sync_state "shipped")
+    // is NOT terminal, so a subsequent 500 is caught and recorded as a delivery.
+    const due = integ({
+      last_status_poll_at: new Date(Date.now() - 120000),
+      shipped_status_codes: null,
+      delivered_status_codes: null,
+    })
+    const rows: Row[] = [
+      { id: "r_pickup", integration_id: "int_1", ongoing_order_number: "1001-pick", sync_state: "shipped", shipped_at: new Date() },
+    ]
+    const orders: TrackedOrder[] = [
+      { ongoingOrderId: 7, orderNumber: "1001-pick", statusNumber: 500, statusText: "Hentet", trackingNumbers: ["TP"], tracking: [{ number: "TP", url: "https://t/p" }] },
+    ]
+    const h = makeHarness({
+      integrations: [due],
+      rowsByIntegration: { int_1: rows },
+      ordersByKey: { "wh-a": orders },
+    })
+
+    await ongoingStatusPollJob(h.container)
+
+    // Still refreshed (shipped is not terminal) so latest_status_code tracks 500.
+    expect(refreshRun).toHaveBeenCalledWith({
+      input: {
+        ongoing_order_number: "1001-pick", integration_id: "int_1",
+        status_code: 500, status_text: "Hentet",
+      },
+    })
+    // Delivery workflow fired; no shipment re-created.
+    expect(deliveryRun).toHaveBeenCalledTimes(1)
+    expect(deliveryRun).toHaveBeenCalledWith({
+      input: {
+        ongoing_order_number: "1001-pick",
+        status_code: 500,
+        status_text: "Hentet",
+        tracking_numbers: ["TP"],
+        tracking: [{ number: "TP", url: "https://t/p" }],
+      },
+    })
+    expect(run).not.toHaveBeenCalled()
+  })
+
+  it("ships (not delivers) at a canonical shipped code and delivers only at a delivered code", async () => {
+    const due = integ({
+      last_status_poll_at: new Date(Date.now() - 120000),
+      shipped_status_codes: null,
+      delivered_status_codes: null,
+    })
+    const rows: Row[] = [
+      { id: "r_sent", integration_id: "int_1", ongoing_order_number: "2001-sent", sync_state: "sent", shipped_at: null },
+    ]
+    const orders: TrackedOrder[] = [
+      { ongoingOrderId: 8, orderNumber: "2001-sent", statusNumber: 450, statusText: "Sendt", trackingNumbers: ["TS"] },
+    ]
+    const h = makeHarness({
+      integrations: [due],
+      rowsByIntegration: { int_1: rows },
+      ordersByKey: { "wh-a": orders },
+    })
+
+    await ongoingStatusPollJob(h.container)
+
+    expect(run).toHaveBeenCalledTimes(1)
+    expect(run).toHaveBeenCalledWith({
+      input: {
+        ongoing_order_number: "2001-sent",
+        status_code: 450,
+        status_text: "Sendt",
+        tracking_numbers: ["TS"],
+        tracking: undefined,
+      },
+    })
+    expect(deliveryRun).not.toHaveBeenCalled()
   })
 
   it("releases the lock, advances cadence, and never throws when the poll fails", async () => {

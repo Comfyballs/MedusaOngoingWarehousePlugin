@@ -83,6 +83,25 @@ describe("resolveReturnOriginStep — 8p8 return-row leak guard", () => {
     ]
     await expect(
       invoke({ line_item_id: "li_1" }, orderGraph(), makeService(allRows))
-    ).rejects.toThrow(/no sent\/shipped Ongoing order/)
+    ).rejects.toThrow(/no sent\/shipped\/delivered Ongoing order/)
+  })
+
+  it("resolves a delivered (picked-up) order as a return origin (bead 18m)", async () => {
+    // A pickup order collected at the pickup point advances shipped -> delivered.
+    // Returns most often follow delivery, so a `delivered` row must still be an
+    // eligible origin (regression guard: it was excluded when only shipped/sent matched).
+    const allRows = [
+      {
+        id: "oos_order",
+        medusa_order_id: "order_1",
+        sync_kind: "order",
+        sync_state: "delivered",
+        ongoing_order_id: 777,
+        last_synced_at: "2026-07-20T00:00:00.000Z",
+      },
+    ]
+    const out = await invoke({ line_item_id: "li_1" }, orderGraph(), makeService(allRows))
+    expect(out.ongoing_order_id).toBe(777)
+    expect(out.ongoing_order_sync_id).toBe("oos_order")
   })
 })

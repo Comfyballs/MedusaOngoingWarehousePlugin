@@ -16,6 +16,7 @@ export type CreateOngoingIntegrationRowInput = {
   stock_reconcile_mode: StockReconcileMode
   edit_sync_rules: Record<string, unknown> | null
   shipped_status_codes: number[] | null
+  delivered_status_codes: number[] | null
   cancellable_status_codes: number[] | null
 }
 
@@ -34,16 +35,19 @@ export const createOngoingIntegrationRowHandler = async (
   // row is written, so there is nothing to compensate on this failure path.
   ongoing.getCredentials(input.credential_key)
 
-  // The generated create DTO types the two `model.json()` columns
-  // (`shipped_status_codes`/`cancellable_status_codes`) as
-  // `Record<string, unknown> | null`, while this step's input carries their
-  // actual runtime shape, `number[] | null`. Cast ONLY those two fields — not
-  // the whole `input`, which `as any` did previously, silencing typos on every
-  // other column. `model.json()` has no typed-array variant in Medusa 2.16, so a
+  // The generated create DTO types the `model.json()` status-code columns
+  // (`shipped_status_codes`/`delivered_status_codes`/`cancellable_status_codes`)
+  // as `Record<string, unknown> | null`, while this step's input carries their
+  // actual runtime shape, `number[] | null`. Cast ONLY those fields — not the
+  // whole `input`, which `as any` did previously, silencing typos on every other
+  // column. `model.json()` has no typed-array variant in Medusa 2.16, so a
   // documented field-level cast is the pragmatic choice over reshaping the model.
   const createInput = {
     ...input,
     shipped_status_codes: input.shipped_status_codes as unknown as
+      | Record<string, unknown>
+      | null,
+    delivered_status_codes: input.delivered_status_codes as unknown as
       | Record<string, unknown>
       | null,
     cancellable_status_codes: input.cancellable_status_codes as unknown as

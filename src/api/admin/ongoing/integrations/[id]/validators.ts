@@ -13,6 +13,7 @@ export type UpdateIntegrationInput = {
   stock_reconcile_mode?: StockReconcileMode
   edit_sync_rules?: Record<string, unknown> | null
   shipped_status_codes?: number[] | null
+  delivered_status_codes?: number[] | null
   cancellable_status_codes?: number[] | null
 }
 
@@ -68,6 +69,12 @@ export function validateUpdateIntegrationInput(body: unknown): UpdateIntegration
       invalid("shipped_status_codes must be an array of numbers or null")
     }
     result.shipped_status_codes = b.shipped_status_codes as number[] | null
+  }
+  if (b.delivered_status_codes !== undefined) {
+    if (b.delivered_status_codes !== null && !isNumberArray(b.delivered_status_codes)) {
+      invalid("delivered_status_codes must be an array of numbers or null")
+    }
+    result.delivered_status_codes = b.delivered_status_codes as number[] | null
   }
   if (b.cancellable_status_codes !== undefined) {
     if (b.cancellable_status_codes !== null && !isNumberArray(b.cancellable_status_codes)) {

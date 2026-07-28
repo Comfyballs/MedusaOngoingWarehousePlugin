@@ -22,7 +22,9 @@ Once the order push succeeds, two channels keep Medusa's view of the Ongoing ord
 - **Status-poll job** (every minute; effective cadence controlled by `status_poll_interval`).
 - **Webhook** (if you configured one on the Ongoing side).
 
-Both write the latest status code and text onto the sync row. When the status reaches a value in the integration's **`shipped_status_codes`**, both channels converge on the same idempotent shipment workflow, which creates the Medusa shipment and attaches tracking-number labels (with carrier tracking URLs when Ongoing supplied them), then marks the sync row `shipped`. The `shipped_at` timestamp guards against creating the shipment twice.
+Both write the latest status code and text onto the sync row. When the status reaches a **shipped** code (the integration's **`shipped_status_codes`**, or the canonical defaults 425/450/451 when you haven't set any), both channels converge on the same idempotent shipment workflow, which creates the Medusa shipment and attaches tracking-number labels (with carrier tracking URLs when Ongoing supplied them), then marks the sync row `shipped`. The `shipped_at` timestamp guards against creating the shipment twice.
+
+For **pickup orders**, the lifecycle continues after shipment: when the status reaches a **delivered** code (**`delivered_status_codes`**, or the canonical default 500 "picked up"), the plugin records the collection — the sync row moves to `delivered` (stamped with `delivered_at`) and a `ongoing.sync.order_delivered` event fires. The plugin keeps watching an order after it ships precisely so this `450 → 500` pickup step is captured rather than dropped. See [[User Sync Reference]] for the code→stage table.
 
 ## Inventory sync — Ongoing to Medusa
 
@@ -81,7 +83,8 @@ Each `OngoingOrderSync` row moves through these states:
 
 - **`pending`** — row created, the order PUT not yet confirmed. Transitional; should not persist long.
 - **`sent`** — order pushed successfully, awaiting shipment.
-- **`shipped`** — a shipped status code was observed; the Medusa shipment and tracking were created. Terminal, success.
+- **`shipped`** — a shipped status code was observed; the Medusa shipment and tracking were created. Success. **Not terminal for pickup orders** — the plugin keeps watching for the pickup collection.
+- **`delivered`** — a pickup order was collected at the pickup point (a delivered status code, canonical 500). Terminal, success.
 - **`cancelled`** — the order was canceled in Medusa and (if it existed) Ongoing. Terminal.
 - **`error`** — the last push or edit failed. Carries an `error_class` of `retryable` or `terminal`.
 
@@ -92,7 +95,8 @@ Transitions:
 - `error` → `sent` via automatic retry, or a manual retry / re-push.
 - `error` (`retryable`, 5 attempts reached) → `error` (`terminal`) — dead-lettered.
 - `sent` → `shipped` when a shipped status arrives.
-- any non-shipped state → `cancelled` on cancellation.
+- `shipped` → `delivered` when a pickup order is collected (450 → 500).
+- any non-delivered state → `cancelled` on cancellation.
 
 ## Webhook behavior
 
@@ -100,7 +104,7 @@ The webhook route always returns `200` after authentication, even if the interna
 
 ## Domain events for custom alerting
 
-The plugin emits best-effort `ongoing.sync.*` events you can subscribe to in your own app: `order_pushed`, `push_failed`, `shipment_applied`, `order_cancelled`, `order_retried`, `order_dead_lettered`, `inventory_synced`, `edit_blocked`, `return_order_pushed`, `return_order_push_failed`, and `return_status_received`. They are observability signals — the plugin itself does not consume them. Subscribing to `order_dead_lettered` or `edit_blocked` is a good basis for ops alerting, and `return_status_received` is the current hook for return activity (the plugin logs and emits it but does not auto-mutate the Medusa return — see [[User Sync Reference]]).
+The plugin emits best-effort `ongoing.sync.*` events you can subscribe to in your own app: `order_pushed`, `push_failed`, `shipment_applied`, `order_delivered`, `order_cancelled`, `order_retried`, `order_dead_lettered`, `inventory_synced`, `edit_blocked`, `return_order_pushed`, `return_order_push_failed`, and `return_status_received`. They are observability signals — the plugin itself does not consume them. Subscribing to `order_dead_lettered` or `edit_blocked` is a good basis for ops alerting, and `return_status_received` is the current hook for return activity (the plugin logs and emits it but does not auto-mutate the Medusa return — see [[User Sync Reference]]).
 
 ## Related pages
 

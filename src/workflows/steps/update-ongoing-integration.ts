@@ -13,6 +13,7 @@ export type UpdateOngoingIntegrationInput = {
   stock_reconcile_mode?: StockReconcileMode
   edit_sync_rules?: Record<string, unknown> | null
   shipped_status_codes?: number[] | null
+  delivered_status_codes?: number[] | null
   cancellable_status_codes?: number[] | null
 }
 
@@ -24,6 +25,7 @@ type PreviousIntegrationState = {
   stock_reconcile_mode: StockReconcileMode
   edit_sync_rules: Record<string, unknown> | null
   shipped_status_codes: number[] | null
+  delivered_status_codes: number[] | null
   cancellable_status_codes: number[] | null
 }
 
@@ -51,6 +53,7 @@ export const updateOngoingIntegrationHandler = async (
     stock_reconcile_mode: existing.stock_reconcile_mode,
     edit_sync_rules: existing.edit_sync_rules,
     shipped_status_codes: existing.shipped_status_codes as unknown as number[] | null,
+    delivered_status_codes: existing.delivered_status_codes as unknown as number[] | null,
     cancellable_status_codes: existing.cancellable_status_codes as unknown as number[] | null,
   }
 
@@ -59,11 +62,21 @@ export const updateOngoingIntegrationHandler = async (
   // `number[] | null`), preserving key presence so an omitted field stays a
   // no-op update rather than being written as null. Replaces a blanket
   // `input as any` that had silenced typos on `id`/every other column.
-  const { shipped_status_codes, cancellable_status_codes, ...restInput } = input
+  const {
+    shipped_status_codes,
+    delivered_status_codes,
+    cancellable_status_codes,
+    ...restInput
+  } = input
   const updateInput = {
     ...restInput,
     ...(shipped_status_codes !== undefined && {
       shipped_status_codes: shipped_status_codes as unknown as
+        | Record<string, unknown>
+        | null,
+    }),
+    ...(delivered_status_codes !== undefined && {
+      delivered_status_codes: delivered_status_codes as unknown as
         | Record<string, unknown>
         | null,
     }),
@@ -97,12 +110,19 @@ export const compensateOngoingIntegrationHandler = async (
     return
   }
   const ongoing = container.resolve(ONGOING_MODULE) as OngoingModuleService
-  const { shipped_status_codes, cancellable_status_codes, ...restPrevious } =
-    compensation.previous
+  const {
+    shipped_status_codes,
+    delivered_status_codes,
+    cancellable_status_codes,
+    ...restPrevious
+  } = compensation.previous
   await ongoing.updateOngoingIntegrations({
     id: compensation.id,
     ...restPrevious,
     shipped_status_codes: shipped_status_codes as unknown as
+      | Record<string, unknown>
+      | null,
+    delivered_status_codes: delivered_status_codes as unknown as
       | Record<string, unknown>
       | null,
     cancellable_status_codes: cancellable_status_codes as unknown as

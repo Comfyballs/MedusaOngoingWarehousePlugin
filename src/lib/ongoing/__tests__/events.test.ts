@@ -1,11 +1,12 @@
 import { ONGOING_EVENTS } from "../events"
 
 describe("ONGOING_EVENTS", () => {
-  it("pins the exact 11 event name strings", () => {
+  it("pins the exact 12 event name strings", () => {
     expect(ONGOING_EVENTS).toEqual({
       ORDER_PUSHED: "ongoing.sync.order_pushed",
       PUSH_FAILED: "ongoing.sync.push_failed",
       SHIPMENT_APPLIED: "ongoing.sync.shipment_applied",
+      ORDER_DELIVERED: "ongoing.sync.order_delivered",
       ORDER_CANCELLED: "ongoing.sync.order_cancelled",
       ORDER_RETRIED: "ongoing.sync.order_retried",
       ORDER_DEAD_LETTERED: "ongoing.sync.order_dead_lettered",
@@ -19,7 +20,7 @@ describe("ONGOING_EVENTS", () => {
 
   it("has unique, non-empty, ongoing.sync.-namespaced values", () => {
     const values = Object.values(ONGOING_EVENTS)
-    expect(values.length).toBe(11)
+    expect(values.length).toBe(12)
     expect(new Set(values).size).toBe(values.length)
     for (const v of values) {
       expect(typeof v).toBe("string")
