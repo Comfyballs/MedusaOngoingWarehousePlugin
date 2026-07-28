@@ -40,7 +40,7 @@ export type RecordSyncInput = {
   // Omitted for outbound order pushes (defaults to "order" at the DB); return
   // pushes pass "return" so the retry job re-pushes them via the return workflow (8p8).
   sync_kind?: "order" | "return"
-  sync_state: "pending" | "sent" | "shipped" | "cancelled" | "error"
+  sync_state: "pending" | "sent" | "shipped" | "delivered" | "cancelled" | "error"
   ongoing_order_id?: number | null
   error_class?: "retryable" | "terminal" | null
   last_error?: string | null

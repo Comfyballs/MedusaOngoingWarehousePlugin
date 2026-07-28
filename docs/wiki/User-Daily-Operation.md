@@ -17,13 +17,13 @@ One row per configured integration, with a badge:
 
 ### Sync-state summary strip
 
-Counts of every sync state across all rows — `error`, `pending`, `sent`, `shipped`, `cancelled` — shown error-first. Use it for an at-a-glance health read. The counts always reflect the full ledger, regardless of which state the table below is filtered to.
+Counts of every sync state across all rows — `error`, `pending`, `sent`, `shipped`, `delivered`, `cancelled` — shown error-first. Use it for an at-a-glance health read. The counts always reflect the full ledger, regardless of which state the table below is filtered to.
 
-Each count is also a filter: **click a count to filter the table below to that state**, and click the highlighted count again (or the **Clear filter** button on the table) to return to the default view. This is how you drill into `shipped` or `cancelled` rows, which the default table omits.
+Each count is also a filter: **click a count to filter the table below to that state**, and click the highlighted count again (or the **Clear filter** button on the table) to return to the default view. This is how you drill into `shipped`, `delivered`, or `cancelled` rows, which the default table omits.
 
 ### Failed and pending syncs table
 
-By default, a paginated table (20 per page) of rows in `error`, `sent`, or `pending` state — the actionable states. Settled rows (`shipped`, `cancelled`) are omitted from the default view but reachable by clicking their count in the summary strip above. Columns include the Ongoing order number, Medusa order id, sync-state badge, error-class badge (retryable or terminal), retry count, the last error (truncated, full text on hover), and last-synced time.
+By default, a paginated table (20 per page) of rows in `error`, `sent`, or `pending` state — the actionable states. Settled rows (`shipped`, `delivered`, `cancelled`) are omitted from the default view but reachable by clicking their count in the summary strip above. Columns include the Ongoing order number, Medusa order id, sync-state badge, error-class badge (retryable or terminal), retry count, the last error (truncated, full text on hover), and last-synced time.
 
 ## The order-detail sync widget
 
@@ -31,7 +31,7 @@ On a Medusa order's detail page, the **Ongoing Warehouse** widget appears in the
 
 Per sync row it shows:
 
-- The Ongoing order number and a colored state badge (pending = grey, sent = orange, shipped = green, cancelled = purple, error = red) — the same colours as the dashboard.
+- The Ongoing order number and a colored state badge (pending = grey, sent = orange, shipped = green, delivered = blue, cancelled = purple, error = red) — the same colours as the dashboard.
 - The latest Ongoing status text and code, and the last-synced time.
 - An orange **Edit blocked** callout when an edit was blocked, with a human-readable reason.
 - Tracking numbers (linked when a tracking URL was captured).
@@ -44,7 +44,7 @@ The plugin gives you two retry paths, and they behave differently. Knowing which
 
 ### Order widget — immediate
 
-The **Re-push / Retry** button on the order widget runs the push **synchronously and immediately**. The label is "Retry" when the row is in `error`, otherwise "Re-push". It is disabled when there is no fulfillment id, or the row is already `shipped` or `cancelled`.
+The **Re-push / Retry** button on the order widget runs the push **synchronously and immediately**. The label is "Retry" when the row is in `error`, otherwise "Re-push". It is disabled when there is no fulfillment id, or the row is already `shipped`, `delivered`, or `cancelled`.
 
 Use this when you have fixed the underlying problem for one order and want to push it right now.
 

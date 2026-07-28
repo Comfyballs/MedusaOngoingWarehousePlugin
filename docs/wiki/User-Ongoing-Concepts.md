@@ -39,9 +39,31 @@ This plugin lets you attach a `way_of_delivery` code (and optional `transporter`
 
 Ongoing tracks each order through a **numeric status lifecycle**. This plugin polls the active-through-shipped range (status codes 100–999). The exact numbers and labels are **tenant-specific** — each goods owner configures its own set — which is why the admin UI fetches them live from Ongoing rather than hard-coding a list.
 
-Because codes vary per tenant, you tell the plugin which codes mean "shipped" and which mean "cancellable" per integration:
+### Canonical lifecycle and stages
+
+Ongoing's [documented status list](https://docs.ongoingwarehouse.com/manuals/statuses) maps to the semantic **stages** the plugin acts on. The canonical codes (Norwegian sandbox labels in parentheses) are:
+
+| Code | Label | Stage | Plugin behavior |
+|-----:|-------|-------|-----------------|
+| 200 | Åpen (open) | created | Tracked; status recorded for edit/cancel gating |
+| 300 | Plukk (picking) | picking | Tracked |
+| 320 | Skrevet ut (pick list printed) | picking | Tracked |
+| 400 | Plukket (picked) | picked | Tracked — **picked ≠ shipped** |
+| 425 | Sendt/Dellevert (sent / partly delivered) | **shipped** | Creates the Medusa shipment + tracking |
+| 450 | Sendt (sent) | **shipped** | Creates the Medusa shipment + tracking |
+| 451 | Klar til henting (ready for pickup) | **shipped** | Creates the Medusa shipment + tracking |
+| 475 | Retur (return) | returned | Handled by the separate return path |
+| 500 | Hentet (picked up) | **delivered** | Records the pickup-point collection |
+| 1000 | Annullert (cancelled) | cancelled | Terminal |
+
+**Pickup orders are a two-step:** an order is *sent* (450 → shipped, Medusa shipment created) and later *picked up* at the pickup point (500 → delivered). The plugin records both — reaching "delivered" no longer swallows the transition the way a flat "shipped" flag once did. If a `500` arrives without the plugin ever having seen a shipped code (a missed poll), it backfills the Medusa shipment first, then records delivery.
+
+### Per-integration overrides
+
+Because codes vary per tenant, you can tell the plugin which codes mean "shipped", "delivered", and "cancellable" per integration. **Leaving a list empty derives sensible defaults from the canonical table above** (shipped: 425/450/451; delivered: 500), so a fresh integration works without hand-picking codes.
 
 - **Shipped status codes** — when an order reaches one of these, the plugin creates the Medusa shipment and writes tracking back.
+- **Delivered status codes** — when an order reaches one of these (canonical: 500, pickup collection), the plugin records the order as delivered/picked-up. A configured delivered code always takes precedence over a shipped code for the same number.
 - **Cancellable status codes** — the plugin only sends a cancel to Ongoing when the order's current status is in this list.
 
 ## Webshop flow

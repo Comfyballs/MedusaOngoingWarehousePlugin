@@ -8,7 +8,8 @@ Most problems show up as a sync row's state and error class on the order widget 
 |---|---|---|
 | `pending` | Push not yet confirmed | Transitional. If it persists, check logs for a crash during push, then run orphan repair (below). |
 | `sent` | Pushed, awaiting shipment | Normal. Wait for a shipped status from poll or webhook. |
-| `shipped` | Shipment and tracking created | Done. Terminal. |
+| `shipped` | Shipment and tracking created | Done. For a pickup order, still watched for the pickup collection (→ `delivered`). |
+| `delivered` | Pickup order collected at the pickup point (status 500) | Done. Terminal. |
 | `cancelled` | Canceled in Medusa and Ongoing | Done. Terminal. |
 | `error` + `retryable` | Transient failure | The retry job will retry automatically with backoff. No action needed unless it dead-letters. |
 | `error` + `terminal` | Deterministic failure | Fix the underlying data, then re-push from the order widget. The retry job will **not** touch it. |

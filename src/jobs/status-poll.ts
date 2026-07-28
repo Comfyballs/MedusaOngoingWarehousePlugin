@@ -1,7 +1,12 @@
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import type { MedusaContainer } from "@medusajs/framework/types"
 import { ONGOING_MODULE } from "../modules/ongoing"
-import { refreshOngoingOrderStatusWorkflow, syncOngoingShipmentWorkflow } from "../workflows"
+import {
+  refreshOngoingOrderStatusWorkflow,
+  syncOngoingShipmentWorkflow,
+  syncOngoingDeliveryWorkflow,
+} from "../workflows"
+import { resolveShipmentStage } from "../lib/ongoing/status-semantics"
 
 // Ongoing order-status sweep. Wide on purpose: the poll keeps latest_status_code
 // fresh for order-edit gating AND detects shipment, so it must see every active
@@ -11,7 +16,10 @@ const ONGOING_ACTIVE_STATUS_FROM = 100
 const ONGOING_ACTIVE_STATUS_TO = 999
 
 // Sync states for which polling is finished: no further status refresh / shipment.
-const TERMINAL_SYNC_STATES = new Set(["shipped", "cancelled"])
+// "shipped" is intentionally NOT terminal — a pickup order advances shipped (450)
+// -> delivered (500), and dropping shipped rows here would swallow that 500 signal
+// (bead 18m). Only "delivered" and "cancelled" end the lifecycle.
+const TERMINAL_SYNC_STATES = new Set(["delivered", "cancelled"])
 
 type TrackedOrder = {
   ongoingOrderId: number
@@ -32,6 +40,7 @@ type IntegrationRow = {
   status_poll_interval: string | null
   last_status_poll_at: Date | string | null
   shipped_status_codes: number[] | null
+  delivered_status_codes: number[] | null
 }
 
 type OrderSyncRow = {
@@ -95,9 +104,10 @@ async function pollAndApply(
     }
   }
 
-  const shippedCodes = Array.isArray(integration.shipped_status_codes)
-    ? integration.shipped_status_codes
-    : []
+  const stageConfig = {
+    shippedCodes: integration.shipped_status_codes,
+    deliveredCodes: integration.delivered_status_codes,
+  }
 
   for (const order of orders) {
     const row = tracked.get(order.orderNumber)
@@ -117,9 +127,27 @@ async function pollAndApply(
       },
     })
 
-    if (shippedCodes.includes(order.statusNumber) && row.shipped_at == null) {
+    // Interpret the code semantically rather than by a flat membership test
+    // (bead 18m): "shipped" creates the Medusa shipment (once, guarded by
+    // shipped_at); "delivered" records the pickup-point collection (450 -> 500)
+    // and, if we never saw the shipped code, backfills the shipment first.
+    const stage = resolveShipmentStage(order.statusNumber, stageConfig)
+
+    if (stage === "shipped" && row.shipped_at == null) {
       // #33 owns the shipped_at idempotency re-check; a redundant call is a no-op.
       await syncOngoingShipmentWorkflow(container).run({
+        input: {
+          ongoing_order_number: order.orderNumber,
+          status_code: order.statusNumber,
+          status_text: order.statusText,
+          tracking_numbers: order.trackingNumbers,
+          tracking: order.tracking,
+        },
+      })
+    } else if (stage === "delivered") {
+      // Idempotency (delivered_at re-check) lives in loadSyncForDeliveryStep; a
+      // redundant call on an already-delivered row is a no-op.
+      await syncOngoingDeliveryWorkflow(container).run({
         input: {
           ongoing_order_number: order.orderNumber,
           status_code: order.statusNumber,

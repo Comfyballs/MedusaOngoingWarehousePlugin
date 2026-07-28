@@ -13,6 +13,7 @@ const previousRow = {
   stock_reconcile_mode: "sellable_plus_reserved" as const,
   edit_sync_rules: null,
   shipped_status_codes: [320],
+  delivered_status_codes: null,
   cancellable_status_codes: [100],
 }
 
@@ -41,6 +42,7 @@ describe("updateOngoingIntegrationStep", () => {
         stock_reconcile_mode: "sellable_plus_reserved",
         edit_sync_rules: null,
         shipped_status_codes: [320],
+        delivered_status_codes: null,
         cancellable_status_codes: [100],
       },
     })
@@ -59,6 +61,7 @@ describe("compensateOngoingIntegrationStep", () => {
       stock_reconcile_mode: "sellable_plus_reserved" as const,
       edit_sync_rules: null,
       shipped_status_codes: [320],
+      delivered_status_codes: null,
       cancellable_status_codes: [100],
     }
 
@@ -73,6 +76,7 @@ describe("compensateOngoingIntegrationStep", () => {
       stock_reconcile_mode: "sellable_plus_reserved",
       edit_sync_rules: null,
       shipped_status_codes: [320],
+      delivered_status_codes: null,
       cancellable_status_codes: [100],
     })
   })

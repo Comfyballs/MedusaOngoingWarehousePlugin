@@ -24,7 +24,7 @@ export type ResolveReturnOriginOutput = {
 type OngoingOrderSyncRow = {
   id: string
   ongoing_order_id: number | null
-  sync_state: "pending" | "sent" | "shipped" | "cancelled" | "error"
+  sync_state: "pending" | "sent" | "shipped" | "delivered" | "cancelled" | "error"
   last_synced_at: Date | string | null
 }
 

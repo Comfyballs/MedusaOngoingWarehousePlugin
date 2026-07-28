@@ -16,10 +16,12 @@ export type RefreshOrderSyncStatusOutput = {
   reason?: "no_order_number" | "no_sync_row" | "terminal_state"
 }
 
-// Sync states past which a status refresh is meaningless: a shipped/cancelled
-// order is no longer edit/cancel-gated. Mirrors status-poll's TERMINAL_SYNC_STATES
-// so the webhook and poll paths keep the same "stop refreshing" boundary.
-const TERMINAL_SYNC_STATES = new Set(["shipped", "cancelled"])
+// Sync states past which a status refresh is meaningless. Mirrors status-poll's
+// TERMINAL_SYNC_STATES so the webhook and poll paths keep the same "stop
+// refreshing" boundary. "shipped" is intentionally NOT terminal: a pickup order
+// still advances shipped (450) -> delivered (500), and its latest_status_code must
+// keep tracking until it reaches a truly terminal state (bead 18m).
+const TERMINAL_SYNC_STATES = new Set(["delivered", "cancelled"])
 
 type OrderSyncRow = { id: string; sync_state: string }
 

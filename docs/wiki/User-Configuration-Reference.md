@@ -87,7 +87,8 @@ These are stored on the integration row and edited in the admin Settings UI, not
 | `status_poll_interval` | string (ms) or blank | blank → inherits `defaultStatusPollInterval` | How often order status is polled from Ongoing. |
 | `stock_reconcile_mode` | `sellable_plus_reserved` \| `precise` \| `onhand` | `sellable_plus_reserved` | How Ongoing quantities map to Medusa stock. See below. |
 | `edit_sync_rules` | JSON object or null | null (edits blocked) | Which order edits re-push at which Ongoing statuses. See below. |
-| `shipped_status_codes` | number array or null | null | Ongoing statuses that mean "shipped". |
+| `shipped_status_codes` | number array or null | null → canonical 425/450/451 | Ongoing statuses that mean "shipped" (create the Medusa shipment). Empty/null derives the canonical defaults. |
+| `delivered_status_codes` | number array or null | null → canonical 500 | Ongoing statuses that mean "delivered / picked up" (pickup collection). Empty/null derives the canonical default. |
 | `cancellable_status_codes` | number array or null | null | Ongoing statuses at which a cancel may be sent. |
 
 ## Stock reconcile modes
@@ -121,7 +122,7 @@ An edit re-pushes only when the order's current Ongoing status code is listed un
 
 ## Status-code selection
 
-`shipped_status_codes` and `cancellable_status_codes` are number arrays chosen in the admin from the live status list returned by **Test connection**. Codes already stored on an integration stay visible and editable as soon as you open the form — they render as bare code checkboxes (without a label) until you click **Test connection**, which loads the full status list from Ongoing and enriches each code with its text. See the walkthrough in [[User Setup Guide]].
+`shipped_status_codes`, `delivered_status_codes`, and `cancellable_status_codes` are number arrays chosen in the admin from the live status list returned by **Test connection**. Codes already stored on an integration stay visible and editable as soon as you open the form — they render as bare code checkboxes (without a label) until you click **Test connection**, which loads the full status list from Ongoing and enriches each code with its text. Leaving **shipped** or **delivered** empty is safe: the plugin falls back to Ongoing's canonical codes (shipped 425/450/451, delivered 500). A **delivered** code always wins over a **shipped** code for the same number, so a pickup order's `500` is recorded as delivered rather than re-shipped. See the walkthrough in [[User Setup Guide]].
 
 ## Migrations
 

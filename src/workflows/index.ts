@@ -27,6 +27,11 @@ export type {
   SyncOngoingShipmentInput,
   ShipmentDecision,
 } from "./sync-ongoing-shipment"
+export { syncOngoingDeliveryWorkflow } from "./sync-ongoing-delivery"
+export type {
+  SyncOngoingDeliveryInput,
+  DeliveryDecision,
+} from "./sync-ongoing-delivery"
 export { syncOngoingInventoryWorkflow } from "./sync-ongoing-inventory"
 export type { SyncOngoingInventoryInput } from "./sync-ongoing-inventory"
 export { createOngoingIntegrationWorkflow } from "./create-ongoing-integration"

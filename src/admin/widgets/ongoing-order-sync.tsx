@@ -5,7 +5,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { sdk } from "../lib/sdk"
 import { QueryStateView, useOngoingQuery } from "../lib/use-ongoing-query"
 
-type OngoingSyncState = "pending" | "sent" | "shipped" | "cancelled" | "error"
+type OngoingSyncState = "pending" | "sent" | "shipped" | "delivered" | "cancelled" | "error"
 
 type OngoingOrderSyncTracking = {
   tracking_number: string
@@ -40,14 +40,15 @@ type RepushResponse = { ongoing_order_id: number; ongoing_order_number: string }
 // order was visually indistinguishable from a not-yet-sent one. Colours now match the
 // dashboard's summary/table map (SYNC_STATE_BADGE_COLOR) exactly so a state reads the
 // same on the order widget and the ops dashboard: pending grey, sent orange (was blue),
-// shipped green, cancelled purple (was grey), error red.
+// shipped green, delivered blue (pickup collected), cancelled purple (was grey), error red.
 const STATE_BADGE_COLOR: Record<
   OngoingSyncState,
-  "grey" | "green" | "red" | "orange" | "purple"
+  "grey" | "green" | "blue" | "red" | "orange" | "purple"
 > = {
   pending: "grey",
   sent: "orange",
   shipped: "green",
+  delivered: "blue",
   cancelled: "purple",
   error: "red",
 }
@@ -86,7 +87,10 @@ function RepushButton({ orderId, sync }: { orderId: string; sync: OngoingOrderSy
     },
   })
 
-  const terminalState = sync.sync_state === "shipped" || sync.sync_state === "cancelled"
+  const terminalState =
+    sync.sync_state === "shipped" ||
+    sync.sync_state === "delivered" ||
+    sync.sync_state === "cancelled"
   const disabled = !fulfillmentId || terminalState || mutation.isPending
   const label = sync.sync_state === "error" ? "Retry" : "Re-push"
 

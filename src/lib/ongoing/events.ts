@@ -2,6 +2,7 @@ export const ONGOING_EVENTS = {
   ORDER_PUSHED: "ongoing.sync.order_pushed",
   PUSH_FAILED: "ongoing.sync.push_failed",
   SHIPMENT_APPLIED: "ongoing.sync.shipment_applied",
+  ORDER_DELIVERED: "ongoing.sync.order_delivered",
   ORDER_CANCELLED: "ongoing.sync.order_cancelled",
   ORDER_RETRIED: "ongoing.sync.order_retried",
   ORDER_DEAD_LETTERED: "ongoing.sync.order_dead_lettered",
@@ -37,6 +38,18 @@ export interface ShipmentAppliedPayload {
   ongoing_order_sync_id: string
   ongoing_order_number: string
   tracking_numbers: string[]
+}
+
+// Emitted when a pickup order is collected at the pickup point (Ongoing status
+// 500 / stage "delivered"). Scoped to the OngoingOrderSync row; carries the
+// status that triggered it so downstream consumers can distinguish a plain
+// shipment (SHIPMENT_APPLIED) from a pickup delivery.
+export interface OrderDeliveredPayload {
+  medusa_order_id: string
+  ongoing_order_sync_id: string
+  ongoing_order_number: string
+  status_code: number
+  status_text: string
 }
 
 export interface OrderCancelledPayload {

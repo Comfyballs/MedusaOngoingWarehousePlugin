@@ -15,6 +15,7 @@ export type OngoingIntegration = {
   stock_reconcile_mode: StockReconcileMode
   edit_sync_rules: Record<string, unknown> | null
   shipped_status_codes: number[] | null
+  delivered_status_codes: number[] | null
   cancellable_status_codes: number[] | null
 }
 
@@ -28,6 +29,7 @@ export type FormState = {
   stock_reconcile_mode: StockReconcileMode
   edit_sync_rules_json: string
   shipped_status_codes: number[]
+  delivered_status_codes: number[]
   cancellable_status_codes: number[]
 }
 
@@ -41,6 +43,7 @@ export const EMPTY_FORM: FormState = {
   stock_reconcile_mode: "sellable_plus_reserved",
   edit_sync_rules_json: "",
   shipped_status_codes: [],
+  delivered_status_codes: [],
   cancellable_status_codes: [],
 }
 
@@ -58,6 +61,9 @@ export function toFormState(integration: OngoingIntegration): FormState {
       : "",
     shipped_status_codes: Array.isArray(integration.shipped_status_codes)
       ? integration.shipped_status_codes
+      : [],
+    delivered_status_codes: Array.isArray(integration.delivered_status_codes)
+      ? integration.delivered_status_codes
       : [],
     cancellable_status_codes: Array.isArray(integration.cancellable_status_codes)
       ? integration.cancellable_status_codes
@@ -294,6 +300,14 @@ export function IntegrationFormFields({
         selected={form.shipped_status_codes}
         disabled={disabled}
         onChange={(next) => setForm({ ...form, shipped_status_codes: next })}
+      />
+
+      <StatusCodePicker
+        label="Delivered status codes"
+        statuses={testConnection.data?.statuses ?? []}
+        selected={form.delivered_status_codes}
+        disabled={disabled}
+        onChange={(next) => setForm({ ...form, delivered_status_codes: next })}
       />
 
       <StatusCodePicker

@@ -125,6 +125,7 @@ export function CreateIntegrationModal({ open, onClose }: Props) {
       stock_reconcile_mode: form.stock_reconcile_mode,
       edit_sync_rules,
       shipped_status_codes: form.shipped_status_codes,
+      delivered_status_codes: form.delivered_status_codes,
       cancellable_status_codes: form.cancellable_status_codes,
     })
   }

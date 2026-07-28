@@ -7,8 +7,10 @@ import type {
   WebhookOrderPayload,
 } from "../../../../lib/ongoing/types"
 import { dispatchVerifiedShipment } from "./dispatch-shipment"
+import { dispatchVerifiedDelivery } from "./dispatch-delivery"
 import { dispatchStatusRefresh } from "./dispatch-status-refresh"
 import { dispatchReturnStatus } from "./dispatch-return-status"
+import { resolveShipmentStage } from "../../../../lib/ongoing/status-semantics"
 
 // Timing-safe equality. timingSafeEqual throws on unequal-length buffers, so we
 // guard byteLength first; an early length-difference return is acceptable here
@@ -58,7 +60,13 @@ export async function POST(
     getCredentials: (key: string) => OngoingCredentials
     listOngoingIntegrations: (filter: {
       credential_key: string
-    }) => Promise<Array<{ id: string; shipped_status_codes: number[] | null }>>
+    }) => Promise<
+      Array<{
+        id: string
+        shipped_status_codes: number[] | null
+        delivered_status_codes: number[] | null
+      }>
+    >
   }
 
   // --- Auth: unknown credentialKey -> uniform 401 ---
@@ -148,15 +156,18 @@ export async function POST(
       credentialKey,
     })
 
-    const shippedCodes = (integration.shipped_status_codes ?? []) as number[]
-    if (shippedCodes.length === 0) {
-      logger.warn(
-        `[ongoing] webhook: integration "${credentialKey}" has no shipped_status_codes configured; shipment dispatch will never fire until they are set`
-      )
-    }
-    if (!shippedCodes.includes(payload.orderStatus.number)) {
-      // Out-of-band status: refresh the sync row's status, then ack 200.
-      await dispatchStatusRefresh(req.scope, {
+    // --- Interpret the status semantically (bead 18m). Empty config lists fall
+    // back to canonical defaults inside resolveShipmentStage, so a fresh
+    // integration ships/records deliveries without hand-picked codes. ---
+    const stage = resolveShipmentStage(payload.orderStatus.number, {
+      shippedCodes: integration.shipped_status_codes,
+      deliveredCodes: integration.delivered_status_codes,
+    })
+
+    if (stage === "delivered") {
+      // Pickup collection (500): record delivery, backfilling the shipment if the
+      // shipped code was never observed. Idempotent on delivered_at.
+      await dispatchVerifiedDelivery(req.scope, {
         payload,
         integrationId: integration.id,
         credentialKey,
@@ -165,8 +176,19 @@ export async function POST(
       return
     }
 
-    // --- In-band: hand off to the #36 shipment-sync seam, then ack 200 ---
-    await dispatchVerifiedShipment(req.scope, {
+    if (stage === "shipped") {
+      // In-band: hand off to the shipment-sync seam, then ack 200.
+      await dispatchVerifiedShipment(req.scope, {
+        payload,
+        integrationId: integration.id,
+        credentialKey,
+      })
+      res.sendStatus(200)
+      return
+    }
+
+    // Out-of-band status: refresh the sync row's status, then ack 200.
+    await dispatchStatusRefresh(req.scope, {
       payload,
       integrationId: integration.id,
       credentialKey,
