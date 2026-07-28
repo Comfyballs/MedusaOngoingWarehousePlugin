@@ -23,6 +23,21 @@ Every Ongoing-bound change runs from one of three kinds of source: a **Medusa or
 
 Subscribers **persist first, then emit** a best-effort `ongoing.sync.*` domain event, and never throw — see the event list in [[User How It Works]].
 
+## Order identity and idempotency
+
+Every push, edit, and cancel targets one **Ongoing order number**, derived deterministically from the Medusa fulfillment:
+
+```text
+<order.display_id>-<fulfillment.id>
+```
+
+Because each fulfillment maps to its own Ongoing order number, a partially fulfilled Medusa order becomes several Ongoing orders — one per fulfillment. Two consequences make retries and edits safe to repeat:
+
+- **The order push is an upsert** (`PUT /orders`) keyed on that number, so re-pushing — whether by the retry job, the Re-push button, or an edit re-sync — always lands on the **same** Ongoing order rather than creating a duplicate.
+- **Articles are upserted by SKU** (`PUT /articles`) immediately before the order, keyed on the **verbatim Medusa variant SKU** as the Ongoing `articleNumber` (there is no mapping table). A SKU must be unique across all Medusa variants, or the push fails with a terminal error. See [[User Ongoing Concepts]].
+
+The Ongoing order number is stored on the sync row as `ongoing_order_number`; Ongoing's own internal id lands in `ongoing_order_id` once the order is confirmed.
+
 ## How Ongoing status codes are interpreted
 
 Ongoing tracks each order through a tenant-specific numeric status lifecycle (see [[User Ongoing Concepts]]). The plugin reads those numbers in four **independent** ways. Three of them are lists you configure per integration; the fourth is not code-based at all.
@@ -113,6 +128,48 @@ The order-detail Ongoing widget shows the stored tracking numbers and links per 
 ### What is not stored
 
 Deliberately dropped on the inbound tracking path: the label PDF (`label_url` stays empty), the carrier / way-of-delivery name, and item weight (weight and carrier are used only when pushing the order *out* to Ongoing, not when syncing shipments back).
+
+## How failures are classified and retried
+
+When a push, edit, or shipment apply fails, the row goes to `sync_state: "error"` with an `error_class` that decides whether the retry job will touch it:
+
+| Class | What it means | Examples | Retried? |
+|---|---|---|---|
+| `retryable` | Transient — likely to succeed on a later attempt | HTTP `408`, `429`, any `5xx`; network errors (connection reset, timeout, DNS); an unclassified/unknown failure | Yes, by the retry job |
+| `terminal` | Deterministic — the same input will keep failing | Other `4xx` (validation, not-found, auth), a malformed Ongoing response body, an unresolvable or ambiguous SKU | No — needs a data fix, then a manual retry |
+
+Unknown failures default to `retryable` on purpose, so a transient glitch is retried rather than silently dead-lettered. Only a positively-identified deterministic error is marked `terminal`.
+
+The **retry-failed-syncs job** (every minute) sweeps due `error` + `retryable` rows using exponential backoff that doubles from a 5-minute base and caps at 60 minutes — so the delay before attempts 0–4 is roughly:
+
+```text
+attempt:  0     1      2      3      4
+delay:    5m    10m    20m    40m    60m
+```
+
+A small additive random jitter (up to +20%) is layered on so many rows failing during one outage don't all retry on the same tick. After **5** attempts the row is **dead-lettered**: `error_class` flips to `terminal`, `ongoing.sync.order_dead_lettered` is emitted, and the job stops touching it. A row with no fulfillment id can't be re-pushed and is dead-lettered immediately.
+
+Terminal rows (including dead-lettered ones) need a manual fix — correct the underlying data, then re-push from the order widget or bulk-retry from the dashboard. See [[User Troubleshooting]].
+
+## Sync-row fields
+
+Each `OngoingOrderSync` row is one `(order, fulfillment)` sync record — what the dashboard's "Failed & pending syncs" table and the order-detail widget read from. The fields you'll see:
+
+| Field | Meaning |
+|---|---|
+| `sync_state` | `pending` / `sent` / `shipped` / `cancelled` / `error` — see the state machine in [[User How It Works]] |
+| `sync_kind` | `order` (an outbound fulfillment push) or `return` (a return push, keyed by the original order) |
+| `error_class` | `retryable` or `terminal` when `sync_state` is `error`; null otherwise |
+| `retry_count` | Automatic attempts spent so far; dead-lettered at 5 |
+| `latest_status_code` / `latest_status_text` | The most recent Ongoing status number and label seen for the order |
+| `ongoing_order_number` | The deterministic Ongoing order number (`<display_id>-<fulfillment.id>`) |
+| `ongoing_order_id` | Ongoing's internal numeric order id, once confirmed (null before that) |
+| `shipped_at` | Set when the shipment was applied; the guard that prevents a second shipment |
+| `last_synced_at` | When the plugin last acted on this row |
+| `last_error` | The most recent error message, for diagnosis |
+| `edit_blocked_at` / `edit_blocked_category` / `edit_blocked_reason` | Why the last edit was blocked (`no_edit_rules`, `status_unknown`, `status_blocked`), cleared on the next successful re-sync |
+| `cancel_refused_at` / `cancel_refused_reason` | Why a cancel was refused (status not cancellable), cleared on the next successful cancel |
+| `medusa_order_id` / `medusa_fulfillment_id` | The Medusa order and fulfillment this row tracks |
 
 ## Related pages
 
