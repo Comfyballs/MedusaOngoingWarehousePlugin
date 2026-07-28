@@ -13,7 +13,7 @@ The push runs **asynchronously**, just after the fulfillment is created: Medusa 
 5. Builds a deterministic order number, `<order.display_id>-<fulfillment.id>`, and upserts the order (`PUT /orders`). Because it is an upsert keyed on that number, re-pushing is safe and lands on the same Ongoing order.
 6. Records an `OngoingOrderSync` row (`pending` → `sent` or `error`). That row — keyed by fulfillment id — is where the Ongoing order number and id live; the Medusa fulfillment itself only carries the identifiers the push needs (`location_id`, `medusa_fulfillment_id`).
 
-The delivery date sent to Ongoing is the **push time**. Order lines currently carry only article number and quantity — weight and unit price are not sent even though the underlying mapper supports them.
+The delivery date sent to Ongoing is the **push time**, not a real requested delivery date. The initial push sends each line's article number, quantity, and — when available — the variant weight and unit price; the recipient address, email/phone notifications, and carrier config also go across. An order-*edit* re-push sends a thinner line payload (article number and quantity only). For the exact field-by-field payload and what is deliberately omitted, see [[User Sync Reference]].
 
 ## Shipment and tracking back
 

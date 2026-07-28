@@ -38,6 +38,59 @@ Because each fulfillment maps to its own Ongoing order number, a partially fulfi
 
 The Ongoing order number is stored on the sync row as `ongoing_order_number`; Ongoing's own internal id lands in `ongoing_order_id` once the order is confirmed.
 
+## What the plugin sends to Ongoing
+
+The plugin changes data in Ongoing through exactly **four write operations**; everything else it does is read-only. See [What triggers each action](#what-triggers-each-action) above for when each fires.
+
+| Operation | Call | Changes Ongoing? |
+|---|---|---|
+| Order push | `PUT /orders` | Yes |
+| Article upsert | `PUT /articles` | Yes |
+| Return push | `PUT /returnOrders` | Yes |
+| Cancel | `DELETE /orders/<id>` | Yes |
+| Status poll | `GET /orders` | No (read) |
+| Inventory sync | `GET /articles` | No (read) |
+| Connection test | `GET /orders/statuses` | No (read) |
+
+**Every write is a full upsert, not a partial patch.** The plugin resends the entire object each time and Ongoing overwrites its stored copy. So a re-push, an order-edit re-sync, and a retry all **overwrite the whole Ongoing order** — there is no field-level patch. This is what makes retries safe (see [Order identity and idempotency](#order-identity-and-idempotency)), but it also means an edit re-sync replaces everything, including any change made directly in Ongoing since the last push.
+
+### The order payload (`PUT /orders`)
+
+What the initial order push sends:
+
+| Ongoing field | Sent | Source |
+|---|---|---|
+| `orderNumber` | Always | `<display_id>-<fulfillment.id>` |
+| `goodsOwnerId` | Always | The integration's goods owner |
+| `deliveryDate` | Always | **Push time ("now")** — not a real requested delivery date; Medusa doesn't carry one through |
+| `consignee.name` | Always | Shipping first + last name (required) |
+| `consignee.countryCode`, `consignee.postCode` | Always | Shipping address (required) |
+| `consignee.address1` / `address2` / `city` | When present | Shipping address |
+| `orderLines[].articleNumber` | Always | The Medusa variant SKU, verbatim |
+| `orderLines[].numberOfItems` | Always | Line quantity, as-is |
+| `orderLines[].weight` | When the variant has one | Product-variant weight |
+| `orderLines[].prices.linePrice` + `currencyCode` | When present | Line unit price (as-is, not cents) and order currency |
+| `emailNotification` | When the order has an email | Opts the order into Ongoing email notifications |
+| `telephoneNotification` | When the shipping address has a phone | Opts into telephone notifications |
+| `wayOfDelivery` / `transporter` | When the shipping option has carrier config | Set on the shipping option's `data` (see [[User Setup Guide]]) |
+
+**Deliberately not sent**, even though Ongoing accepts them: the shipping-address **company** name, VAT/organisation number, country state, door code, delivery instructions, and any freetext/comment; per-line discount, VAT, and customer price; order-level freight price and SMS notification. If your warehouse needs any of these, they won't arrive from Medusa today.
+
+> **Caution**
+> An **order-edit re-push sends a thinner line payload than the first push** — only `articleNumber` and `numberOfItems`, dropping `weight` and `linePrice`. Because the re-push is a full upsert, any line weight and price the initial push sent are **overwritten to empty** on the first edit re-sync. Carrier, notifications, and address are carried forward.
+
+### The article payload (`PUT /articles`)
+
+Immediately before every order push (and edit re-push), the plugin upserts each SKU the order references — **only those SKUs, never the whole catalog**. Each article carries just three fields: `goodsOwnerId`, `articleNumber` (the verbatim SKU), and `articleName` (the order line's title, falling back to the SKU). Barcode, product code, and weight are **not** sent on the article. Because the payload never grows richer, re-pushing an existing article doesn't add detail to it in Ongoing.
+
+### The return payload (`PUT /returnOrders`)
+
+A return push sends: `returnOrderNumber` (`RET-<display_id>-<returnFulfillment.id>`), a link to the original order via Ongoing's **internal order id**, `inDate` (today's date), and one return line per item — each matched to an original order line by SKU, carrying the quantity to return. No prices, weights, or return-cause are sent.
+
+### Cancel (`DELETE /orders/<id>`)
+
+Cancellation sends **no body** — just Ongoing's internal order id in the URL. It's gated by `cancellable_status_codes` (see below) and is idempotent: if Ongoing reports the order is already cancelled, the plugin treats that as success rather than an error.
+
 ## How Ongoing status codes are interpreted
 
 Ongoing tracks each order through a tenant-specific numeric status lifecycle (see [[User Ongoing Concepts]]). The plugin reads those numbers in four **independent** ways. Three of them are lists you configure per integration; the fourth is not code-based at all.
