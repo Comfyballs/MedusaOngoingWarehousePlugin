@@ -5,8 +5,9 @@ import {
   refreshOngoingOrderStatusWorkflow,
   syncOngoingShipmentWorkflow,
   syncOngoingDeliveryWorkflow,
+  markOrderSyncDoneWorkflow,
 } from "../workflows"
-import { resolveShipmentStage } from "../lib/ongoing/status-semantics"
+import { isDoneStatusCode, resolveShipmentStage } from "../lib/ongoing/status-semantics"
 
 // Ongoing order-status sweep. Wide on purpose: the poll keeps latest_status_code
 // fresh for order-edit gating AND detects shipment, so it must see every active
@@ -48,12 +49,14 @@ type OrderSyncRow = {
   ongoing_order_number: string
   sync_state: string
   shipped_at: Date | string | null
+  done_synced_at: Date | string | null
 }
 
 type OngoingServiceLike = {
   listOngoingIntegrations: (filter: { enabled: boolean }) => Promise<IntegrationRow[]>
   getClient: (credentialKey: string) => OngoingClientLike
   getDefaultStatusPollIntervalMs: () => number
+  getDoneStatusThreshold: () => number
   acquireSyncLock: (integrationId: string, ttlMs: number, lockName?: "status_poll") => Promise<boolean>
   releaseSyncLock: (integrationId: string, lockName?: "status_poll") => Promise<void>
   listOngoingOrderSyncs: (filter: { integration_id: string }) => Promise<OrderSyncRow[]>
@@ -95,11 +98,13 @@ async function pollAndApply(
     ONGOING_ACTIVE_STATUS_TO
   )
 
-  // Limit in-memory work to this integration's still-open tracked orders.
+  // Limit in-memory work to this integration's still-open tracked orders. A row
+  // already synced at a done status (done_synced_at stamped below) is excluded for
+  // the same reason a terminal sync_state is: nothing further is expected from it.
   const rows = await service.listOngoingOrderSyncs({ integration_id: integration.id })
   const tracked = new Map<string, OrderSyncRow>()
   for (const row of rows) {
-    if (!TERMINAL_SYNC_STATES.has(row.sync_state)) {
+    if (!TERMINAL_SYNC_STATES.has(row.sync_state) && row.done_synced_at == null) {
       tracked.set(row.ongoing_order_number, row)
     }
   }
@@ -108,6 +113,7 @@ async function pollAndApply(
     shippedCodes: integration.shipped_status_codes,
     deliveredCodes: integration.delivered_status_codes,
   }
+  const doneThreshold = service.getDoneStatusThreshold()
 
   for (const order of orders) {
     const row = tracked.get(order.orderNumber)
@@ -155,6 +161,18 @@ async function pollAndApply(
           tracking_numbers: order.trackingNumbers,
           tracking: order.tracking,
         },
+      })
+    }
+
+    // Ongoing is finished with anything above the threshold (451 Klar til henting,
+    // 475 Retur, 500 Hentet, 1000 Annullert), so this tick is its last: stamp the row
+    // and let later ticks skip it (bead 8rg). Stamped LAST on purpose — if the refresh
+    // or the shipment/delivery sync above threw, this never runs and the next tick
+    // retries the order instead of freezing it half-synced. Late Ongoing changes to a
+    // done order are the daily safety-check sweep's job (bead t36), not this poll's.
+    if (isDoneStatusCode(order.statusNumber, doneThreshold)) {
+      await markOrderSyncDoneWorkflow(container).run({
+        input: { order_sync_id: row.id },
       })
     }
   }

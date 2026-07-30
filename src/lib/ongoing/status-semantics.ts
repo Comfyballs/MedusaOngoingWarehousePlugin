@@ -23,6 +23,18 @@
 //   500  Hentet            — picked up at the pickup point (delivered / terminal)
 //   1000 Annullert         — cancelled
 
+// Status codes ABOVE this one mean Ongoing is finished with the order (451 Klar til
+// henting, 475 Retur, 500 Hentet, 1000 Annullert): nothing more should happen to it,
+// so the 15-minute status poll syncs it once at that code and then stops re-syncing
+// it (bead 8rg). 450 itself stays polled — a pickup order still advances 450 -> 500.
+// Overridable with the `defaultDoneStatusThreshold` plugin option.
+export const DEFAULT_DONE_STATUS_THRESHOLD = 450
+
+// Strictly above: a code equal to the threshold keeps its current polling behaviour.
+export function isDoneStatusCode(code: number, threshold: number): boolean {
+  return code > threshold
+}
+
 export type OngoingOrderStage =
   | "created"
   | "picking"

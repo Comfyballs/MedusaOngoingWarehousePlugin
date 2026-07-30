@@ -11,6 +11,9 @@ export type OngoingPluginOptions = {
   integrations: OngoingCredentials[]
   defaultStockSyncInterval?: string
   defaultStatusPollInterval?: string
+  // Ongoing status code above which an order counts as done: the status poll syncs it
+  // once at that code and then skips it (default 450 — see status-semantics.ts).
+  defaultDoneStatusThreshold?: number
   rateLimitConcurrency?: number
 }
 

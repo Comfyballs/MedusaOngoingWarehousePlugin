@@ -4,6 +4,7 @@ import OngoingIntegration from "./models/integration"
 import OngoingOrderSync from "./models/order-sync"
 import { validateOngoingOptions } from "./options"
 import { OngoingClient } from "../../lib/ongoing/client"
+import { DEFAULT_DONE_STATUS_THRESHOLD } from "../../lib/ongoing/status-semantics"
 import type { OngoingCredentials, OngoingPluginOptions } from "../../lib/ongoing/types"
 
 // Parse a millisecond interval plugin option, falling back to `fallback` when the
@@ -157,6 +158,16 @@ class OngoingModuleService extends MedusaService({
   // eslint-disable-next-line @medusajs/service-methods-must-be-async
   getDefaultStatusPollIntervalMs(): number {
     return parseIntervalMs(this.options_.defaultStatusPollInterval, 60000)
+  }
+
+  // Status code above which the poll considers an order done and stops re-syncing it
+  // (bead 8rg). Pure synchronous config accessor, same rationale as the getters around it.
+  // eslint-disable-next-line @medusajs/service-methods-must-be-async
+  getDoneStatusThreshold(): number {
+    const threshold = this.options_.defaultDoneStatusThreshold
+    return Number.isInteger(threshold) && (threshold as number) >= 0
+      ? (threshold as number)
+      : DEFAULT_DONE_STATUS_THRESHOLD
   }
 
   // Pure synchronous config accessor (parses an in-memory option, no I/O) — kept

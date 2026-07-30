@@ -115,6 +115,17 @@ The status-poll job asks Ongoing for every order in status **100 through 999** (
 - If a delivered code arrives without the plugin ever having recorded a shipment (a missed poll skipped the shipped code), the plugin **backfills the Medusa shipment first**, then records delivery — the transition is never dropped.
 - Recording delivery is idempotent: a repeated `500` (re-poll or re-delivered webhook) is a no-op once `delivered_at` is set.
 
+### Done threshold — when the poll stops re-syncing an order
+
+Codes **above** `defaultDoneStatusThreshold` (default `450`) mean Ongoing is finished with the order — canonically `451` (Klar til henting), `475` (Retur), `500` (Hentet), and `1000` (Annullert). Re-syncing those on every 15-minute tick spends Ongoing API calls for information that will not change, so:
+
+- The order is synced **exactly once** at (or after) the tick where it crosses the threshold — its status is refreshed and any shipment/delivery is applied as usual.
+- Only then is `done_synced_at` stamped on the sync row, and every later poll tick **skips** the row. The stamp is written last on purpose: if the refresh or the shipment/delivery sync fails, the row stays pollable and the next tick retries it.
+- The threshold is compared **strictly greater than**, so `450` itself keeps its current behavior — a pickup order must stay in the poll to advance `450` → `500`.
+- Set the option to a different code to move the line (for example `500` to keep polling `451` and `475`).
+
+> **Caution — keep the threshold consistent with your shipped codes.** With the canonical defaults this is automatic: `451` is a shipped code, so an order the poll first sees at `451` still gets its Medusa shipment before being stamped done. If you **narrow** `shipped_status_codes` so that a code above the threshold is no longer a shipped code (for example `[450]` with the threshold left at `450`), an order the poll first sees at `451` is stamped done with **no** Medusa shipment. Either keep every above-threshold shipped code in the list, or raise the threshold above them.
+
 ### Cancellable codes — a gate, with an unknown-status exception
 
 `cancellable_status_codes` gates the cancel workflow:
@@ -143,6 +154,7 @@ Returns are **not** detected from a status code. A webhook can carry return acti
 
 - **Poll job:** every tracked, non-terminal order is **always** refreshed (its `latest_status_code` / `latest_status_text` updated), and **additionally** shipped (shipped stage) or recorded as delivered (delivered stage) — refresh and the stage action are not mutually exclusive.
 - **Webhook:** it is **one branch** — a delivered code records delivery, a shipped code applies the shipment, and any other code just refreshes the status.
+- The poll also stops once the row is stamped `done_synced_at` — see [Done threshold](#done-threshold--when-the-poll-stops-re-syncing-an-order) above. The webhook path ignores that stamp: a push from Ongoing is always applied.
 - Both stop refreshing once the row reaches a **terminal** state (`delivered` or `cancelled`). **`shipped` is deliberately *not* terminal** — a pickup order still advances `shipped` (450) → `delivered` (500), so the plugin keeps polling a shipped row until it reaches a truly terminal state. (Before this, a `shipped` row was treated as terminal and the `500` pickup was silently swallowed.)
 - The current status is stored on the `OngoingOrderSync` row as **`latest_status_code`** (number) and **`latest_status_text`** (text).
 
@@ -227,6 +239,7 @@ Each `OngoingOrderSync` row is one `(order, fulfillment)` sync record — what t
 | `ongoing_order_number` | The deterministic Ongoing order number (`<display_id>-<fulfillment.id>`) |
 | `ongoing_order_id` | Ongoing's internal numeric order id, once confirmed (null before that) |
 | `shipped_at` | Set when the shipment was applied; the guard that prevents a second shipment |
+| `done_synced_at` | Set once the poll has synced the order at a status above the done threshold; later poll ticks skip the row |
 | `last_synced_at` | When the plugin last acted on this row |
 | `last_error` | The most recent error message, for diagnosis |
 | `edit_blocked_at` / `edit_blocked_category` / `edit_blocked_reason` | Why the last edit was blocked (`no_edit_rules`, `status_unknown`, `status_blocked`), cleared on the next successful re-sync |

@@ -9,10 +9,11 @@ You pass these in the consuming app's `medusa-config.ts` under the plugin's `opt
 | `integrations` | `OngoingCredentials[]` | Yes (array, may be empty) | — | One entry per Ongoing goods owner; each binds one-to-one to a single Medusa stock location. See the per-integration table below and the mapping in [[User Ongoing Concepts]]. |
 | `defaultStockSyncInterval` | `string` (milliseconds, as a decimal string) | No | `"600000"` (10 minutes) | Fallback stock-sync interval used when an integration row leaves `stock_sync_interval` blank. |
 | `defaultStatusPollInterval` | `string` (milliseconds) | No | `"60000"` (1 minute) | Fallback status-poll interval used when an integration row leaves `status_poll_interval` blank. |
+| `defaultDoneStatusThreshold` | `number` (Ongoing status code) | No | `450` | Status code above which an order counts as finished. The status poll syncs such an order **once** at that code and then stops re-syncing it. See [[User Sync Reference]]. |
 | `rateLimitConcurrency` | `number` | No | `1` | Maximum concurrent Ongoing API calls per goods owner. Ongoing recommends fully sequential calls — leave at `1` unless Ongoing support advises otherwise. |
 
 > **Note**
-> These options are validated at startup. `rateLimitConcurrency` must be an integer `>= 1`, and `defaultStockSyncInterval` / `defaultStatusPollInterval` must parse to a positive integer number of milliseconds. A bad value fails the boot with a clear `INVALID_DATA` error instead of surfacing later mid-request or silently disabling a poll.
+> These options are validated at startup. `rateLimitConcurrency` must be an integer `>= 1`, `defaultDoneStatusThreshold` must be an integer `>= 0`, and `defaultStockSyncInterval` / `defaultStatusPollInterval` must parse to a positive integer number of milliseconds. A bad value fails the boot with a clear `INVALID_DATA` error instead of surfacing later mid-request or silently disabling a poll.
 
 ## Per-integration credentials
 
