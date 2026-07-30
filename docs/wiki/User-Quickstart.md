@@ -93,7 +93,7 @@ Order edits are **blocked by default** until you set `edit_sync_rules`. If you w
 3. Open the order detail page and confirm the **Ongoing Warehouse** widget shows a `sent` badge and an Ongoing order number.
 4. Confirm the order appears in Ongoing's own UI.
 
-That's a working integration. From here, Ongoing's shipment updates flow back automatically via the status-poll job (every minute) and, if you configure it, the webhook.
+That's a working integration. From here, Ongoing's shipment updates flow back automatically via the status-poll job (every 15 minutes) and, if you configure it, the webhook.
 
 ## Next steps
 

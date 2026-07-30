@@ -99,8 +99,8 @@ const integ = (over: Partial<Integration> = {}): Integration => ({
 })
 
 describe("ongoing status-poll job", () => {
-  it("registers the dispatcher to run once a minute", () => {
-    expect(config).toEqual({ name: "ongoing-status-poll", schedule: "* * * * *" })
+  it("registers the dispatcher to run every 15 minutes", () => {
+    expect(config).toEqual({ name: "ongoing-status-poll", schedule: "*/15 * * * *" })
   })
 
   it("skips a locked integration without polling or releasing", async () => {

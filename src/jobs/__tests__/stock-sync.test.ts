@@ -68,8 +68,8 @@ const integ = (over: Partial<Integration> = {}): Integration => ({
 })
 
 describe("ongoing stock-sync job", () => {
-  it("registers the dispatcher to run once a minute", () => {
-    expect(config).toEqual({ name: "ongoing-stock-sync", schedule: "* * * * *" })
+  it("registers the dispatcher to run every 15 minutes", () => {
+    expect(config).toEqual({ name: "ongoing-stock-sync", schedule: "*/15 * * * *" })
   })
 
   it("filters integrations by enabled AND stock_sync_enabled", async () => {

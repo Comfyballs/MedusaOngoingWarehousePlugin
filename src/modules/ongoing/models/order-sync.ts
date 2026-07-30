@@ -46,7 +46,7 @@ const OngoingOrderSync = model.define("ongoing_order_sync", {
   cancel_refused_reason: model.text().nullable(),
 }).indexes([
   // w0a: retry-failed-syncs.ts runs listOngoingOrderSyncs({ sync_state: "error",
-  // error_class: "retryable" }) every minute. A composite index on both columns
+  // error_class: "retryable" }) every 5 minutes. A composite index on both columns
   // keeps that every-tick sweep off a full table scan as the ledger grows.
   {
     on: ["sync_state", "error_class"],

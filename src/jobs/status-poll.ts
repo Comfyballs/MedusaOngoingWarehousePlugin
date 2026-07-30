@@ -230,5 +230,5 @@ export default async function ongoingStatusPollJob(container: MedusaContainer): 
 
 export const config = {
   name: "ongoing-status-poll",
-  schedule: "* * * * *",
+  schedule: "*/15 * * * *",
 }

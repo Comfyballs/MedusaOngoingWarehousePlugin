@@ -268,5 +268,5 @@ export default async function ongoingStockSyncJob(container: MedusaContainer): P
 
 export const config = {
   name: "ongoing-stock-sync",
-  schedule: "* * * * *",
+  schedule: "*/15 * * * *",
 }

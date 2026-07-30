@@ -71,7 +71,7 @@ The webhook route always acks `200`, even when the internal work fails — so On
 1. Confirm the webhook URL uses the correct credential key and points at `/ongoing/webhooks/<credential_key>`.
 2. Confirm the `X-Auth-Token` header equals the integration's `webhookSecret`, and that `webhookSecret` is actually set (an unset secret rejects all requests with `401`).
 3. Check application logs for `[ongoing] webhook: ...`.
-4. Remember the every-minute poll job is the backstop — status and shipment will catch up even if a webhook was lost.
+4. Remember the every-15-minutes poll job is the backstop — status and shipment will catch up even if a webhook was lost.
 
 ## What to grep in logs
 
