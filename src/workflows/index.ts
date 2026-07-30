@@ -22,6 +22,8 @@ export { upsertOngoingOrderEditStep } from "./steps/upsert-ongoing-order-edit"
 export type { UpsertResult } from "./steps/upsert-ongoing-order-edit"
 export { markOrderSyncEditBlockedWorkflow } from "./mark-order-sync-edit-blocked"
 export type { MarkEditBlockedInput } from "./steps/mark-order-sync-edit-blocked"
+export { markOrderSyncDoneWorkflow } from "./mark-order-sync-done"
+export type { MarkOrderSyncDoneInput } from "./steps/mark-order-sync-done"
 export { syncOngoingShipmentWorkflow } from "./sync-ongoing-shipment"
 export type {
   SyncOngoingShipmentInput,

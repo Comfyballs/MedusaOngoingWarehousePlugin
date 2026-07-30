@@ -711,6 +711,22 @@
           "enumItems": [],
           "mappedType": "datetime"
         },
+        "done_synced_at": {
+          "name": "done_synced_at",
+          "type": "timestamptz",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": 6,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "datetime"
+        },
         "edit_blocked_at": {
           "name": "edit_blocked_at",
           "type": "timestamptz",

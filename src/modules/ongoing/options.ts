@@ -49,6 +49,21 @@ export function validateOngoingOptions(options: unknown): OngoingPluginOptions {
   validateIntervalOption(opts.defaultStatusPollInterval, "defaultStatusPollInterval")
   validateIntervalOption(opts.defaultStockSyncInterval, "defaultStockSyncInterval")
 
+  // The status poll stops re-syncing orders above this code (bead 8rg). A non-numeric
+  // or negative value would either freeze every order or none of them — reject at boot
+  // rather than at the first tick.
+  if (opts.defaultDoneStatusThreshold !== undefined) {
+    const threshold = opts.defaultDoneStatusThreshold
+    if (typeof threshold !== "number" || !Number.isInteger(threshold) || threshold < 0) {
+      throw new MedusaError(
+        MedusaError.Types.INVALID_DATA,
+        `[ongoing] defaultDoneStatusThreshold must be an integer >= 0 (received ${JSON.stringify(
+          threshold
+        )})`
+      )
+    }
+  }
+
   return opts as OngoingPluginOptions
 }
 

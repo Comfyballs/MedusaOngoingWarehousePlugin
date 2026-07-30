@@ -61,4 +61,20 @@ describe("validateOngoingOptions", () => {
       validateOngoingOptions({ ...valid, [field]: bad })
     ).toThrow(new RegExp(field))
   })
+
+  it("accepts a valid defaultDoneStatusThreshold", () => {
+    expect(
+      validateOngoingOptions({ ...valid, defaultDoneStatusThreshold: 500 })
+        .defaultDoneStatusThreshold
+    ).toBe(500)
+  })
+
+  it.each([-1, 450.5, "450", null])(
+    "rejects an invalid defaultDoneStatusThreshold (%p)",
+    (bad) => {
+      expect(() =>
+        validateOngoingOptions({ ...valid, defaultDoneStatusThreshold: bad })
+      ).toThrow(/defaultDoneStatusThreshold/)
+    }
+  )
 })

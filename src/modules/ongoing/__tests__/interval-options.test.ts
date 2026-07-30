@@ -40,6 +40,20 @@ describe("OngoingModuleService interval getters (NaN defense-in-depth, bead f483
     ).toBe(60000)
   })
 
+  it("returns the configured defaultDoneStatusThreshold", () => {
+    expect(svcWith({ defaultDoneStatusThreshold: 500 }).getDoneStatusThreshold()).toBe(500)
+  })
+
+  it("falls back to the canonical 450 when defaultDoneStatusThreshold is absent", () => {
+    expect(svcWith({}).getDoneStatusThreshold()).toBe(450)
+  })
+
+  it("falls back to 450 when defaultDoneStatusThreshold is not a non-negative integer", () => {
+    // A NaN/negative here would mark every polled order done on its first tick.
+    expect(svcWithRawOption("defaultDoneStatusThreshold", "450").getDoneStatusThreshold()).toBe(450)
+    expect(svcWithRawOption("defaultDoneStatusThreshold", -1).getDoneStatusThreshold()).toBe(450)
+  })
+
   it("parses a valid defaultStockSyncInterval", () => {
     expect(svcWith({ defaultStockSyncInterval: "120000" }).getDefaultStockSyncIntervalMs()).toBe(120000)
   })

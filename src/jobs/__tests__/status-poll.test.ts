@@ -4,17 +4,21 @@ import type { MedusaContainer } from "@medusajs/framework/types"
 const run = jest.fn().mockResolvedValue({ result: {} })
 const deliveryRun = jest.fn().mockResolvedValue({ result: {} })
 const refreshRun = jest.fn().mockResolvedValue({ result: {} })
+const markDoneRun = jest.fn().mockResolvedValue({ result: {} })
 jest.mock("../../workflows", () => ({
   __esModule: true,
   syncOngoingShipmentWorkflow: jest.fn(() => ({ run })),
   syncOngoingDeliveryWorkflow: jest.fn(() => ({ run: deliveryRun })),
   refreshOngoingOrderStatusWorkflow: jest.fn(() => ({ run: refreshRun })),
+  markOrderSyncDoneWorkflow: jest.fn(() => ({ run: markDoneRun })),
 }))
 
 beforeEach(() => {
   run.mockClear()
+  run.mockResolvedValue({ result: {} })
   deliveryRun.mockClear()
   refreshRun.mockClear()
+  markDoneRun.mockClear()
 })
 
 import ongoingStatusPollJob, { config } from "../status-poll"
@@ -44,6 +48,9 @@ type Row = {
   ongoing_order_number: string
   sync_state: string
   shipped_at: Date | null
+  // Stamped once the poll has synced the order at a done status (bead 8rg); absent
+  // on the rows that model a still-active order.
+  done_synced_at?: Date | null
 }
 
 function makeHarness(opts: {
@@ -53,6 +60,7 @@ function makeHarness(opts: {
   getOrdersImpl?: (credentialKey: string) => Promise<TrackedOrder[]>
   acquireImpl?: (id: string, ttlMs: number) => Promise<boolean>
   defaultIntervalMs?: number
+  doneThreshold?: number
 }) {
   const logger = { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() }
 
@@ -71,6 +79,7 @@ function makeHarness(opts: {
     listOngoingIntegrations: jest.fn(async () => opts.integrations),
     getClient: jest.fn((key: string) => clients[key]),
     getDefaultStatusPollIntervalMs: jest.fn(() => opts.defaultIntervalMs ?? 60000),
+    getDoneStatusThreshold: jest.fn(() => opts.doneThreshold ?? 450),
     acquireSyncLock: jest.fn(opts.acquireImpl ?? (async () => true)),
     releaseSyncLock: jest.fn(async () => undefined),
     listOngoingOrderSyncs: jest.fn(
@@ -274,6 +283,111 @@ describe("ongoing status-poll job", () => {
       },
     })
     expect(deliveryRun).not.toHaveBeenCalled()
+    // 450 IS the threshold, not above it — the order stays in the poll so it can
+    // still advance 450 -> 500.
+    expect(markDoneRun).not.toHaveBeenCalled()
+  })
+
+  describe("done-status threshold (bead 8rg)", () => {
+    const dueInteg = (over: Partial<Integration> = {}) =>
+      integ({
+        last_status_poll_at: new Date(Date.now() - 120000),
+        shipped_status_codes: null,
+        delivered_status_codes: null,
+        ...over,
+      })
+
+    it("syncs an order once when it crosses the threshold, then stamps it done", async () => {
+      // 451 "Klar til henting" is above the default threshold: Ongoing is finished
+      // with it, so this tick is its last.
+      const rows: Row[] = [
+        { id: "r_pickup_ready", integration_id: "int_1", ongoing_order_number: "3001-aaa", sync_state: "sent", shipped_at: null },
+      ]
+      const orders: TrackedOrder[] = [
+        { ongoingOrderId: 11, orderNumber: "3001-aaa", statusNumber: 451, statusText: "Klar til henting", trackingNumbers: ["TR"] },
+      ]
+      const h = makeHarness({
+        integrations: [dueInteg()],
+        rowsByIntegration: { int_1: rows },
+        ordersByKey: { "wh-a": orders },
+      })
+
+      await ongoingStatusPollJob(h.container)
+
+      // Synced exactly once at the done status: status refreshed and the shipment
+      // created (451 is a canonical shipped code), then the row is stamped.
+      expect(refreshRun).toHaveBeenCalledTimes(1)
+      expect(run).toHaveBeenCalledTimes(1)
+      expect(markDoneRun).toHaveBeenCalledTimes(1)
+      expect(markDoneRun).toHaveBeenCalledWith({ input: { order_sync_id: "r_pickup_ready" } })
+    })
+
+    it("skips a row already stamped done on later ticks", async () => {
+      const rows: Row[] = [
+        { id: "r_done", integration_id: "int_1", ongoing_order_number: "3001-bbb", sync_state: "shipped", shipped_at: new Date(), done_synced_at: new Date() },
+      ]
+      const orders: TrackedOrder[] = [
+        { ongoingOrderId: 12, orderNumber: "3001-bbb", statusNumber: 451, statusText: "Klar til henting", trackingNumbers: ["TR"] },
+      ]
+      const h = makeHarness({
+        integrations: [dueInteg()],
+        rowsByIntegration: { int_1: rows },
+        ordersByKey: { "wh-a": orders },
+      })
+
+      await ongoingStatusPollJob(h.container)
+
+      expect(refreshRun).not.toHaveBeenCalled()
+      expect(run).not.toHaveBeenCalled()
+      expect(deliveryRun).not.toHaveBeenCalled()
+      expect(markDoneRun).not.toHaveBeenCalled()
+    })
+
+    it("honours a configured threshold instead of the 450 default", async () => {
+      // Threshold 400: 425 is now "done", and a below-threshold 300 is untouched.
+      const rows: Row[] = [
+        { id: "r_sent_425", integration_id: "int_1", ongoing_order_number: "3001-ccc", sync_state: "sent", shipped_at: null },
+        { id: "r_picking", integration_id: "int_1", ongoing_order_number: "3001-ddd", sync_state: "sent", shipped_at: null },
+      ]
+      const orders: TrackedOrder[] = [
+        { ongoingOrderId: 13, orderNumber: "3001-ccc", statusNumber: 425, statusText: "Sendt/Dellevert", trackingNumbers: [] },
+        { ongoingOrderId: 14, orderNumber: "3001-ddd", statusNumber: 300, statusText: "Plukk", trackingNumbers: [] },
+      ]
+      const h = makeHarness({
+        integrations: [dueInteg()],
+        rowsByIntegration: { int_1: rows },
+        ordersByKey: { "wh-a": orders },
+        doneThreshold: 400,
+      })
+
+      await ongoingStatusPollJob(h.container)
+
+      expect(refreshRun).toHaveBeenCalledTimes(2)
+      expect(markDoneRun).toHaveBeenCalledTimes(1)
+      expect(markDoneRun).toHaveBeenCalledWith({ input: { order_sync_id: "r_sent_425" } })
+    })
+
+    it("does not stamp done when the order's shipment sync fails", async () => {
+      // The stamp is last on purpose: a half-applied tick must stay pollable so the
+      // next tick retries it rather than freezing the order without its shipment.
+      const rows: Row[] = [
+        { id: "r_fail", integration_id: "int_1", ongoing_order_number: "3001-eee", sync_state: "sent", shipped_at: null },
+      ]
+      const orders: TrackedOrder[] = [
+        { ongoingOrderId: 15, orderNumber: "3001-eee", statusNumber: 451, statusText: "Klar til henting", trackingNumbers: ["TR"] },
+      ]
+      const h = makeHarness({
+        integrations: [dueInteg()],
+        rowsByIntegration: { int_1: rows },
+        ordersByKey: { "wh-a": orders },
+      })
+      run.mockRejectedValueOnce(new Error("fulfillment missing"))
+
+      await expect(ongoingStatusPollJob(h.container)).resolves.toBeUndefined()
+
+      expect(h.logger.error).toHaveBeenCalled()
+      expect(markDoneRun).not.toHaveBeenCalled()
+    })
   })
 
   it("releases the lock, advances cadence, and never throws when the poll fails", async () => {

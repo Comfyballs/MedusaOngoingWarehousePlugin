@@ -65,7 +65,7 @@ The `created_*` columns are populated by setup but not yet consumed: integration
 
 Table `ongoing_order_sync`. One row per `(order, fulfillment)` pushed to Ongoing — the sync-state ledger.
 
-Key fields: `ongoing_order_number` (unique, deterministic idempotency key `<display_id>-<fulfillment_id>`, persisted before the PUT so a crash never orphans an Ongoing order), `ongoing_order_id` (Ongoing's internal id, returned by `PUT /orders`), `sync_state`, `error_class`, `retry_count`, `shipped_at` (shipment idempotency marker), `delivered_at` (pickup-collection idempotency marker for the `shipped` → `delivered` two-step, bead `18m`), and the `edit_blocked_*` trio (when and why an order edit was blocked from re-syncing).
+Key fields: `ongoing_order_number` (unique, deterministic idempotency key `<display_id>-<fulfillment_id>`, persisted before the PUT so a crash never orphans an Ongoing order), `ongoing_order_id` (Ongoing's internal id, returned by `PUT /orders`), `sync_state`, `error_class`, `retry_count`, `shipped_at` (shipment idempotency marker), `delivered_at` (pickup-collection idempotency marker for the `shipped` → `delivered` two-step, bead `18m`), `done_synced_at` (stamped after the poll's one and only sync at a status above the done threshold; later ticks skip the row, bead `8rg`), and the `edit_blocked_*` trio (when and why an order edit was blocked from re-syncing).
 
 `integration_id` is a plain text column (FK by convention, no relationship).
 
@@ -87,6 +87,8 @@ stateDiagram-v2
 
 `shipped` is **not** terminal: a pickup order still advances `shipped` (450) → `delivered` (500). Only `delivered` and `cancelled` end the lifecycle for polling/refresh (`TERMINAL_SYNC_STATES`, bead `18m`).
 
+Independently of `sync_state`, the status poll also drops a row once `done_synced_at` is stamped — i.e. after it has been synced once at a status code **above** `defaultDoneStatusThreshold` (default `450`: `451`, `475`, `500`, `1000`), which is Ongoing telling us nothing more will happen (bead `8rg`). The webhook path ignores the stamp; late Ongoing-side changes to a done order are the daily safety-check sweep's job (bead `t36`).
+
 The `error_class` (`retryable` | `terminal`) decides whether the retry job touches a row. Rows stuck in `pending` whose workflow died are flagged back to `error(retryable)` by the orphan-repair workflow so the normal sweep picks them up.
 
 ### Service methods worth knowing
@@ -100,7 +102,7 @@ The `error_class` (`retryable` | `terminal`) decides whether the retry job touch
 
 ### Plugin options and boot validation
 
-`OngoingPluginOptions`: `integrations: OngoingCredentials[]` (each `{ key, baseUrl, username, password, goodsOwnerId, webhookSecret? }`), plus optional `defaultStockSyncInterval`, `defaultStatusPollInterval`, and `rateLimitConcurrency` (Throttle concurrency per goods owner, default 1). The `validate-options` loader runs the same validation at module boot and logs the validated integration count, so misconfiguration fails app startup rather than first use.
+`OngoingPluginOptions`: `integrations: OngoingCredentials[]` (each `{ key, baseUrl, username, password, goodsOwnerId, webhookSecret? }`), plus optional `defaultStockSyncInterval`, `defaultStatusPollInterval`, `defaultDoneStatusThreshold` (status code above which the poll stops re-syncing an order, default 450), and `rateLimitConcurrency` (Throttle concurrency per goods owner, default 1). The `validate-options` loader runs the same validation at module boot and logs the validated integration count, so misconfiguration fails app startup rather than first use.
 
 ### Migrations
 
@@ -177,6 +179,7 @@ Source: [`src/workflows/`](https://github.com/Comfyballs/MedusaOngoingWarehouseP
 | `retry-ongoing-syncs` | admin bulk-retry | Reset `last_synced_at: null` on eligible `error/retryable` rows so the sweep picks them up. |
 | `flag-orphaned-order-syncs` | `POST /admin/ongoing/syncs/repair-orphaned` | Flip `sent`-with-null-`ongoing_order_id` rows to `error/retryable`. Idempotent. |
 | `mark-order-sync-edit-blocked` | edit subscribers | Set or clear the `edit_blocked_*` columns. |
+| `mark-order-sync-done` | status-poll job | Stamp `done_synced_at` once an order has been synced at a status code above the done threshold (default `450`), so later poll ticks skip it (bead `8rg`). Called **last** in the per-order block: a failed refresh/shipment/delivery leaves the row unstamped and therefore retried. |
 | Integration CRUD | admin routes | `create` (compensation deletes the row; step 2 runs `setup-location` as a saga), `update`, `delete` (Medusa-side row only — see `cleanup-ongoing-location` below for the still-manual artifact cleanup). |
 | `setup-ongoing-location` | nested in create, or directly | Provisions the fulfilment set, service zone, shipping option, integration-location write (with compensation), and the stock-location link. |
 | `cleanup-ongoing-location` | none yet (reusable; not wired into delete) | Guarded reverse of `setup-location` (bead `pud` slice b). Reads the `created_*` artifact ids (slice a), dismisses the stock-location↔integration link, then deletes **only** artifacts it created and that are safe: shipping options not referenced by a live fulfillment, the service zone if it ends up empty, and the fulfillment set only when `created_fulfillment_set_id` is set (i.e. not reused) and it ends up empty. Never deletes a reused/shared set. Does **not** delete the `OngoingIntegration` row. Returns a report of what was deleted vs preserved (with reasons). Intentionally **not** called on delete by default — the opt-in admin cascade is deferred slice c, pending product sign-off. |

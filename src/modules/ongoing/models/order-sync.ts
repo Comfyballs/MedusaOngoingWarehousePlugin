@@ -35,6 +35,12 @@ const OngoingOrderSync = model.define("ongoing_order_sync", {
   // (a repeated 500 webhook/poll is a no-op) and so "shipped" vs "delivered" is a
   // real distinction, not an overloaded flag (bead 18m).
   delivered_at: model.dateTime().nullable(),
+  // Stamped once the status poll has fully synced this order at a status code above
+  // the done threshold (default 450 — see status-semantics.ts). Set only after the
+  // refresh AND any shipment/delivery sync for that tick succeeded, so a failed tick
+  // is retried rather than frozen. Subsequent poll ticks skip a stamped row (bead 8rg);
+  // the daily safety-check sweep (bead t36) is the catch-net for late Ongoing changes.
+  done_synced_at: model.dateTime().nullable(),
   edit_blocked_at: model.dateTime().nullable(),
   edit_blocked_category: model.enum(["address_contact", "line_items"]).nullable(),
   edit_blocked_reason: model.text().nullable(),
