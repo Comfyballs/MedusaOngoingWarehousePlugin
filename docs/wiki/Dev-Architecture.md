@@ -237,7 +237,7 @@ The `fulfillment-created` / `return-created` / `fulfillment-canceled` trio are t
 
 ### Jobs
 
-Source: [`src/jobs/`](https://github.com/Comfyballs/MedusaOngoingWarehousePlugin/blob/main/src/jobs). All run every minute.
+Source: [`src/jobs/`](https://github.com/Comfyballs/MedusaOngoingWarehousePlugin/blob/main/src/jobs). `retry-failed-syncs` runs every 5 minutes; `status-poll` and `stock-sync` every 15 minutes.
 
 - `retry-failed-syncs.ts`: lists all `error/retryable` rows globally (no integration lock — safety is row-level CAS only), filters to due rows by backoff, and per row either dead-letters, re-invokes `pushOrderToOngoing`, or loses the CAS silently. A row with a null `medusa_fulfillment_id` is dead-lettered immediately — it cannot be re-pushed — with `retry_count` unchanged and `order_dead_lettered` emitted with a null fulfillment id (see [[Dev Gotchas]]).
 - `status-poll.ts`: per enabled integration, acquires its own `"status_poll"` lock, calls `getOrdersByStatus(100, 999)`, refreshes each matched non-terminal row's `latest_status_code/text` via `refreshOngoingOrderStatusWorkflow` (bead `o6c`; the same workflow the webhook status refresh uses), then resolves each order's status to a stage (`resolveShipmentStage`, bead `18m`): a `shipped` stage runs `syncOngoingShipmentWorkflow`, a `delivered` stage runs `syncOngoingDeliveryWorkflow`. `shipped` rows stay in scope (only `delivered`/`cancelled` are terminal) so the `450` → `500` pickup transition is caught. The lock/cadence bookkeeping (`acquireSyncLock`/`releaseSyncLock`/`updateOngoingIntegrations` timestamp stamp) stays a direct module-service call — tangled with the advisory-lock `finally` lifecycle rather than a per-order data mutation, so it's left as-is (a documented, lower-priority `arch-workflow-required` deviation).
@@ -313,7 +313,7 @@ Source: [`src/admin/`](https://github.com/Comfyballs/MedusaOngoingWarehousePlugi
 
 **Order push -> shipment -> tracking**: creating a fulfilment with the Ongoing shipping option emits `order.fulfillment_created`, whose subscriber runs `pushOrderToOngoing` (the provider's `createFulfillment` only stashes ids — bug ei4). Then status-poll and the webhook both keep `latest_status_code` current; once a shipped code arrives, both converge on the idempotent `syncOngoingShipmentWorkflow`, which runs core `createOrderShipmentWorkflow` with tracking labels and marks the row `shipped`.
 
-**Inventory**: every minute `stock-sync` picks due integrations, chooses delta or full, fetches inventory, and reconciles `stocked_quantity` per mode — `sellable_plus_reserved` reconstructs Medusa's `stocked = sellable + reserved` invariant so reservations don't double-deduct; `precise` scopes reserved to this integration's own synced orders; `onhand` uses raw on-hand.
+**Inventory**: every 15 minutes `stock-sync` picks due integrations, chooses delta or full, fetches inventory, and reconciles `stocked_quantity` per mode — `sellable_plus_reserved` reconstructs Medusa's `stocked = sellable + reserved` invariant so reservations don't double-deduct; `precise` scopes reserved to this integration's own synced orders; `onhand` uses raw on-hand.
 
 **Edits**: `order-edit.confirmed` maps to the `line_items` category and `order.updated` (via burst-union) to `address_contact`. Each affected row is gated, then either blocked (persist `edit_blocked_*`, emit `EDIT_BLOCKED`) or re-synced by re-PUTting the same order number.
 

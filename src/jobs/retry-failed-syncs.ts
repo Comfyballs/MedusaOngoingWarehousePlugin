@@ -240,5 +240,5 @@ export default async function retryFailedSyncsJob(
 
 export const config = {
   name: "ongoing-retry-failed-syncs",
-  schedule: "* * * * *",
+  schedule: "*/5 * * * *",
 }

@@ -2,7 +2,7 @@ This page is a lookup reference for how the plugin reacts to events: what trigge
 
 ## What triggers each action
 
-Every Ongoing-bound change runs from one of three kinds of source: a **Medusa order event** (handled by a subscriber), a **scheduled job** (cron, every minute, self-gated by each integration's interval), an **inbound Ongoing webhook**, or an **admin action**. Nothing runs on `order.placed` — the plugin is driven by fulfillment and lifecycle events, not order creation.
+Every Ongoing-bound change runs from one of three kinds of source: a **Medusa order event** (handled by a subscriber), a **scheduled job** (cron — status-poll and stock-sync every 15 minutes, retry every 5, self-gated by each integration's interval), an **inbound Ongoing webhook**, or an **admin action**. Nothing runs on `order.placed` — the plugin is driven by fulfillment and lifecycle events, not order creation.
 
 | Trigger | Source | Runs | Effect | On failure |
 |---|---|---|---|---|
@@ -202,7 +202,7 @@ When a push, edit, or shipment apply fails, the row goes to `sync_state: "error"
 
 Unknown failures default to `retryable` on purpose, so a transient glitch is retried rather than silently dead-lettered. Only a positively-identified deterministic error is marked `terminal`.
 
-The **retry-failed-syncs job** (every minute) sweeps due `error` + `retryable` rows using exponential backoff that doubles from a 5-minute base and caps at 60 minutes — so the delay before attempts 0–4 is roughly:
+The **retry-failed-syncs job** (every 5 minutes) sweeps due `error` + `retryable` rows using exponential backoff that doubles from a 5-minute base and caps at 60 minutes — so the delay before attempts 0–4 is roughly:
 
 ```text
 attempt:  0     1      2      3      4

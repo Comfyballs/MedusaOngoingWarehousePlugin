@@ -19,7 +19,7 @@ The delivery date sent to Ongoing is the **push time**, not a real requested del
 
 Once the order push succeeds, two channels keep Medusa's view of the Ongoing order current:
 
-- **Status-poll job** (every minute; effective cadence controlled by `status_poll_interval`).
+- **Status-poll job** (every 15 minutes; a `status_poll_interval` longer than that slows it further).
 - **Webhook** (if you configured one on the Ongoing side).
 
 Both write the latest status code and text onto the sync row. When the status reaches a **shipped** code (the integration's **`shipped_status_codes`**, or the canonical defaults 425/450/451 when you haven't set any), both channels converge on the same idempotent shipment workflow, which creates the Medusa shipment and attaches tracking-number labels (with carrier tracking URLs when Ongoing supplied them), then marks the sync row `shipped`. The `shipped_at` timestamp guards against creating the shipment twice.
@@ -28,7 +28,7 @@ For **pickup orders**, the lifecycle continues after shipment: when the status r
 
 ## Inventory sync — Ongoing to Medusa
 
-The **stock-sync job** runs every minute and, for each enabled integration whose interval has elapsed, pulls inventory from Ongoing and writes Medusa stock levels. Ongoing is the source of truth for on-hand stock.
+The **stock-sync job** runs every 15 minutes and, for each enabled integration whose interval has elapsed, pulls inventory from Ongoing and writes Medusa stock levels. Ongoing is the source of truth for on-hand stock.
 
 - It normally does a **delta sweep** (`GET /articles?stockInfoChangedFrom=<cursor>`) using a persisted cursor, so it only fetches articles whose stock changed.
 - It does a **full sweep** when there is no cursor yet, at least every **6 hours** as a reconciliation fallback that self-heals any missed deltas (a dropped webhook, clock skew), and also if the stored cursor has aged past a **23-hour** safety margin — Ongoing rejects `stockInfoChangedFrom` values older than 24 hours, so a stale cursor degrades to a full sweep instead of erroring.
@@ -63,19 +63,19 @@ A failed push lands the sync row in `error` with an `error_class`:
 - **`retryable`** — transient (a 5xx, a 429, a network error, or an unclassified default). The retry job picks it up.
 - **`terminal`** — deterministic (a validation error, an unresolvable SKU, a 4xx). The retry job ignores it; it needs a data fix and a manual retry.
 
-The **retry-failed-syncs job** runs every minute and sweeps `error` + `retryable` rows that are due, using exponential backoff of roughly **5, 10, 20, 40, 60 minutes** across attempts 0–4 (each with a small random jitter so many rows failing during one outage don't all retry at the same instant). After 5 failed attempts the row is **dead-lettered** (`error_class` flips to `terminal`, emits `ongoing.sync.order_dead_lettered`) and the job stops touching it.
+The **retry-failed-syncs job** runs every 5 minutes and sweeps `error` + `retryable` rows that are due, using exponential backoff of roughly **5, 10, 20, 40, 60 minutes** across attempts 0–4 (each with a small random jitter so many rows failing during one outage don't all retry at the same instant). After 5 failed attempts the row is **dead-lettered** (`error_class` flips to `terminal`, emits `ongoing.sync.order_dead_lettered`) and the job stops touching it.
 
 **Orphan repair** is a safety net for a fixed historical bug where a row could be stuck `sent` with no Ongoing order id. Running `POST /admin/ongoing/syncs/repair-orphaned` flips any such rows back to `error` + `retryable` so the normal retry job repairs them. It is idempotent and safe to run repeatedly. New installs should never need it. See [[User Troubleshooting]].
 
 ## The three scheduled jobs
 
-All three are registered on the cron schedule `* * * * *` — Medusa evaluates them every minute, and each job internally checks whether each integration's own interval has elapsed. So the real cadence is set by the integration's intervals, not the cron line.
+The stock-sync and status-poll jobs run on the cron schedule `*/15 * * * *` (every 15 minutes) and the retry job on `*/5 * * * *` (every 5 minutes). On each tick, stock-sync and status-poll additionally check whether each integration's own interval has elapsed — so the cron line sets the cadence floor, and an integration interval longer than it slows that integration further.
 
 | Job | Runs | What it does |
 |---|---|---|
-| `ongoing-stock-sync` | Every minute, gated by `stock_sync_interval` (default 10 min) | Pulls inventory from Ongoing (delta, or full every 6 hours) and writes Medusa stock levels. |
-| `ongoing-status-poll` | Every minute, gated by `status_poll_interval` (default 1 min) | Polls Ongoing order status (codes 100–999), updates tracked sync rows, and triggers shipment sync when a shipped status appears. |
-| `ongoing-retry-failed-syncs` | Every minute | Sweeps due `error` + `retryable` rows with exponential backoff; dead-letters after 5 attempts. |
+| `ongoing-stock-sync` | Every 15 minutes, gated by `stock_sync_interval` (default 10 min) | Pulls inventory from Ongoing (delta, or full every 6 hours) and writes Medusa stock levels. |
+| `ongoing-status-poll` | Every 15 minutes, gated by `status_poll_interval` (default 1 min, i.e. every tick) | Polls Ongoing order status (codes 100–999), updates tracked sync rows, and triggers shipment sync when a shipped status appears. |
+| `ongoing-retry-failed-syncs` | Every 5 minutes | Sweeps due `error` + `retryable` rows with exponential backoff; dead-letters after 5 attempts. |
 
 ## Sync states and the state machine
 

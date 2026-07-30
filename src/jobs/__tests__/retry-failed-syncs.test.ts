@@ -89,7 +89,7 @@ beforeEach(() => {
 
 describe("retryFailedSyncsJob", () => {
   it("registers with the correct name and a once-per-minute schedule", () => {
-    expect(config).toEqual({ name: "ongoing-retry-failed-syncs", schedule: "* * * * *" })
+    expect(config).toEqual({ name: "ongoing-retry-failed-syncs", schedule: "*/5 * * * *" })
   })
 
   it("queries only error/retryable rows", async () => {
