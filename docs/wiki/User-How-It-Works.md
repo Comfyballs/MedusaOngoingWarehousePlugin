@@ -100,7 +100,7 @@ Transitions:
 
 ## Webhook behavior
 
-The webhook route always returns `200` after authentication, even if the internal workflow fails. This deliberately forfeits Ongoing's retry policy in favor of the every-minute poll job as the backstop. The practical implication: if a webhook did not seem to update anything, do not expect Ongoing to redeliver — check application logs. See [[User Troubleshooting]].
+The webhook route always returns `200` after authentication, even if the internal workflow fails. This deliberately forfeits Ongoing's retry policy in favor of the every-15-minutes poll job as the backstop. The practical implication: if a webhook did not seem to update anything, do not expect Ongoing to redeliver — check application logs. See [[User Troubleshooting]].
 
 ## Domain events for custom alerting
 

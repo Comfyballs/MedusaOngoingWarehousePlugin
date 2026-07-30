@@ -88,7 +88,7 @@ beforeEach(() => {
 })
 
 describe("retryFailedSyncsJob", () => {
-  it("registers with the correct name and a once-per-minute schedule", () => {
+  it("registers with the correct name and a five-minute schedule", () => {
     expect(config).toEqual({ name: "ongoing-retry-failed-syncs", schedule: "*/5 * * * *" })
   })
 

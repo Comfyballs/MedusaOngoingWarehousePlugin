@@ -151,7 +151,7 @@ Set the `X-Auth-Token` request header to the `webhookSecret` you configured for 
 - **Register the webhook for the full active-status range, not "shipped only."** The plugin uses non-shipped status changes to keep edit/cancel gating fresh, so restricting it to shipped events loses that benefit.
 - If you did not set `webhookSecret`, the route rejects every request with `401`. Set it and restart before configuring Ongoing.
 
-The webhook is optional — the every-minute status-poll job is the backstop — but it makes shipment and status updates near-instant.
+The webhook is optional — the every-15-minutes status-poll job is the backstop — but it makes shipment and status updates near-instant.
 
 ## Editing an integration later
 
