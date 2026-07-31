@@ -1,9 +1,16 @@
 {
-  "name": "MedusaOngoingWarehousePlugin",
+  "name": "@comfyballs/medusa-plugin-ongoing-warehouse",
   "version": "0.0.1",
   "description": "Medusa v2 plugin integrating the Ongoing Warehouse WMS: order fulfillment, shipment status, and inventory sync.",
   "author": "Medusa (https://medusajs.com)",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Comfyballs/MedusaOngoingWarehousePlugin.git"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
   "files": [
     ".medusa/server"
   ],
@@ -39,15 +46,15 @@
     "prepublishOnly": "medusa plugin:build"
   },
   "devDependencies": {
-    "@medusajs/admin-sdk": "2.16.0",
-    "@medusajs/cli": "2.16.0",
-    "@medusajs/eslint-plugin": "2.16.0",
-    "@medusajs/framework": "2.16.0",
-    "@medusajs/icons": "2.16.0",
-    "@medusajs/js-sdk": "2.16.0",
-    "@medusajs/medusa": "2.16.0",
-    "@medusajs/test-utils": "2.16.0",
-    "@medusajs/ui": "4.1.16",
+    "@medusajs/admin-sdk": "2.18.0",
+    "@medusajs/cli": "2.18.0",
+    "@medusajs/eslint-plugin": "2.18.0",
+    "@medusajs/framework": "2.18.0",
+    "@medusajs/icons": "2.18.0",
+    "@medusajs/js-sdk": "2.18.0",
+    "@medusajs/medusa": "2.18.0",
+    "@medusajs/test-utils": "2.18.0",
+    "@medusajs/ui": "4.2.0",
     "@swc/core": "^1.7.28",
     "@swc/jest": "^0.2",
     "@types/jest": "^29",
@@ -64,17 +71,17 @@
     "react-dom": "^18.2.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.6.2",
-    "vite": "^5.2.11",
+    "vite": "^5.4.21",
     "yalc": "^1.0.0-pre.53"
   },
   "peerDependencies": {
-    "@medusajs/admin-sdk": "2.16.0",
-    "@medusajs/cli": "2.16.0",
-    "@medusajs/framework": "2.16.0",
-    "@medusajs/icons": "2.16.0",
-    "@medusajs/medusa": "2.16.0",
-    "@medusajs/test-utils": "2.16.0",
-    "@medusajs/ui": "4.1.16"
+    "@medusajs/admin-sdk": ">=2.16.0 <3.0.0",
+    "@medusajs/cli": ">=2.16.0 <3.0.0",
+    "@medusajs/framework": ">=2.16.0 <3.0.0",
+    "@medusajs/icons": ">=2.16.0 <3.0.0",
+    "@medusajs/medusa": ">=2.16.0 <3.0.0",
+    "@medusajs/test-utils": ">=2.16.0 <3.0.0",
+    "@medusajs/ui": ">=4.1.16 <5.0.0"
   },
   "engines": {
     "node": ">=20"
