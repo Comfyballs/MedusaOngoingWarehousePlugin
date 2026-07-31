@@ -27,6 +27,12 @@ const OngoingIntegration = model.define("ongoing_integration", {
   // full-reconciliation fallback so any missed deltas self-heal (bead sw8).
   last_full_stock_sync_at: model.dateTime().nullable(),
   last_status_poll_at: model.dateTime().nullable(),
+  // When the daily done-order safety sweep last completed for this integration (bead t36).
+  // The sweep re-syncs orders ABOVE the done threshold that changed in the past day — the
+  // catch-net for the late transitions the 15-minute poll no longer sees once a row is
+  // stamped done_synced_at (451 Klar til henting -> 500 Hentet, a 475 Retur, an annulment).
+  // Advanced only on a successful sweep, so a failed one is retried on the next poll tick.
+  last_done_sweep_at: model.dateTime().nullable(),
   // Per-job advisory locks (bead mjy): status-poll and stock-sync used to share this
   // single column, so whichever job acquired first blocked the other for its TTL even
   // though they poll unrelated data. sync_lock_until now belongs to status-poll only;

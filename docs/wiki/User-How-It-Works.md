@@ -74,7 +74,7 @@ The stock-sync and status-poll jobs run on the cron schedule `*/15 * * * *` (eve
 | Job | Runs | What it does |
 |---|---|---|
 | `ongoing-stock-sync` | Every 15 minutes, gated by `stock_sync_interval` (default 10 min) | Pulls inventory from Ongoing (delta, or full every 6 hours) and writes Medusa stock levels. |
-| `ongoing-status-poll` | Every 15 minutes, gated by `status_poll_interval` (default 1 min, i.e. every tick) | Polls Ongoing order status (codes 100–999), updates tracked sync rows, and triggers shipment sync when a shipped status appears. |
+| `ongoing-status-poll` | Every 15 minutes, gated by `status_poll_interval` (default 1 min, i.e. every tick) | Polls Ongoing order status (codes 100–999), updates tracked sync rows, and triggers shipment sync when a shipped status appears. Once a day it also runs a **safety-check sweep** over *finished* orders (above the done threshold) that changed recently — the catch-net for late changes the 15-minute pass no longer follows. See [[User Sync Reference]]. |
 | `ongoing-retry-failed-syncs` | Every 5 minutes | Sweeps due `error` + `retryable` rows with exponential backoff; dead-letters after 5 attempts. |
 
 ## Sync states and the state machine
