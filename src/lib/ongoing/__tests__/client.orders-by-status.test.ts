@@ -42,6 +42,23 @@ describe("OngoingClient.getOrdersByStatus", () => {
     expect(url).not.toContain("pageSize=")
   })
 
+  it("omits the changed-since filter unless one is passed, and sends it as orderStatusChangedTimeFrom (bead t36)", async () => {
+    // A fresh Response per call — a single one can only be read once.
+    const fetchImpl = jest.fn().mockImplementation(async () => json([order(555)]))
+    const client = new OngoingClient(creds, { fetchImpl })
+
+    await client.getOrdersByStatus(451, 1000)
+    expect(fetchImpl.mock.calls[0][0]).not.toContain("orderStatusChangedTimeFrom")
+
+    await client.getOrdersByStatus(451, 1000, "2026-07-30T09:15:00.000Z")
+
+    const [url] = fetchImpl.mock.calls[1]
+    expect(url).toContain("orderStatusFrom=451")
+    expect(url).toContain("orderStatusTo=1000")
+    // URL-encoded: the ISO timestamp's colons must not be sent raw.
+    expect(url).toContain("orderStatusChangedTimeFrom=2026-07-30T09%3A15%3A00.000Z")
+  })
+
   it("extracts waybills from parcels[].tracking and order-level tracking[], with URLs (bead 5vu)", async () => {
     const fetchImpl = jest.fn().mockResolvedValue(
       json([

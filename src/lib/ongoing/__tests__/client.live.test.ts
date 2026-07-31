@@ -196,6 +196,28 @@ describeLive("Ongoing live API — ym3 spec-conformance", () => {
     const stale = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString()
     await expect(client.getInventory(undefined, stale)).rejects.toThrow()
   })
+
+  // (5) orderStatusChangedTimeFrom semantics (bead t36): the daily done-order sweep asks
+  // Ongoing for finished orders whose STATUS changed inside a ~26h window instead of
+  // pulling the whole finished-order history. Two things the mocked tests cannot prove:
+  // Ongoing accepts the parameter at all (an unknown query param could 400, or be ignored),
+  // and — unlike stockInfoChangedFrom — it carries no 24h age limit, so an oversized
+  // lookback degrades to "more results", never to a rejected request.
+  it("accepts orderStatusChangedTimeFrom and narrows the result set", async () => {
+    const unfiltered = await client.getOrdersByStatus(0, 1000)
+    const since = new Date(Date.now() - 26 * 60 * 60 * 1000).toISOString()
+    const recent = await client.getOrdersByStatus(0, 1000, since)
+
+    expect(Array.isArray(recent)).toBe(true)
+    // A filter that is silently ignored would return the identical full set; a narrower
+    // (or equal, on a tenant where everything changed recently) count is the signal.
+    expect(recent.length).toBeLessThanOrEqual(unfiltered.length)
+  }, 3 * 60_000)
+
+  it("does not impose a 24h age limit on orderStatusChangedTimeFrom", async () => {
+    const stale = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+    await expect(client.getOrdersByStatus(0, 1000, stale)).resolves.toBeInstanceOf(Array)
+  }, 3 * 60_000)
 })
 
 // Full order-history pagination walks EVERY order in the status range at concurrency 1

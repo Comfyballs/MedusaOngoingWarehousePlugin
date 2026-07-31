@@ -192,14 +192,26 @@ export class OngoingClient {
     return rows.map(mapInventoryRow)
   }
 
-  async getOrdersByStatus(from: number, to: number): Promise<OngoingTrackedOrder[]> {
+  // `statusChangedSince` (ISO timestamp) maps to the spec's `orderStatusChangedTimeFrom`
+  // ("only return orders whose status has changed after this time"), so the daily
+  // done-order safety sweep can ask for recent changes instead of pulling the whole
+  // finished-order history on every run (bead t36). Omitted → no time filter, the
+  // full status band.
+  async getOrdersByStatus(
+    from: number,
+    to: number,
+    statusChangedSince?: string
+  ): Promise<OngoingTrackedOrder[]> {
+    const changedFilter = statusChangedSince
+      ? `&orderStatusChangedTimeFrom=${encodeURIComponent(statusChangedSince)}`
+      : ""
     const rows = await this.paginateByCursor(
       (cursorFrom) =>
         this.request<any[]>(
           "GET",
           `/orders?goodsOwnerId=${this.creds.goodsOwnerId}` +
             `&orderStatusFrom=${from}&orderStatusTo=${to}` +
-            `&orderIdFrom=${cursorFrom}&maxOrdersToGet=${ONGOING_PAGE_SIZE}`
+            `&orderIdFrom=${cursorFrom}&maxOrdersToGet=${ONGOING_PAGE_SIZE}${changedFilter}`
         ),
       (raw) => Number(raw?.orderInfo?.orderId)
     )
