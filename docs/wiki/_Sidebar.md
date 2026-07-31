@@ -18,6 +18,7 @@
 - [[Contributing|Dev-Contributing]]
 - [[Gotchas|Dev-Gotchas]]
 - [[Testing|Dev-Testing]]
+- [[Local app testing|Dev-Local-App-Testing]]
 - [[Beads issue tracking|Dev-Beads]]
 - [[Medusa rules|Dev-Medusa-Rules]]
 - [[Documentation maintenance|Dev-Documentation-Maintenance]]

@@ -54,6 +54,18 @@ Or read the changed files directly.
 
 The fulfillment provider is imported via `./providers/*`. There is also a redundant `./.medusa/server/src/modules/*` entry alongside `./modules/*` — harmless, but do not be surprised by it. If an import from a consuming app fails, check that you built (`yarn build`) and that the path matches an `exports` key.
 
+## `yarn pack` silently produces an empty package
+
+`.gitignore` ignores `.medusa`, and yarn 4 applies `.gitignore` **on top of** the `files` allowlist. So `yarn pack` — and therefore `yarn npm publish` — emits a tarball containing only `package.json` and `README.md`, with the entire build output missing. The command succeeds; nothing warns you.
+
+`npm` does not consult `.gitignore` when `files` is present, so publish through npm and verify the contents first:
+
+```bash
+npm pack --dry-run
+```
+
+The listing must show the `.medusa/server/**` tree. The same root cause breaks installing this plugin as a git dependency: the build output is not committed, and the build hook is `prepublishOnly`, which npm does not run on git installs. `npx medusa plugin:publish` (yalc) is unaffected — it honors the `files` allowlist and copies the build output correctly, which is why the local flow in [[Dev Local App Testing]] works with no publish at all.
+
 ## tsconfig: Node16 resolution, decorators, admin excluded
 
 The root `tsconfig.json` targets ES2021 with `module`/`moduleResolution: "Node16"` and `experimentalDecorators` plus `emitDecoratorMetadata` on — Medusa's DI and model decorators need this. It **excludes `src/admin`** from the server build: the admin UI is bundled separately by the Medusa admin (Vite) pipeline and has its own `src/admin/tsconfig.json` (`moduleResolution: "bundler"`, `noEmit`, strict). So a server-build type error and an admin type error surface through different configs.

@@ -21,7 +21,8 @@ Work on the plugin itself:
 - [[Dev Architecture]] — modules, client stack, workflows, webhook flow, lifecycle narratives
 - [[Dev Contributing]] — environment, commands, branch/commit/PR conventions, required review
 - [[Dev Gotchas]] — Node 26, packaging, migrations, rate limits, and other traps
-- [[Dev Testing]] — unit tests and the live Ongoing integration harness
+- [[Dev Testing]] — the unit, Medusa integration, and live Ongoing suites
+- [[Dev Local App Testing]] — install into a local Medusa app and exercise it by hand, without publishing
 - [[Dev Beads]] — the bd issue tracker this project uses instead of GitHub Issues
 - [[Dev Medusa Rules]] — Medusa-specific rules every contributor must follow
 - [[Dev Documentation Maintenance]] — how this wiki is sourced and published
