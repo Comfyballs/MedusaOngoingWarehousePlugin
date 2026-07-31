@@ -460,6 +460,103 @@ describe("ongoing status-poll job", () => {
       })
     })
 
+    it("widens the lookback to the real gap when a sweep was delayed past its interval", async () => {
+      // A fixed 26h window would leave everything older than 26h unexamined by any sweep
+      // after an outage/restart/large poll interval — silently losing exactly what the
+      // sweep exists to catch. The window must follow the measured gap instead.
+      const h = makeHarness({
+        integrations: [sweepInteg({ last_done_sweep_at: new Date(Date.now() - 5 * DAY_MS) })],
+        sweepOrdersByKey: { "wh-a": [] },
+      })
+
+      await ongoingStatusPollJob(h.container)
+
+      const [, , changedSince] = h.clients["wh-a"].getOrdersByStatus.mock.calls[1]
+      const lookbackMs = Date.now() - Date.parse(changedSince as string)
+      // Covers the whole 5-day gap (plus overlap), not a flat 26 hours.
+      expect(lookbackMs).toBeGreaterThan(5 * DAY_MS)
+      expect(lookbackMs).toBeLessThan(6 * DAY_MS)
+    })
+
+    it("caps the lookback so a long-dormant integration cannot ask for all of history", async () => {
+      const h = makeHarness({
+        integrations: [sweepInteg({ last_done_sweep_at: new Date(Date.now() - 400 * DAY_MS) })],
+        sweepOrdersByKey: { "wh-a": [] },
+      })
+
+      await ongoingStatusPollJob(h.container)
+
+      const [, , changedSince] = h.clients["wh-a"].getOrdersByStatus.mock.calls[1]
+      const lookbackMs = Date.now() - Date.parse(changedSince as string)
+      expect(lookbackMs).toBeLessThanOrEqual(30 * DAY_MS + 60000)
+      expect(lookbackMs).toBeGreaterThan(29 * DAY_MS)
+    })
+
+    it("still sweeps when an order in the poll pass throws", async () => {
+      // A row that can never be stamped done (orphaned sync row, deleted fulfillment)
+      // throws on every tick. If that aborted the tick before the sweep, the safety net
+      // would be silently off for this integration forever.
+      const rows: Row[] = [
+        { id: "r_poison", integration_id: "int_1", ongoing_order_number: "5001-poison", sync_state: "sent", shipped_at: null },
+        { id: "r_done", integration_id: "int_1", ongoing_order_number: "5001-done", sync_state: "shipped", shipped_at: new Date(), done_synced_at: new Date() },
+      ]
+      const h = makeHarness({
+        integrations: [sweepInteg()],
+        rowsByIntegration: { int_1: rows },
+        ordersByKey: { "wh-a": [{ ongoingOrderId: 31, orderNumber: "5001-poison", statusNumber: 300, statusText: "Plukk", trackingNumbers: [] }] },
+        sweepOrdersByKey: { "wh-a": [{ ongoingOrderId: 32, orderNumber: "5001-done", statusNumber: 500, statusText: "Hentet", trackingNumbers: [] }] },
+      })
+      refreshRun.mockRejectedValueOnce(new Error("orphaned row"))
+
+      await expect(ongoingStatusPollJob(h.container)).resolves.toBeUndefined()
+
+      // The sweep ran despite the poll pass aborting, and delivered the done order.
+      expect(h.clients["wh-a"].getOrdersByStatus).toHaveBeenCalledTimes(2)
+      expect(deliveryRun).toHaveBeenCalledTimes(1)
+      expect(h.service.updateOngoingIntegrations).toHaveBeenCalledWith({
+        id: "int_1",
+        last_done_sweep_at: expect.any(Date),
+      })
+      // The poll failure is still reported.
+      expect(h.logger.error).toHaveBeenCalled()
+    })
+
+    it("refreshes a tracked order annulled at 1000 without fabricating a shipment or delivery", async () => {
+      // 1000 is in the sweep's range but resolves to neither the shipped nor the delivered
+      // stage, so a late annulment updates the stored status and nothing else.
+      const rows: Row[] = [
+        { id: "r_annulled", integration_id: "int_1", ongoing_order_number: "5001-ann", sync_state: "shipped", shipped_at: new Date(), done_synced_at: new Date() },
+      ]
+      const h = makeHarness({
+        integrations: [sweepInteg()],
+        rowsByIntegration: { int_1: rows },
+        sweepOrdersByKey: { "wh-a": [{ ongoingOrderId: 33, orderNumber: "5001-ann", statusNumber: 1000, statusText: "Annullert", trackingNumbers: [] }] },
+      })
+
+      await ongoingStatusPollJob(h.container)
+
+      expect(refreshRun).toHaveBeenCalledWith({
+        input: {
+          ongoing_order_number: "5001-ann", integration_id: "int_1",
+          status_code: 1000, status_text: "Annullert",
+        },
+      })
+      expect(run).not.toHaveBeenCalled()
+      expect(deliveryRun).not.toHaveBeenCalled()
+      expect(markDoneRun).toHaveBeenCalledTimes(1)
+    })
+
+    it("skips the sweep entirely when the threshold leaves no status above it", async () => {
+      const h = makeHarness({ integrations: [sweepInteg()], doneThreshold: 1000 })
+
+      await ongoingStatusPollJob(h.container)
+
+      expect(h.clients["wh-a"].getOrdersByStatus).toHaveBeenCalledTimes(1)
+      expect(h.service.updateOngoingIntegrations).not.toHaveBeenCalledWith(
+        expect.objectContaining({ last_done_sweep_at: expect.anything() })
+      )
+    })
+
     it("picks up a 451 -> 500 pickup transition the main poll now skips", async () => {
       // The acceptance case: the row is stamped done at 451, so the 15-minute poll
       // ignores it — only the sweep sees it reach 500 (Hentet).

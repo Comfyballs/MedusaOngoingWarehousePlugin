@@ -33,13 +33,45 @@ const TERMINAL_SYNC_STATES = new Set(["delivered", "cancelled"])
 // (shipped_at / delivered_at / done_synced_at guards), so a redundant re-sync is a no-op.
 const DONE_SWEEP_INTERVAL_MS = 24 * 60 * 60 * 1000
 
-// How far back the sweep asks Ongoing to look. Deliberately WIDER than the interval: the
-// sweep can only fire on a poll tick, so the real gap between two sweeps is
-// DONE_SWEEP_INTERVAL_MS plus up to one poll interval, and a lookback of exactly 24h would
-// leave that sliver unexamined. The extra margin also absorbs clock skew between us and
-// Ongoing (whose clock stamps the change times this filter compares against). Re-examining
-// an order the previous sweep already saw is free — the apply path is idempotent.
-const DONE_SWEEP_LOOKBACK_MS = DONE_SWEEP_INTERVAL_MS + 2 * 60 * 60 * 1000 // 26 hours
+// Minimum lookback, used when there is no previous sweep to measure from. Wider than the
+// interval on purpose: the sweep can only fire on a poll tick, so the real gap between two
+// sweeps is DONE_SWEEP_INTERVAL_MS plus up to one poll interval.
+const DONE_SWEEP_MIN_LOOKBACK_MS = DONE_SWEEP_INTERVAL_MS + 2 * 60 * 60 * 1000 // 26 hours
+
+// Added on top of the measured gap since the last sweep. Absorbs clock skew between us and
+// Ongoing — whose clock, not ours, stamps the change times `orderStatusChangedTimeFrom`
+// compares against — plus the latency of the sweep already in flight.
+const DONE_SWEEP_OVERLAP_MS = 2 * 60 * 60 * 1000 // 2 hours
+
+// Ceiling on the measured lookback. Without one, an integration that has not swept for
+// months would ask Ongoing for its entire finished-order history in a single query on the
+// first tick after coming back. Ongoing imposes no age limit on orderStatusChangedTimeFrom
+// (verified live — unlike stockInfoChangedFrom's hard 24h), so this is about the size of
+// the RESULT SET, not about the request being rejected: past this horizon the sweep gives
+// up on catching a change rather than melting the tick that resumes it.
+const DONE_SWEEP_MAX_LOOKBACK_MS = 30 * 24 * 60 * 60 * 1000 // 30 days
+
+// How far back this sweep asks Ongoing to look.
+//
+// Derived from the ACTUAL gap since the last sweep, never from the nominal interval: the
+// sweep is due at 24h but only RUNS on a poll tick that reaches it, and an Ongoing outage,
+// an app restart, a paused worker or a large status_poll_interval can all stretch the real
+// gap well past a day. A fixed 26h window would then leave everything older than 26h
+// unexamined by any sweep, ever — silently losing exactly the late changes this pass exists
+// to catch. Measuring the gap instead means a delayed sweep widens its own window to cover
+// the whole outage (bounded by DONE_SWEEP_MAX_LOOKBACK_MS). Re-examining orders an earlier
+// sweep already saw is free: the apply path is idempotent.
+function resolveSweepLookbackMs(integration: IntegrationRow, now: number): number {
+  if (integration.last_done_sweep_at == null) {
+    return DONE_SWEEP_MIN_LOOKBACK_MS
+  }
+  const elapsed = now - new Date(integration.last_done_sweep_at).getTime()
+  const measured = elapsed + DONE_SWEEP_OVERLAP_MS
+  return Math.min(
+    Math.max(DONE_SWEEP_MIN_LOOKBACK_MS, measured),
+    DONE_SWEEP_MAX_LOOKBACK_MS
+  )
+}
 
 // Upper bound of the sweep's status query. Unlike the 15-minute poll (100..999) this DOES
 // include 1000 (Annullert): a late annulment of an already-done order is exactly the kind
@@ -222,12 +254,20 @@ async function sweepDoneOrders(
   doneThreshold: number,
   now: number
 ): Promise<void> {
-  const changedSince = new Date(now - DONE_SWEEP_LOOKBACK_MS).toISOString()
-  const orders = await client.getOrdersByStatus(
-    doneThreshold + 1,
-    ONGOING_DONE_STATUS_TO,
-    changedSince
-  )
+  // A threshold at/above the top of Ongoing's status range leaves nothing for the sweep to
+  // ask about (and would send an inverted from > to). defaultDoneStatusThreshold is only
+  // validated as a non-negative integer, so this is reachable by configuration.
+  const statusFrom = doneThreshold + 1
+  if (statusFrom > ONGOING_DONE_STATUS_TO) {
+    logger.debug?.(
+      `[ongoing] status-poll: done-sweep for integration ${integration.id} skipped — ` +
+        `done threshold ${doneThreshold} leaves no status above it`
+    )
+    return
+  }
+
+  const changedSince = new Date(now - resolveSweepLookbackMs(integration, now)).toISOString()
+  const orders = await client.getOrdersByStatus(statusFrom, ONGOING_DONE_STATUS_TO, changedSince)
 
   let applied = 0
   let failed = 0
@@ -245,13 +285,20 @@ async function sweepDoneOrders(
       await applyTrackedOrder(container, integration, row, order, stageConfig, doneThreshold)
       applied++
     } catch (error) {
-      // Per-order isolation, unlike the poll pass: one unsyncable done order must not
-      // abort the sweep and leave it unstamped, which would re-run this whole pass on
-      // every 15-minute tick. The next daily sweep retries it.
+      // Per-order isolation, unlike the poll pass: one unsyncable done order must not abort
+      // the sweep and leave it unstamped, which would re-run this whole pass on every
+      // 15-minute tick.
+      //
+      // NOT self-healing, and the log says so: the sweep is stamped anyway, and the next
+      // sweep's window starts at that stamp — so unless this order's status changes again in
+      // Ongoing, its change is dropped here. That is the deliberate trade (a dropped
+      // reconciliation for one order, versus a poison row re-running the pass forever);
+      // a per-order retry ledger for the sweep is filed as follow-up bead t36.1.
       failed++
       logger.error(
         `[ongoing] status-poll: done-sweep failed for order ${order.orderNumber} ` +
-          `(integration ${integration.id}): ${(error as Error).message}`
+          `(integration ${integration.id}): ${(error as Error).message} — this reconciliation ` +
+          `is dropped and will only be retried if the order changes again in Ongoing`
       )
     }
   }
@@ -308,28 +355,55 @@ async function pollAndApply(
   const doneThreshold = service.getDoneStatusThreshold()
 
   const applied = new Set<string>()
-  for (const order of orders) {
-    const row = tracked.get(order.orderNumber)
-    if (!row) {
-      continue
+  // The poll loop deliberately still aborts this integration's tick on the first per-order
+  // failure (unchanged behaviour — the next tick retries it). The daily sweep, however, must
+  // NOT be collateral damage: a row that throws deterministically (an orphaned sync row, a
+  // deleted fulfillment) can never be stamped done, so it would throw on every tick and
+  // silently keep the safety net switched off forever. Capture the failure, run the sweep,
+  // then rethrow so the caller logs the integration failure exactly as before.
+  let pollError: unknown
+  try {
+    for (const order of orders) {
+      const row = tracked.get(order.orderNumber)
+      if (!row) {
+        continue
+      }
+      await applyTrackedOrder(container, integration, row, order, stageConfig, doneThreshold)
+      applied.add(order.orderNumber)
     }
-    await applyTrackedOrder(container, integration, row, order, stageConfig, doneThreshold)
-    applied.add(order.orderNumber)
+  } catch (error) {
+    pollError = error
   }
 
   if (sweepDue) {
-    await sweepDoneOrders(
-      container,
-      service,
-      logger,
-      integration,
-      client,
-      sweepableRows,
-      applied,
-      stageConfig,
-      doneThreshold,
-      now
-    )
+    try {
+      await sweepDoneOrders(
+        container,
+        service,
+        logger,
+        integration,
+        client,
+        sweepableRows,
+        applied,
+        stageConfig,
+        doneThreshold,
+        now
+      )
+    } catch (sweepError) {
+      if (pollError === undefined) {
+        throw sweepError
+      }
+      // Both passes failed: the poll error is the one the caller reports, so log this one
+      // here rather than letting it silently replace the other.
+      logger.error(
+        `[ongoing] status-poll: done-sweep for integration ${integration.id} also failed: ` +
+          `${(sweepError as Error).message}`
+      )
+    }
+  }
+
+  if (pollError !== undefined) {
+    throw pollError
   }
 }
 
