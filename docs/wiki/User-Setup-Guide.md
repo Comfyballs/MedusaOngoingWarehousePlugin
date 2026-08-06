@@ -3,7 +3,7 @@ This page walks you through a recommended setup: install the plugin, register it
 ## Prerequisites
 
 - A Medusa v2 app on **2.16.0** (the version this plugin is pinned to), Node **20 or newer**.
-- Ongoing REST API credentials for at least one goods owner (base URL including `/api/v1`, username, password, and goods-owner id). These come from Ongoing — see [[User Ongoing Concepts]].
+- Ongoing REST API credentials (base URL including `/api/v1`, username, password) and the numeric goods-owner id of each warehouse you will bind. The credentials go in app config; the goods-owner id is entered per integration in the admin. Both come from Ongoing — see [[User Ongoing Concepts]].
 - At least one Medusa **stock location** to bind the warehouse to. Each goods owner needs its own dedicated location — the binding is one-to-one and a location cannot be shared between goods owners (see [[User Ongoing Concepts]]).
 
 ## Step 1 — install the plugin
@@ -36,7 +36,6 @@ module.exports = defineConfig({
             baseUrl: process.env.ONGOING_A_URL,
             username: process.env.ONGOING_A_USER,
             password: process.env.ONGOING_A_PASS,
-            goodsOwnerId: Number(process.env.ONGOING_A_GOODS_OWNER),
             webhookSecret: process.env.ONGOING_A_WEBHOOK_SECRET,
           },
         ],
@@ -89,12 +88,13 @@ Watch for that line before continuing.
 Open **Settings → Ongoing Warehouse** in the Medusa admin. Click **Create integration** and fill in the form:
 
 1. **Credential key** — a dropdown populated from your configured plugin options. If it is empty, your `integrations` option is missing or misconfigured.
-2. **Stock location** — the Medusa stock location this warehouse serves (the picker lists up to 100 locations). This is immutable after creation.
-3. **Test connection** — click this **before** touching the status-code pickers. It calls Ongoing with the selected credential key and, on success, shows `Connected — N order statuses available` and loads the live status list into the two status-code pickers.
-4. **Shipped status codes** and **Cancellable status codes** — check the codes that mean "shipped" and "cancellable" for this goods owner. See [[User Ongoing Concepts]].
-5. **Enabled** / **Stock sync enabled** — leave both on unless you have a reason not to.
-6. **Stock sync interval** / **Status poll interval** — leave blank to inherit the global defaults.
-7. **Stock reconcile mode** — usually `sellable_plus_reserved`. See [[User Configuration Reference]].
+2. **Goods owner id** — the numeric Ongoing goods owner this warehouse maps to. One Ongoing account can serve several goods owners, so this is set here rather than in config. It is immutable after creation: re-pointing a live integration would orphan every sync row already written against the old goods owner.
+3. **Stock location** — the Medusa stock location this warehouse serves (the picker lists up to 100 locations). This is immutable after creation.
+4. **Test connection** — click this **before** touching the status-code pickers. It calls Ongoing with the selected credential key **and goods owner** and, on success, shows `Connected — N order statuses available` and loads the live status list into the two status-code pickers.
+5. **Shipped status codes** and **Cancellable status codes** — check the codes that mean "shipped" and "cancellable" for this goods owner. See [[User Ongoing Concepts]].
+6. **Enabled** / **Stock sync enabled** — leave both on unless you have a reason not to.
+7. **Stock sync interval** / **Status poll interval** — leave blank to inherit the global defaults.
+8. **Stock reconcile mode** — usually `sellable_plus_reserved`. See [[User Configuration Reference]].
 8. **Edit sync rules (JSON)** — optional at creation, but note edits are blocked until you set it. See the JSON shape in [[User Configuration Reference]].
 
 > **Note**

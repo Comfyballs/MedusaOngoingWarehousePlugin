@@ -25,7 +25,6 @@ Each item in the `integrations` array has this shape (`OngoingCredentials`):
 | `baseUrl` | `string` | Yes | Ongoing REST base URL. **Must include `/api/v1`** and have no trailing slash, for example `https://api.ongoingsystems.se/<instance>/api/v1`. |
 | `username` | `string` | Yes | Ongoing REST API user. |
 | `password` | `string` | Yes | Ongoing REST API password. Sent as HTTP Basic auth. |
-| `goodsOwnerId` | `number` | Yes | Ongoing's numeric goods-owner id for this warehouse. |
 | `webhookSecret` | `string` | No, but required for webhooks | The static `X-Auth-Token` value the webhook route checks. If unset, the webhook route rejects **all** requests for that key with `401`. |
 
 ## Boot-time validation
@@ -33,12 +32,12 @@ Each item in the `integrations` array has this shape (`OngoingCredentials`):
 The plugin validates options in a module loader that runs at server startup, so a bad config **fails fast** rather than silently misbehaving. All failures throw a `MedusaError` of type `INVALID_DATA`:
 
 - `integrations` is not an array → `[ongoing] plugin options must include an \`integrations\` array`.
-- A required field (`key`, `baseUrl`, `username`, `password`, `goodsOwnerId`) is `undefined`, `null`, or `""` → `[ongoing] integration "<key>" is missing required option "<field>"`. If the row has no `key`, the message uses `<missing key>`.
+- A required field (`key`, `baseUrl`, `username`, `password`) is `undefined`, `null`, or `""` → `[ongoing] integration "<key>" is missing required option "<field>"`. If the row has no `key`, the message uses `<missing key>`.
 - Two entries share a `key` → `[ongoing] duplicate credential key "<key>" in integrations`.
 
 On success, the plugin logs `[ongoing] validated N warehouse integration(s)` at info level. Watch for this line to confirm your config loaded.
 
-Credentials never touch the database. Only the credential `key` is stored in Medusa; the base URL, username, password, and goods-owner id stay in app config.
+Credentials never touch the database. The base URL, username and password stay in app config; only the credential `key` is stored in Medusa, alongside the goods-owner id each integration serves.
 
 ## Environment-variable convention
 
@@ -62,7 +61,6 @@ options: {
       baseUrl: process.env.ONGOING_A_URL,
       username: process.env.ONGOING_A_USER,
       password: process.env.ONGOING_A_PASS,
-      goodsOwnerId: Number(process.env.ONGOING_A_GOODS_OWNER),
       webhookSecret: process.env.ONGOING_A_WEBHOOK_SECRET,
     },
   ],
@@ -70,7 +68,7 @@ options: {
 ```
 
 > **Note**
-> `goodsOwnerId` is a `number`. Wrap the environment variable in `Number(...)` — environment variables are always strings.
+> The goods-owner id is **not** configured here. One Ongoing account can serve several goods owners, so it is set per warehouse on the integration itself, in **Settings → Ongoing Warehouse** — see the goods-owner field in [[User Setup Guide]].
 
 The live test harness uses its own separate variables (`ONGOING_URL`, `ONGOING_USER`, `ONGOING_PASS`, `ONGOING_GOODS_OWNER`, and switches). Those are unrelated to your runtime config — see [[User Verification]].
 

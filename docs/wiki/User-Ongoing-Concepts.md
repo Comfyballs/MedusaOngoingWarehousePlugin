@@ -2,18 +2,18 @@ This page explains the Ongoing Warehouse concepts you need to know before settin
 
 ## Goods owner
 
-A **goods owner** (`goodsOwnerId`) is Ongoing's tenant concept. Every article, order, and inventory record in an Ongoing warehouse belongs to a specific goods owner. Your Ongoing REST credentials are scoped to one goods owner.
+A **goods owner** (`goodsOwnerId`) is Ongoing's tenant concept. Every article, order, and inventory record in an Ongoing warehouse belongs to a specific goods owner. One set of Ongoing REST credentials can reach **several** goods owners.
 
-In this plugin the relationship is strictly **one-to-one all the way down**:
+So the credential key and the goods owner are separate concerns, and each goods owner still gets its own dedicated stock location:
 
 ```text
-goods owner  ⇄  credential key  ⇄  Medusa stock location  ⇄  integration row
-(goodsOwnerId)   (key)             (stock_location_id)        (one per pair)
+credential key  →  goods owner  ⇄  Medusa stock location  ⇄  integration row
+(key, in config)   (set in admin)   (stock_location_id)      (one per pair)
 ```
 
-- Each entry in the plugin's `integrations` option describes **one goods owner** and carries its `goodsOwnerId` plus a unique credential `key`.
-- Creating an integration in the admin binds one credential `key` to **exactly one** Medusa stock location.
-- Both sides are **unique and exclusive**: a credential key can be used by only one integration, and a stock location can be served by only one goods owner. You **cannot** point two goods owners at the same location, and the database enforces this — so a location you create is effectively *dedicated* to the single goods owner you bind it to.
+- Each entry in the plugin's `integrations` option describes **one Ongoing account** — base URL, user, password — under a unique credential `key`. It carries no goods owner.
+- Creating an integration in the admin picks a credential `key`, sets the **goods-owner id** that integration serves, and binds it to **exactly one** Medusa stock location. Several integrations may share one credential key, each with a different goods owner.
+- The stock location side stays **unique and exclusive**: a location can be served by only one goods owner. You **cannot** point two goods owners at the same location, and the database enforces this — so a location you create is effectively *dedicated* to the single goods owner you bind it to.
 - The binding is **immutable after creation** — to change which location a goods owner uses, delete the integration and create a new one.
 
 **To serve one goods owner:** create a Medusa stock location, add that goods owner to the `integrations` option, then create an integration binding the two. See [[User Setup Guide]].
