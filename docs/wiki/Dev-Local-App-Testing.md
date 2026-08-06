@@ -43,8 +43,14 @@ yarn install
 
 Use the app's own package manager for the second command — `pnpm install` or `npm install` if the app is not on yarn.
 
+`plugin:add` fails with `Cannot find module 'yalc'` in an app that does not depend on yalc — it is an **optional** peer of `@medusajs/medusa`, so a normal install omits it. Rather than adding a dependency to the app just to link a plugin, run yalc directly; `plugin:add` is a one-line wrapper around exactly this call. From the same directory, using this repo's copy:
+
+```bash
+<path-to-plugin-repo>/node_modules/.bin/yalc add @comfyballs/medusa-plugin-ongoing-warehouse
+```
+
 > **Caution**
-> `plugin:add` writes a **local-path dependency** (`file:.yalc/...`) into the app's `package.json` and creates `.yalc/` and `yalc.lock`. A hosting platform that builds from git cannot resolve any of it, so a deploy from a commit containing them fails. Add `.yalc/` and `yalc.lock` to the app's `.gitignore` and keep the dependency line out of every commit.
+> Either command writes a **local-path dependency** (`file:.yalc/...`) into the app's `package.json`, creates `.yalc/` and `yalc.lock`, and the install that follows rewrites the app's **lockfile**. A hosting platform that builds from git cannot resolve a local path, so a deploy from a commit containing any of it fails. Add `.yalc/` and `yalc.lock` to the app's `.gitignore`, and keep both the dependency line and the lockfile change out of every commit — the lockfile is the easy one to miss, because it is a normally-committed file.
 
 Then confirm the app resolves exactly one copy of the framework — two copies break Awilix registration identity, `MedusaService` base classes, and `defineLink`, with symptoms that look like anything but a duplicate dependency:
 
@@ -71,7 +77,15 @@ Put the sandbox credentials in the app's `.env` (see [[User Configuration Refere
 npx medusa db:migrate
 ```
 
-This creates the `ongoing_integration` and `ongoing_order_sync` tables plus the three `defineLink` tables. It touches no core Medusa table, and re-running it is a no-op.
+This adds exactly five tables — two module models and three `defineLink` tables — and alters no core Medusa table. Re-running it reports `Database already up-to-date`:
+
+```
+ongoing_integration
+ongoing_order_sync
+ongoing_ongoing_order_sync_fulfillment_fulfillment
+ongoing_ongoing_order_sync_order_order
+stock_location_stock_location_ongoing_ongoing_integration
+```
 
 ## Step 5 — boot and verify
 
@@ -118,7 +132,20 @@ npx yalc remove @comfyballs/medusa-plugin-ongoing-warehouse
 yarn install
 ```
 
-Then drop the plugin and provider entries from `medusa-config.ts`. The database tables from Step 4 are **not** removed by uninstalling — drop `ongoing_integration`, `ongoing_order_sync`, and the three link tables by hand if you want the schema gone too.
+Then drop the plugin and provider entries from `medusa-config.ts`.
+
+Uninstalling does **not** remove the tables from Step 4 — Medusa has no down-migration path, so drop them by hand if you want the schema gone. Link tables first, then the module tables:
+
+```sql
+DROP TABLE IF EXISTS stock_location_stock_location_ongoing_ongoing_integration;
+DROP TABLE IF EXISTS ongoing_ongoing_order_sync_order_order;
+DROP TABLE IF EXISTS ongoing_ongoing_order_sync_fulfillment_fulfillment;
+DROP TABLE IF EXISTS ongoing_order_sync;
+DROP TABLE IF EXISTS ongoing_integration;
+```
+
+> **Warning**
+> Removing the plugin also removes its fulfillment provider from the config, which disables the `ongoing_ongoing` row at the next boot and breaks any shipping option bound to it. Move those shipping options to another provider first.
 
 ## Related pages
 
