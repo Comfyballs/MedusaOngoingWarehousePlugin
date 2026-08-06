@@ -31,7 +31,6 @@ module.exports = defineConfig({
             baseUrl: process.env.ONGOING_A_URL,
             username: process.env.ONGOING_A_USER,
             password: process.env.ONGOING_A_PASS,
-            goodsOwnerId: Number(process.env.ONGOING_A_GOODS_OWNER),
             webhookSecret: process.env.ONGOING_A_WEBHOOK_SECRET,
           },
         ],

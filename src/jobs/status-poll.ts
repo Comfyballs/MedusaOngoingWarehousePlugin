@@ -104,6 +104,8 @@ type OngoingClientLike = {
 type IntegrationRow = {
   id: string
   credential_key: string
+  // Scopes the Ongoing client to this warehouse's goods owner (bead 9y2.9).
+  goods_owner_id: number
   status_poll_interval: string | null
   last_status_poll_at: Date | string | null
   last_done_sweep_at: Date | string | null
@@ -121,7 +123,7 @@ type OrderSyncRow = {
 
 type OngoingServiceLike = {
   listOngoingIntegrations: (filter: { enabled: boolean }) => Promise<IntegrationRow[]>
-  getClient: (credentialKey: string) => OngoingClientLike
+  getClient: (credentialKey: string, goodsOwnerId: number) => OngoingClientLike
   getDefaultStatusPollIntervalMs: () => number
   getDoneStatusThreshold: () => number
   acquireSyncLock: (integrationId: string, ttlMs: number, lockName?: "status_poll") => Promise<boolean>
@@ -325,7 +327,7 @@ async function pollAndApply(
   now: number,
   sweepDue: boolean
 ): Promise<void> {
-  const client = service.getClient(integration.credential_key)
+  const client = service.getClient(integration.credential_key, integration.goods_owner_id)
   const orders = await client.getOrdersByStatus(
     ONGOING_ACTIVE_STATUS_FROM,
     ONGOING_ACTIVE_STATUS_TO

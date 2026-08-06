@@ -40,7 +40,9 @@ function makeContext({ putOrder, putArticle }: { putOrder: jest.Mock; putArticle
   const updateOngoingOrderSyncs = jest.fn().mockResolvedValue(undefined)
   const article = putArticle ?? jest.fn().mockResolvedValue({ articleSystemId: 1 })
   const service = {
-    retrieveOngoingIntegration: jest.fn().mockResolvedValue({ credential_key: "wh-a" }),
+    retrieveOngoingIntegration: jest
+      .fn()
+      .mockResolvedValue({ credential_key: "wh-a", goods_owner_id: 7 }),
     getCredentials: jest.fn().mockReturnValue({ goodsOwnerId: 7 }),
     getClient: jest.fn().mockReturnValue({ putOrder, putArticle: article }),
     updateOngoingOrderSyncs,
@@ -172,12 +174,14 @@ describe("upsertOngoingOrderEditStep", () => {
     )
   })
 
-  it("records an error when getCredentials throws (misconfigured credential_key), then rethrows", async () => {
-    // The comment on the step notes getCredentials/getClient are INSIDE the try
-    // so a misconfigured credential_key is recorded as an error row too.
+  it("records an error when getClient throws (misconfigured credential_key), then rethrows", async () => {
+    // The comment on the step notes getClient is INSIDE the try so a misconfigured
+    // credential_key is recorded as an error row too. Since bead 9y2.9 the goods
+    // owner comes off the integration row, so getClient — not getCredentials — is
+    // the call that rejects an unknown credential key.
     const putOrder = jest.fn()
     const { container, service, updateOngoingOrderSyncs } = makeContext({ putOrder })
-    ;(service.getCredentials as jest.Mock).mockImplementation(() => {
+    ;(service.getClient as jest.Mock).mockImplementation(() => {
       throw new Error('no credentials configured for credential_key "wh-a"')
     })
 

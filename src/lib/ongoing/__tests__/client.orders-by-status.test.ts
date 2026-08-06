@@ -6,7 +6,6 @@ const creds: OngoingCredentials = {
   baseUrl: "https://api.example.test/api/v1",
   username: "u",
   password: "p",
-  goodsOwnerId: 7,
 }
 
 const json = (body: unknown) =>
@@ -27,7 +26,7 @@ const order = (id: number, extra: Record<string, unknown> = {}) => ({
 describe("OngoingClient.getOrdersByStatus", () => {
   it("queries with cursor params (orderIdFrom/maxOrdersToGet), never page/pageSize (bead ji6)", async () => {
     const fetchImpl = jest.fn().mockResolvedValue(json([order(555)]))
-    const client = new OngoingClient(creds, { fetchImpl })
+    const client = new OngoingClient(creds, { goodsOwnerId: 7, fetchImpl })
 
     await client.getOrdersByStatus(100, 999)
 
@@ -45,7 +44,7 @@ describe("OngoingClient.getOrdersByStatus", () => {
   it("omits the changed-since filter unless one is passed, and sends it as orderStatusChangedTimeFrom (bead t36)", async () => {
     // A fresh Response per call — a single one can only be read once.
     const fetchImpl = jest.fn().mockImplementation(async () => json([order(555)]))
-    const client = new OngoingClient(creds, { fetchImpl })
+    const client = new OngoingClient(creds, { goodsOwnerId: 7, fetchImpl })
 
     await client.getOrdersByStatus(451, 1000)
     expect(fetchImpl.mock.calls[0][0]).not.toContain("orderStatusChangedTimeFrom")
@@ -68,7 +67,7 @@ describe("OngoingClient.getOrdersByStatus", () => {
         }),
       ])
     )
-    const client = new OngoingClient(creds, { fetchImpl })
+    const client = new OngoingClient(creds, { goodsOwnerId: 7, fetchImpl })
 
     const orders = await client.getOrdersByStatus(100, 999)
 
@@ -98,7 +97,7 @@ describe("OngoingClient.getOrdersByStatus", () => {
         }),
       ])
     )
-    const client = new OngoingClient(creds, { fetchImpl })
+    const client = new OngoingClient(creds, { goodsOwnerId: 7, fetchImpl })
 
     const [o] = await client.getOrdersByStatus(100, 999)
     expect(o.tracking).toEqual([{ number: "WB-OUT", url: "https://out/1" }])
@@ -114,7 +113,7 @@ describe("OngoingClient.getOrdersByStatus", () => {
         }),
       ])
     )
-    const client = new OngoingClient(creds, { fetchImpl })
+    const client = new OngoingClient(creds, { goodsOwnerId: 7, fetchImpl })
 
     const [o] = await client.getOrdersByStatus(100, 999)
     expect(o.tracking).toEqual([{ number: "WB-DUP", url: "https://t/dup" }])
@@ -129,7 +128,7 @@ describe("OngoingClient.getOrdersByStatus", () => {
       .fn()
       .mockResolvedValueOnce(json(fullPage))
       .mockResolvedValueOnce(json([order(99)]))
-    const client = new OngoingClient(creds, { fetchImpl })
+    const client = new OngoingClient(creds, { goodsOwnerId: 7, fetchImpl })
 
     const orders = await client.getOrdersByStatus(100, 999)
 
@@ -145,7 +144,7 @@ describe("OngoingClient.getOrdersByStatus", () => {
     const samePage = Array.from({ length: 50 }, () => order(7)) // all same id → no advance
     // Fresh Response per call — a body stream can only be read once.
     const fetchImpl = jest.fn(async () => json(samePage))
-    const client = new OngoingClient(creds, { fetchImpl: fetchImpl as unknown as typeof fetch })
+    const client = new OngoingClient(creds, { goodsOwnerId: 7, fetchImpl: fetchImpl as unknown as typeof fetch })
 
     const orders = await client.getOrdersByStatus(100, 999)
 

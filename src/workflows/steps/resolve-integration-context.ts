@@ -27,12 +27,14 @@ export async function resolveIntegrationContextHandler(
     )
   }
 
-  const creds = service.getCredentials(integration.credential_key)
+  // Asserts the credential key still resolves to configured credentials; the goods
+  // owner itself now comes from the integration row (bead 9y2.9).
+  service.getCredentials(integration.credential_key)
 
   return {
     integration_id: integration.id,
     credential_key: integration.credential_key,
-    goods_owner_id: creds.goodsOwnerId,
+    goods_owner_id: integration.goods_owner_id,
   }
 }
 

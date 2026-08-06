@@ -1,9 +1,11 @@
+// One Ongoing API account. A single account can serve several goods owners, so the
+// goods-owner id is NOT here — it lives on the OngoingIntegration row and is set in
+// the admin per warehouse (bead 9y2.9).
 export type OngoingCredentials = {
   key: string
   baseUrl: string
   username: string
   password: string
-  goodsOwnerId: number
   webhookSecret?: string
 }
 

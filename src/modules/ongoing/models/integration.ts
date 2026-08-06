@@ -2,7 +2,13 @@ import { model } from "@medusajs/framework/utils"
 
 const OngoingIntegration = model.define("ongoing_integration", {
   id: model.id().primaryKey(),
-  credential_key: model.text().unique(),
+  credential_key: model.text(),
+  // Ongoing goods-owner id this integration serves. One API account (the credential
+  // key's base URL / user / password) can span several goods owners, so the goods
+  // owner is per-integration operator data rather than a credential — set in the
+  // admin, not in plugin options (bead 9y2.9). The credential key is therefore no
+  // longer unique on its own; the (credential_key, goods_owner_id) pair is.
+  goods_owner_id: model.number(),
   enabled: model.boolean().default(true),
   stock_location_id: model.text().unique(),
   stock_sync_enabled: model.boolean().default(true),

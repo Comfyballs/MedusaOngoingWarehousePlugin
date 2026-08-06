@@ -19,6 +19,7 @@ import {
   makeFakeQuery,
   makeFulfillmentFixture,
   type FulfillmentFixture,
+  GOODS_OWNER_ID
 } from "./_shared/l2"
 
 // Layer 2 — wh5.5: invoke the plugin's subscriber handlers directly (a module
@@ -95,6 +96,7 @@ moduleIntegrationTestRunner<OngoingModuleService>({
       beforeEach(async () => {
         const created = await service.createOngoingIntegrations({
           credential_key: CREDENTIAL_KEY,
+          goods_owner_id: GOODS_OWNER_ID,
           stock_location_id: LOCATION_ID,
           enabled: true,
         })

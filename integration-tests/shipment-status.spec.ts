@@ -52,7 +52,6 @@ const OPTIONS: OngoingPluginOptions = {
       baseUrl: ONGOING_BASE_URL,
       username: "user",
       password: "pass",
-      goodsOwnerId: GOODS_OWNER_ID,
       webhookSecret: WEBHOOK_SECRET,
     },
   ],
@@ -134,6 +133,7 @@ moduleIntegrationTestRunner<OngoingModuleService>({
         // documented cast as src/workflows/steps/create-ongoing-integration-row.ts).
         const created = await service.createOngoingIntegrations({
           credential_key: CREDENTIAL_KEY,
+          goods_owner_id: GOODS_OWNER_ID,
           stock_location_id: LOCATION_ID,
           enabled: true,
           shipped_status_codes: [320] as unknown as Record<string, unknown>,
@@ -250,8 +250,8 @@ moduleIntegrationTestRunner<OngoingModuleService>({
 
           // Stub the transport at the client the module service caches per
           // credential_key — pollAndApply resolves this exact same cached
-          // instance via service.getClient(integration.credential_key).
-          const client = service.getClient(CREDENTIAL_KEY)
+          // instance via service.getClient(integration.credential_key, GOODS_OWNER_ID).
+          const client = service.getClient(CREDENTIAL_KEY, GOODS_OWNER_ID)
           const getOrdersByStatus = jest
             .spyOn(client, "getOrdersByStatus")
             .mockResolvedValue([

@@ -8,6 +8,7 @@ import { isUniqueViolation } from "../../lib/ongoing/db-errors"
 
 export type CreateOngoingIntegrationRowInput = {
   credential_key: string
+  goods_owner_id: number
   stock_location_id: string
   enabled: boolean
   stock_sync_enabled: boolean

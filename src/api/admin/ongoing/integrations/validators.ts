@@ -3,6 +3,7 @@ import { STOCK_RECONCILE_MODES, StockReconcileMode } from "../../../../lib/ongoi
 
 export type CreateIntegrationInput = {
   credential_key: string
+  goods_owner_id: number
   stock_location_id: string
   enabled: boolean
   stock_sync_enabled: boolean
@@ -35,6 +36,11 @@ export function validateCreateIntegrationInput(body: unknown): CreateIntegration
   }
   if (typeof b.stock_location_id !== "string" || b.stock_location_id.length === 0) {
     invalid("stock_location_id is required")
+  }
+  // One Ongoing account can serve several goods owners, so the goods owner is set per
+  // integration here rather than in plugin options (bead 9y2.9).
+  if (!Number.isInteger(b.goods_owner_id) || (b.goods_owner_id as number) <= 0) {
+    invalid("goods_owner_id is required and must be a positive integer")
   }
   if (
     b.stock_reconcile_mode !== undefined &&
@@ -99,6 +105,7 @@ export function validateCreateIntegrationInput(body: unknown): CreateIntegration
 
   return {
     credential_key: b.credential_key as string,
+    goods_owner_id: b.goods_owner_id as number,
     stock_location_id: b.stock_location_id as string,
     // Absent → create default; wrong types already threw above.
     enabled: typeof b.enabled === "boolean" ? b.enabled : true,

@@ -28,7 +28,6 @@ export const FAKE_OPTIONS: OngoingPluginOptions = {
       baseUrl: ONGOING_BASE_URL,
       username: "user",
       password: "pass",
-      goodsOwnerId: GOODS_OWNER_ID,
     },
   ],
 }

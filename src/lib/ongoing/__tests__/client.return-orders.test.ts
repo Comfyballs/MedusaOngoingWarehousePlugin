@@ -7,7 +7,6 @@ const creds: OngoingCredentials = {
   baseUrl: "https://api.example.test/api/v1",
   username: "u",
   password: "p",
-  goodsOwnerId: 7,
 }
 
 const json = (body: unknown) =>
@@ -24,7 +23,7 @@ describe("OngoingClient.getOrder", () => {
         ],
       })
     )
-    const client = new OngoingClient(creds, { fetchImpl })
+    const client = new OngoingClient(creds, { goodsOwnerId: 7, fetchImpl })
 
     const detail = await client.getOrder(50163)
 
@@ -50,14 +49,14 @@ describe("OngoingClient.getOrder", () => {
         ],
       })
     )
-    const client = new OngoingClient(creds, { fetchImpl })
+    const client = new OngoingClient(creds, { goodsOwnerId: 7, fetchImpl })
     const detail = await client.getOrder(1)
     expect(detail.lines).toEqual([{ orderLineId: 1, articleNumber: "A1" }])
   })
 
   it("throws a terminal OngoingApiError when the response fails schema validation", async () => {
     const fetchImpl = jest.fn().mockResolvedValue(json({ orderLines: [] }))
-    const client = new OngoingClient(creds, { fetchImpl })
+    const client = new OngoingClient(creds, { goodsOwnerId: 7, fetchImpl })
     await expect(client.getOrder(1)).rejects.toMatchObject({ kind: "terminal" })
   })
 })
@@ -68,7 +67,7 @@ describe("OngoingClient.putReturnOrder", () => {
   // names in lockstep with that schema.
   it("PUTs /returnOrders and returns the ongoing return order id", async () => {
     const fetchImpl = jest.fn().mockResolvedValue(json({ returnOrderId: 321, message: "ok" }))
-    const client = new OngoingClient(creds, { fetchImpl })
+    const client = new OngoingClient(creds, { goodsOwnerId: 7, fetchImpl })
 
     const result = await client.putReturnOrder({
       goodsOwnerId: 7,
@@ -92,7 +91,7 @@ describe("OngoingClient.putReturnOrder", () => {
 
   it("throws a retryable OngoingApiError when the 2xx response omits returnOrderId", async () => {
     const fetchImpl = jest.fn().mockResolvedValue(json({ message: "queued" }))
-    const client = new OngoingClient(creds, { fetchImpl })
+    const client = new OngoingClient(creds, { goodsOwnerId: 7, fetchImpl })
 
     await expect(
       client.putReturnOrder({
@@ -111,7 +110,7 @@ describe("OngoingClient.putReturnOrder", () => {
   // `unexpected_body_shape` schema rejection.
   it("throws a retryable OngoingApiError when the 2xx response serializes returnOrderId as null", async () => {
     const fetchImpl = jest.fn().mockResolvedValue(json({ returnOrderId: null, message: null }))
-    const client = new OngoingClient(creds, { fetchImpl })
+    const client = new OngoingClient(creds, { goodsOwnerId: 7, fetchImpl })
 
     await expect(
       client.putReturnOrder({
@@ -130,7 +129,7 @@ describe("OngoingClient.putReturnOrder", () => {
         headers: { "content-type": "application/json" },
       })
     )
-    const client = new OngoingClient(creds, { fetchImpl })
+    const client = new OngoingClient(creds, { goodsOwnerId: 7, fetchImpl })
 
     await expect(
       client.putReturnOrder({

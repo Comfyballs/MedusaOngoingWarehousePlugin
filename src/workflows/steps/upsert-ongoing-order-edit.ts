@@ -34,9 +34,10 @@ export const upsertOngoingOrderEditHandler = async (
   { container }: { container: MedusaContainer }
 ) => {
     const service = container.resolve(ONGOING_MODULE) as {
-      retrieveOngoingIntegration: (id: string) => Promise<{ credential_key: string }>
-      getCredentials: (credentialKey: string) => { goodsOwnerId: number }
-      getClient: (credentialKey: string) => {
+      retrieveOngoingIntegration: (
+        id: string
+      ) => Promise<{ credential_key: string; goods_owner_id: number }>
+      getClient: (credentialKey: string, goodsOwnerId: number) => {
         putOrder: (order: PostOrderModel) => Promise<{ ongoingOrderId: number }>
         putArticle: (article: PostArticleModel) => Promise<{ articleSystemId?: number }>
       }
@@ -46,11 +47,11 @@ export const upsertOngoingOrderEditHandler = async (
 
     try {
       const integration = await service.retrieveOngoingIntegration(decision.integration_id as string)
-      // goods_owner_id lives on the credentials (plugin options), not the integration
-      // DB row — sourced the same way #26 does. getClient/getCredentials are inside the
-      // try so a misconfigured credential_key is also recorded as an error row.
-      const goodsOwnerId = service.getCredentials(integration.credential_key).goodsOwnerId
-      const client = service.getClient(integration.credential_key)
+      // goods_owner_id lives on the integration DB row (bead 9y2.9), set per warehouse
+      // in the admin. getClient stays inside the try so a misconfigured credential_key
+      // is also recorded as an error row.
+      const goodsOwnerId = integration.goods_owner_id
+      const client = service.getClient(integration.credential_key, goodsOwnerId)
 
       // Re-query the full fulfillment order via #26's SHARED exported helper, keyed by
       // the AUTHORITATIVE medusa_fulfillment_id carried from the targeted sync row (the

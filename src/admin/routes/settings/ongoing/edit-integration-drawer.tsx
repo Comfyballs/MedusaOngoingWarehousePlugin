@@ -48,12 +48,12 @@ export function EditIntegrationDrawer({ integration, onClose }: Props) {
   }, [integration])
 
   const testConnection = useMutation({
-    mutationFn: (credential_key: string) =>
+    mutationFn: (vars: { credential_key: string; goods_owner_id: number }) =>
       sdk.client.fetch<{
         success: boolean
         statuses?: { number: number; text: string }[]
         error?: string
-      }>("/admin/ongoing/test-connection", { method: "POST", body: { credential_key } }),
+      }>("/admin/ongoing/test-connection", { method: "POST", body: vars }),
     onSuccess: (result) => {
       if (result.success) {
         setTestResult(`Connected — ${result.statuses?.length ?? 0} order statuses available`)

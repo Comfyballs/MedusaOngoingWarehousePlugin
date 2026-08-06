@@ -8,6 +8,8 @@ import type OngoingModuleService from "../../modules/ongoing/service"
 export type CancelStepInput = {
   ongoingOrderId: number
   credentialKey: string
+  // The goods owner the client must be scoped to (bead 9y2.9).
+  goodsOwnerId: number
 }
 
 export type CancelStepResult = {
@@ -68,7 +70,7 @@ export const cancelOngoingOrderHandler = async (
 ): Promise<StepResponse<CancelStepResult>> => {
   const ongoing = container.resolve(ONGOING_MODULE) as OngoingModuleService
   const logger: Logger = container.resolve(ContainerRegistrationKeys.LOGGER)
-  const client = ongoing.getClient(input.credentialKey)
+  const client = ongoing.getClient(input.credentialKey, input.goodsOwnerId)
 
   try {
     await client.cancelOrder(input.ongoingOrderId)

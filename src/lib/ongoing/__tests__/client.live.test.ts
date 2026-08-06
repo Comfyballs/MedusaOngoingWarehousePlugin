@@ -39,9 +39,12 @@ function credsFromEnv(): OngoingCredentials {
     baseUrl: ONGOING_URL!.replace(/\/$/, ""), // tolerate a trailing slash in the env value
     username: ONGOING_USER!,
     password: ONGOING_PASS!,
-    goodsOwnerId: Number(ONGOING_GOODS_OWNER),
   }
 }
+
+// The goods owner is no longer a credential (bead 9y2.9) — the live sandbox's id
+// comes from the same env var and is passed per client / per payload.
+const liveGoodsOwnerId = () => Number(process.env.ONGOING_GOODS_OWNER)
 
 const describeLive = live ? describe : describe.skip
 
@@ -49,7 +52,7 @@ describeLive("Ongoing live API — read paths", () => {
   let client: OngoingClient
 
   beforeAll(() => {
-    client = new OngoingClient(credsFromEnv())
+    client = new OngoingClient(credsFromEnv(), { goodsOwnerId: liveGoodsOwnerId() })
   })
 
   it("authenticates and returns order statuses", async () => {
@@ -100,7 +103,7 @@ describeLive("Ongoing live API — ym3 spec-conformance", () => {
   let inventory: OngoingInventoryRow[]
 
   beforeAll(async () => {
-    client = new OngoingClient(credsFromEnv())
+    client = new OngoingClient(credsFromEnv(), { goodsOwnerId: liveGoodsOwnerId() })
     inventory = await client.getInventory()
   })
 
@@ -229,7 +232,7 @@ const describeHeavy = live && process.env.ONGOING_LIVE_HEAVY === "1" ? describe 
 describeHeavy("Ongoing live API — heavy sweeps", () => {
   let client: OngoingClient
   beforeAll(() => {
-    client = new OngoingClient(credsFromEnv())
+    client = new OngoingClient(credsFromEnv(), { goodsOwnerId: liveGoodsOwnerId() })
   })
 
   it(
@@ -263,7 +266,7 @@ describeWrites("Ongoing live API — write round-trip (sandbox)", () => {
 
   beforeAll(() => {
     creds = credsFromEnv()
-    client = new OngoingClient(creds)
+    client = new OngoingClient(creds, { goodsOwnerId: 7 })
   })
 
   afterAll(async () => {
@@ -281,7 +284,7 @@ describeWrites("Ongoing live API — write round-trip (sandbox)", () => {
 
   it("upserts a test article (ProcessArticle)", async () => {
     const article: PostArticleModel = {
-      goodsOwnerId: creds.goodsOwnerId,
+      goodsOwnerId: liveGoodsOwnerId(),
       articleNumber,
       articleName: `Medusa integration test ${stamp}`,
       weight: 0.1,
@@ -293,7 +296,7 @@ describeWrites("Ongoing live API — write round-trip (sandbox)", () => {
 
   it("creates an order referencing the test article (ProcessOrder)", async () => {
     const order: PostOrderModel = {
-      goodsOwnerId: creds.goodsOwnerId,
+      goodsOwnerId: liveGoodsOwnerId(),
       orderNumber,
       deliveryDate: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
       consignee: {
@@ -358,7 +361,7 @@ describeWrites("Ongoing live API — write round-trip (sandbox)", () => {
 
       const inDate = new Date().toISOString().slice(0, 10) // date-only, per PostReturnOrderModel.inDate
       const returnOrder: PostReturnOrderModel = {
-        goodsOwnerId: creds.goodsOwnerId,
+        goodsOwnerId: liveGoodsOwnerId(),
         returnOrderNumber: `MEDUSA-IT-RET-${stamp}`,
         customerOrder: { orderId: ongoingOrderId },
         inDate,

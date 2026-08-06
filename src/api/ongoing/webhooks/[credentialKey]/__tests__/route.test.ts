@@ -92,6 +92,8 @@ const makeService = (opts: {
   credentials?: ReturnType<typeof makeCreds> | null
   integrations?: Array<{
     id: string
+    // Omitted fixtures default to GOODS_OWNER in the filter below.
+    goods_owner_id?: number
     shipped_status_codes: number[] | null
     delivered_status_codes?: number[] | null
   }>
@@ -105,9 +107,19 @@ const makeService = (opts: {
     }
     return opts.credentials
   }),
+  // Honours the goods_owner_id filter: since bead 9y2.9 the payload's goodsOwnerId
+  // SELECTS which of the credential key's integrations the push is for, so a mock that
+  // ignored the filter would not exercise the routing at all. Fixtures without an
+  // explicit goods_owner_id default to the valid payload's owner.
   listOngoingIntegrations: jest
     .fn()
-    .mockResolvedValue(opts.integrations ?? []),
+    .mockImplementation((filter: { goods_owner_id?: number }) =>
+      Promise.resolve(
+        (opts.integrations ?? []).filter(
+          (i) => (i.goods_owner_id ?? GOODS_OWNER) === filter.goods_owner_id
+        )
+      )
+    ),
 })
 
 const logger = { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() }
@@ -159,7 +171,12 @@ describe("POST /ongoing/webhooks/:credentialKey", () => {
     expect(dispatchVerifiedShipment).not.toHaveBeenCalled()
   })
 
-  it("returns 401 on goodsOwnerId mismatch (defense in depth)", async () => {
+  // bead 9y2.9: the goods owner is no longer a credential, so there is nothing in
+  // config to compare the payload against — it instead selects WHICH integration the
+  // push is for. A payload naming a goods owner this credential key has no integration
+  // for is acked (Ongoing must not retry-flood) but must change NO state. The
+  // webhookSecret checked above remains the actual authentication.
+  it("acks without acting when no integration matches the payload's goodsOwnerId", async () => {
     const service = makeService({
       credentials: makeCreds(),
       integrations: [{ id: "int_1", shipped_status_codes: [320] }],
@@ -167,8 +184,25 @@ describe("POST /ongoing/webhooks/:credentialKey", () => {
     const res = makeRes()
     const body = { ...validBody(), goodsOwnerId: 999 }
     await POST(makeReq({ token: SECRET, body, service }), res)
-    expect(res.sendStatus).toHaveBeenCalledWith(401)
+    expect(res.sendStatus).toHaveBeenCalledWith(200)
     expect(dispatchVerifiedShipment).not.toHaveBeenCalled()
+  })
+
+  it("routes to the integration matching the payload's goodsOwnerId", async () => {
+    const service = makeService({
+      credentials: makeCreds(),
+      integrations: [
+        { id: "int_other", goods_owner_id: 999, shipped_status_codes: [320] },
+        { id: "int_1", goods_owner_id: GOODS_OWNER, shipped_status_codes: [320] },
+      ],
+    })
+    const res = makeRes()
+    await POST(makeReq({ token: SECRET, body: validBody(), service }), res)
+    expect(res.sendStatus).toHaveBeenCalledWith(200)
+    expect(dispatchVerifiedShipment).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ integrationId: "int_1" })
+    )
   })
 
   it("returns 400 on an unparseable/malformed body (after auth passes)", async () => {

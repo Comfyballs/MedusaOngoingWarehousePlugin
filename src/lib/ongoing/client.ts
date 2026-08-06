@@ -44,7 +44,17 @@ export class OngoingClient {
   private readonly fetchImpl: typeof fetch
   private readonly sleep: (ms: number) => Promise<void>
 
-  constructor(private readonly creds: OngoingCredentials, opts: ClientOpts = {}) {
+  // The goods owner is NOT part of the credentials: one Ongoing account can serve
+  // several goods owners, so it is passed per client and comes from the integration
+  // row (bead 9y2.9). It is a required opt rather than an optional one precisely so
+  // a caller cannot forget it and silently send `goodsOwnerId=undefined`.
+  private readonly goodsOwnerId: number
+
+  constructor(
+    private readonly creds: OngoingCredentials,
+    opts: ClientOpts & { goodsOwnerId: number }
+  ) {
+    this.goodsOwnerId = opts.goodsOwnerId
     this.authHeader =
       "Basic " + Buffer.from(`${creds.username}:${creds.password}`).toString("base64")
     this.throttle = new Throttle(opts.concurrency ?? DEFAULT_CONCURRENCY)
@@ -162,7 +172,7 @@ export class OngoingClient {
   async getOrderStatuses(): Promise<OngoingOrderStatus[]> {
     const raw = await this.request<{ orderStatuses?: { number: number; text: string }[] }>(
       "GET",
-      `/orders/statuses?goodsOwnerId=${this.creds.goodsOwnerId}`
+      `/orders/statuses?goodsOwnerId=${this.goodsOwnerId}`
     )
     return (raw?.orderStatuses ?? []).map(mapStatus)
   }
@@ -184,7 +194,7 @@ export class OngoingClient {
       (cursorFrom) =>
         this.request<any[]>(
           "GET",
-          `/articles?goodsOwnerId=${this.creds.goodsOwnerId}` +
+          `/articles?goodsOwnerId=${this.goodsOwnerId}` +
             `&articleSystemIdFrom=${cursorFrom}&maxArticlesToGet=${ONGOING_PAGE_SIZE}${filters}`
         ),
       (raw) => Number(raw?.articleSystemId)
@@ -209,7 +219,7 @@ export class OngoingClient {
       (cursorFrom) =>
         this.request<any[]>(
           "GET",
-          `/orders?goodsOwnerId=${this.creds.goodsOwnerId}` +
+          `/orders?goodsOwnerId=${this.goodsOwnerId}` +
             `&orderStatusFrom=${from}&orderStatusTo=${to}` +
             `&orderIdFrom=${cursorFrom}&maxOrdersToGet=${ONGOING_PAGE_SIZE}${changedFilter}`
         ),

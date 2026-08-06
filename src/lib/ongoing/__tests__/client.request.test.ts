@@ -7,7 +7,6 @@ const creds: OngoingCredentials = {
   baseUrl: "https://api.example.test/api/v1",
   username: "user",
   password: "pass",
-  goodsOwnerId: 42,
 }
 
 const jsonResponse = (status: number, body: unknown, headers: Record<string, string> = {}) =>
@@ -16,7 +15,7 @@ const jsonResponse = (status: number, body: unknown, headers: Record<string, str
 describe("OngoingClient.request", () => {
   it("sends Basic auth and parses JSON on success", async () => {
     const fetchImpl = jest.fn().mockResolvedValue(jsonResponse(200, { ok: true }))
-    const client = new OngoingClient(creds, { fetchImpl })
+    const client = new OngoingClient(creds, { goodsOwnerId: 7, fetchImpl })
     // @ts-expect-error exercising the private method directly in a unit test
     const data = await client.request("GET", "/articles")
 
@@ -28,7 +27,7 @@ describe("OngoingClient.request", () => {
 
   it("throws terminal OngoingApiError on 400 without retrying", async () => {
     const fetchImpl = jest.fn().mockResolvedValue(jsonResponse(400, { error: "bad" }))
-    const client = new OngoingClient(creds, { fetchImpl })
+    const client = new OngoingClient(creds, { goodsOwnerId: 7, fetchImpl })
     // @ts-expect-error private
     await expect(client.request("GET", "/x")).rejects.toMatchObject({ kind: "terminal", status: 400 })
     expect(fetchImpl).toHaveBeenCalledTimes(1)
@@ -40,7 +39,7 @@ describe("OngoingClient.request", () => {
       .mockResolvedValueOnce(jsonResponse(503, { error: "down" }))
       .mockResolvedValueOnce(jsonResponse(200, { ok: 1 }))
     const sleep = jest.fn().mockResolvedValue(undefined)
-    const client = new OngoingClient(creds, { fetchImpl, sleep, maxRetries: 2 })
+    const client = new OngoingClient(creds, { goodsOwnerId: 7, fetchImpl, sleep, maxRetries: 2 })
     // @ts-expect-error private
     const data = await client.request("GET", "/x")
     expect(data).toEqual({ ok: 1 })
@@ -54,7 +53,7 @@ describe("OngoingClient.request", () => {
     const netErr = new TypeError("fetch failed")
     const fetchImpl = jest.fn().mockRejectedValue(netErr)
     const sleep = jest.fn().mockResolvedValue(undefined)
-    const client = new OngoingClient(creds, { fetchImpl, sleep, maxRetries: 2 })
+    const client = new OngoingClient(creds, { goodsOwnerId: 7, fetchImpl, sleep, maxRetries: 2 })
     // @ts-expect-error private
     await expect(client.request("GET", "/x")).rejects.toBe(netErr)
     // initial try + 2 retries = 3 calls
@@ -68,7 +67,7 @@ describe("OngoingClient.request", () => {
       .mockRejectedValueOnce(new TypeError("fetch failed"))
       .mockResolvedValueOnce(jsonResponse(200, { ok: 1 }))
     const sleep = jest.fn().mockResolvedValue(undefined)
-    const client = new OngoingClient(creds, { fetchImpl, sleep, maxRetries: 2 })
+    const client = new OngoingClient(creds, { goodsOwnerId: 7, fetchImpl, sleep, maxRetries: 2 })
     // @ts-expect-error private
     const data = await client.request("GET", "/x")
     expect(data).toEqual({ ok: 1 })
@@ -82,7 +81,7 @@ describe("OngoingClient.request", () => {
       Promise.resolve(jsonResponse(429, { error: "slow" }, { "retry-after": "2" }))
     )
     const sleep = jest.fn().mockResolvedValue(undefined)
-    const client = new OngoingClient(creds, { fetchImpl, sleep, maxRetries: 1 })
+    const client = new OngoingClient(creds, { goodsOwnerId: 7, fetchImpl, sleep, maxRetries: 1 })
     // @ts-expect-error private
     await expect(client.request("GET", "/x")).rejects.toBeInstanceOf(OngoingApiError)
     // initial try + 1 retry = 2 calls
@@ -99,7 +98,7 @@ describe("OngoingClient.request", () => {
         headers: { "content-type": "text/html" },
       })
     )
-    const client = new OngoingClient(creds, { fetchImpl })
+    const client = new OngoingClient(creds, { goodsOwnerId: 7, fetchImpl })
     // @ts-expect-error private
     await expect(client.request("GET", "/x")).rejects.toMatchObject({
       kind: "terminal",
@@ -117,7 +116,7 @@ describe("OngoingClient.request", () => {
         headers: { "content-type": "text/plain" },
       })
     )
-    const client = new OngoingClient(creds, { fetchImpl })
+    const client = new OngoingClient(creds, { goodsOwnerId: 7, fetchImpl })
     // @ts-expect-error private
     await expect(client.request("GET", "/x")).rejects.toMatchObject({
       kind: "terminal",
@@ -134,7 +133,7 @@ describe("OngoingClient.request", () => {
         headers: { "content-type": "application/json" },
       })
     )
-    const client = new OngoingClient(creds, { fetchImpl })
+    const client = new OngoingClient(creds, { goodsOwnerId: 7, fetchImpl })
     // @ts-expect-error private
     await expect(client.request("GET", "/x")).rejects.toMatchObject({
       kind: "terminal",
@@ -149,7 +148,7 @@ describe("OngoingClient.request", () => {
     const fetchImpl = jest.fn().mockResolvedValue(
       new Response("", { status: 200, headers: {} })
     )
-    const client = new OngoingClient(creds, { fetchImpl })
+    const client = new OngoingClient(creds, { goodsOwnerId: 7, fetchImpl })
     // @ts-expect-error private
     const data = await client.request("DELETE", "/orders/1")
     expect(data).toBeUndefined()
@@ -161,7 +160,7 @@ describe("OngoingClient.request", () => {
       .mockResolvedValueOnce(jsonResponse(408, { error: "timeout" }))
       .mockResolvedValueOnce(jsonResponse(200, { ok: 1 }))
     const sleep = jest.fn().mockResolvedValue(undefined)
-    const client = new OngoingClient(creds, { fetchImpl, sleep, maxRetries: 2 })
+    const client = new OngoingClient(creds, { goodsOwnerId: 7, fetchImpl, sleep, maxRetries: 2 })
     // @ts-expect-error private
     const data = await client.request("GET", "/x")
     expect(data).toEqual({ ok: 1 })

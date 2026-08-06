@@ -10,7 +10,8 @@ export type SyncOngoingInventoryInput = {
   integration_id: string
   credential_key: string
   stock_location_id: string
-  // goods_owner_id is not used by this workflow but is part of the dispatcher
+  // Scopes the Ongoing client to this warehouse's goods owner (bead 9y2.9); also part
+  // of the dispatcher
   // contract (#38) so all integration fields are co-located on the input type.
   goods_owner_id: number
   stock_reconcile_mode: "sellable_plus_reserved" | "precise" | "onhand"
@@ -24,6 +25,7 @@ export const syncOngoingInventoryWorkflow = createWorkflow(
     const rows = fetchOngoingInventoryStep(
       transform({ input }, (data) => ({
         credential_key: data.input.credential_key,
+        goods_owner_id: data.input.goods_owner_id,
         changed_since: data.input.changed_since,
       }))
     )

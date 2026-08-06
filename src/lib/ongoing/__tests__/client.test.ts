@@ -6,7 +6,6 @@ const creds: OngoingCredentials = {
   baseUrl: "https://api.example.com/api/v1",
   username: "u",
   password: "p",
-  goodsOwnerId: 42,
 }
 
 describe("OngoingClient request timeout (bead 4s4)", () => {
@@ -21,7 +20,7 @@ describe("OngoingClient request timeout (bead 4s4)", () => {
         })
       })
     )
-    const client = new OngoingClient(creds, {
+    const client = new OngoingClient(creds, { goodsOwnerId: 7,
       fetchImpl: fetchImpl as unknown as typeof fetch,
       timeoutMs: 5,
       maxRetries: 0,
@@ -39,7 +38,7 @@ describe("OngoingClient request timeout (bead 4s4)", () => {
         headers: { "content-type": "application/json" },
       })
     )
-    const client = new OngoingClient(creds, {
+    const client = new OngoingClient(creds, { goodsOwnerId: 7,
       fetchImpl: fetchImpl as unknown as typeof fetch,
       timeoutMs: 10_000,
     })

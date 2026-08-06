@@ -13,6 +13,7 @@ import {
   buildContainer,
   makeFakeQuery,
   makeFulfillmentFixture,
+  GOODS_OWNER_ID
 } from "./_shared/l2"
 
 // Layer 2 — the Ongoing fulfillment PROVIDER against the REAL ongoing module (real
@@ -71,6 +72,7 @@ moduleIntegrationTestRunner<OngoingModuleService>({
       beforeEach(async () => {
         await service.createOngoingIntegrations({
           credential_key: CREDENTIAL_KEY,
+          goods_owner_id: GOODS_OWNER_ID,
           stock_location_id: LOCATION_ID,
           enabled: true,
         })

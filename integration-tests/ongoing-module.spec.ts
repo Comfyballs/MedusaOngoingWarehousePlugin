@@ -18,7 +18,6 @@ const FAKE_OPTIONS: OngoingPluginOptions = {
       baseUrl: "https://ongoing.test/api/v1",
       username: "user",
       password: "pass",
-      goodsOwnerId: 1,
     },
   ],
 }
@@ -63,7 +62,7 @@ moduleIntegrationTestRunner<OngoingModuleService>({
       it("flowed plugin options through to the service (constructor validation ran)", () => {
         const creds = service.getCredentials("test-wh")
         expect(creds.baseUrl).toBe("https://ongoing.test/api/v1")
-        expect(creds.goodsOwnerId).toBe(1)
+        expect(creds.key).toBe("test-wh")
       })
 
       it("is the real service, not a stub — unknown credential key throws MedusaError", () => {

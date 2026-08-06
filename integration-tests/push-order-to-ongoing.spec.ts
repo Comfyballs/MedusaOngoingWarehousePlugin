@@ -59,6 +59,7 @@ moduleIntegrationTestRunner<OngoingModuleService>({
         // fulfillment's stock location so resolveIntegrationContext reads it from Postgres.
         const created = await service.createOngoingIntegrations({
           credential_key: CREDENTIAL_KEY,
+          goods_owner_id: GOODS_OWNER_ID,
           stock_location_id: LOCATION_ID,
           enabled: true,
         })

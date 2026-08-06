@@ -103,7 +103,7 @@ The `error_class` (`retryable` | `terminal`) decides whether the retry job touch
 
 ### Plugin options and boot validation
 
-`OngoingPluginOptions`: `integrations: OngoingCredentials[]` (each `{ key, baseUrl, username, password, goodsOwnerId, webhookSecret? }`), plus optional `defaultStockSyncInterval`, `defaultStatusPollInterval`, `defaultDoneStatusThreshold` (status code above which the poll stops re-syncing an order, default 450), and `rateLimitConcurrency` (Throttle concurrency per goods owner, default 1). The `validate-options` loader runs the same validation at module boot and logs the validated integration count, so misconfiguration fails app startup rather than first use.
+`OngoingPluginOptions`: `integrations: OngoingCredentials[]` (each `{ key, baseUrl, username, password, webhookSecret? }` — the goods-owner id is **not** here; it lives on the `OngoingIntegration` row so one account can serve several goods owners), plus optional `defaultStockSyncInterval`, `defaultStatusPollInterval`, `defaultDoneStatusThreshold` (status code above which the poll stops re-syncing an order, default 450), and `rateLimitConcurrency` (Throttle concurrency per goods owner, default 1). The `validate-options` loader runs the same validation at module boot and logs the validated integration count, so misconfiguration fails app startup rather than first use.
 
 ### Migrations
 
@@ -270,7 +270,7 @@ The create and update integration validators are both **strict** (bead on2): eac
 2. Missing `webhookSecret` in plugin options -> **401**.
 3. `X-Auth-Token` compared to `webhookSecret` via `crypto.timingSafeEqual` (static shared secret, not HMAC) -> mismatch **401**.
 4. Payload must be an object with numeric `goodsOwnerId` and `orderStatus.number` -> else **400**.
-5. Payload `goodsOwnerId` must equal the credential's configured goods owner -> else **401**.
+5. Payload `goodsOwnerId` **selects** which of the credential key's integrations the push is for. There is no configured goods owner to compare against — one Ongoing account can serve several — so a payload naming a goods owner with no integration row falls through to the "no integration bound" branch below and is acked without acting. The `X-Auth-Token` check above remains the actual authentication.
 
 After auth it **always returns 200** — all dispatchers swallow workflow errors and log only, and the whole post-auth body (integration lookup, the nullable `shipped_status_codes` read, dispatch) is wrapped so a transient DB/config error also acks 200 instead of leaking a 500. Ongoing floods retries on any non-2xx and the poll job is the reconciliation backstop; idempotency lives in the workflows. If the status is a `shipped_status_codes` value it dispatches a shipment, otherwise a status refresh. Two visibility warnings log here: a webhook for a credential with **no bound integration**, and an integration with **no `shipped_status_codes` configured** (shipment dispatch can never fire until they are set).
 

@@ -36,6 +36,7 @@ describe("createOngoingIntegrationWorkflow", () => {
     const createOngoingIntegrations = jest.fn().mockResolvedValue({
       id: "integ_1",
       credential_key: "wh-1",
+      goods_owner_id: 7,
       stock_location_id: "sloc_1",
     })
     const deleteOngoingIntegrations = jest.fn().mockResolvedValue(undefined)
@@ -48,6 +49,7 @@ describe("createOngoingIntegrationWorkflow", () => {
     const runPromise = createOngoingIntegrationWorkflow(container).run({
       input: {
         credential_key: "wh-1",
+        goods_owner_id: 7,
         stock_location_id: "sloc_1",
         enabled: true,
         stock_sync_enabled: true,

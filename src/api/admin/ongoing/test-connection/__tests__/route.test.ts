@@ -34,7 +34,7 @@ describe("POST /admin/ongoing/test-connection", () => {
     const service = makeService({})
     const res = makeRes()
 
-    await expect(POST(makeReq({ credential_key: "wh-nope" }, service), res)).rejects.toMatchObject(
+    await expect(POST(makeReq({ credential_key: "wh-nope", goods_owner_id: 7 }, service), res)).rejects.toMatchObject(
       { type: MedusaError.Types.INVALID_DATA }
     )
   })
@@ -46,9 +46,9 @@ describe("POST /admin/ongoing/test-connection", () => {
     })
     const res = makeRes()
 
-    await POST(makeReq({ credential_key: "wh-1" }, service), res)
+    await POST(makeReq({ credential_key: "wh-1", goods_owner_id: 7 }, service), res)
 
-    expect(service.getClient).toHaveBeenCalledWith("wh-1")
+    expect(service.getClient).toHaveBeenCalledWith("wh-1", 7)
     expect(res.json).toHaveBeenCalledWith({ success: true, statuses })
   })
 
@@ -58,7 +58,7 @@ describe("POST /admin/ongoing/test-connection", () => {
     })
     const res = makeRes()
 
-    await POST(makeReq({ credential_key: "wh-1" }, service), res)
+    await POST(makeReq({ credential_key: "wh-1", goods_owner_id: 7 }, service), res)
 
     expect(res.json).toHaveBeenCalledWith({ success: false, error: "ECONNREFUSED" })
   })
