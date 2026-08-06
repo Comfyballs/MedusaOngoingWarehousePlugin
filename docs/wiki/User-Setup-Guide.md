@@ -87,15 +87,17 @@ Watch for that line before continuing.
 
 Open **Settings → Ongoing Warehouse** in the Medusa admin. Click **Create integration** and fill in the form:
 
+Every field explains itself in the form, and the field-by-field reference is in [[User Configuration Reference]]. The order below is what the walkthrough adds — what to fill in first, and the traps:
+
 1. **Credential key** — a dropdown populated from your configured plugin options. If it is empty, your `integrations` option is missing or misconfigured.
-2. **Goods owner id** — the numeric Ongoing goods owner this warehouse maps to. One Ongoing account can serve several goods owners, so this is set here rather than in config. It is immutable after creation: re-pointing a live integration would orphan every sync row already written against the old goods owner.
-3. **Stock location** — the Medusa stock location this warehouse serves (the picker lists up to 100 locations). This is immutable after creation.
-4. **Test connection** — click this **before** touching the status-code pickers. It calls Ongoing with the selected credential key **and goods owner** and, on success, shows `Connected — N order statuses available` and loads the live status list into the two status-code pickers.
-5. **Shipped status codes** and **Cancellable status codes** — check the codes that mean "shipped" and "cancellable" for this goods owner. See [[User Ongoing Concepts]].
+2. **Goods owner id** — immutable after creation, like the credential key and stock location: re-pointing a live integration would orphan every sync row already written against the old goods owner.
+3. **Stock location** — the picker lists up to 100 locations. Also immutable after creation.
+4. **Test connection** — click this **before** touching the status-code pickers. It calls Ongoing with the selected credential key **and goods owner** and, on success, shows `Connected — N order statuses available` and loads the live status list into all three status-code pickers.
+5. **Shipped**, **Delivered** and **Cancellable status codes** — check the codes that carry each meaning for this goods owner. Shipped and delivered fall back to Ongoing's canonical codes when left empty; **cancellable does not** — leave it empty and no cancel is ever sent. See [[User Ongoing Concepts]].
 6. **Enabled** / **Stock sync enabled** — leave both on unless you have a reason not to.
 7. **Stock sync interval** / **Status poll interval** — leave blank to inherit the global defaults.
-8. **Stock reconcile mode** — usually `sellable_plus_reserved`. See [[User Configuration Reference]].
-8. **Edit sync rules (JSON)** — optional at creation, but note edits are blocked until you set it. See the JSON shape in [[User Configuration Reference]].
+8. **Stock reconcile mode** — keep the recommended mode unless you know you need another.
+9. **Edit sync rules (JSON)** — optional at creation, but order edits stay blocked until you set it. See the JSON shape in [[User Configuration Reference]].
 
 > **Note**
 > When you open the **Edit** drawer for an existing integration, any status codes already stored show up immediately as checkboxes — as bare code numbers (without their text label) until you click **Test connection**, which loads the full live list and adds the labels. You only need Test connection to *discover new* codes or see their labels; you never need it just to view or un-check codes you already saved. On the **create** form there are no stored codes yet, so click Test connection first to load the list.

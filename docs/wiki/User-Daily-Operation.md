@@ -19,7 +19,7 @@ One row per configured integration, with a badge:
 
 Counts of every sync state across all rows — `error`, `pending`, `sent`, `shipped`, `delivered`, `cancelled` — shown error-first. Use it for an at-a-glance health read. The counts always reflect the full ledger, regardless of which state the table below is filtered to.
 
-Each count is also a filter: **click a count to filter the table below to that state**, and click the highlighted count again (or the **Clear filter** button on the table) to return to the default view. This is how you drill into `shipped`, `delivered`, or `cancelled` rows, which the default table omits.
+Hovering a count explains what that state means and whether it is actionable. Each count is also a filter: **click a count to filter the table below to that state**, and click the highlighted count again (or the **Clear filter** button on the table) to return to the default view. This is how you drill into `shipped`, `delivered`, or `cancelled` rows, which the default table omits.
 
 ### Failed and pending syncs table
 
@@ -44,16 +44,16 @@ The plugin gives you two retry paths, and they behave differently. Knowing which
 
 ### Order widget — immediate
 
-The **Re-push / Retry** button on the order widget runs the push **synchronously and immediately**. The label is "Retry" when the row is in `error`, otherwise "Re-push". It is disabled when there is no fulfillment id, or the row is already `shipped`, `delivered`, or `cancelled`.
+The **Re-push / Retry** button on the order widget runs the push **synchronously and immediately**. The label is "Retry" when the row is in `error`, otherwise "Re-push". Ongoing keys the order on the order number we send, so a re-push updates the existing Ongoing order instead of creating a duplicate. It is disabled when there is no fulfillment id, or the row is already `shipped`, `delivered`, or `cancelled` — hover the button for the reason.
 
 Use this when you have fixed the underlying problem for one order and want to push it right now.
 
 ### Dashboard bulk Retry — queued, not instant
 
-On the dashboard table, select rows (only `error` + `retryable` rows are selectable) and use the **Retry** command-bar action. This does **not** re-push immediately. It resets each row's last-synced time to null, which makes the row due on the next retry-job tick — so it effectively retries within about a minute, not instantly.
+On the dashboard table, select rows (only `error` + `retryable` rows are selectable) and use the **Retry** command-bar action. This does **not** re-push immediately. It clears each row's backoff (resetting its last-synced time to null), which makes the row due on the next retry-job tick — the job runs every five minutes, so it effectively retries within about five minutes, not instantly. Repeating the action is harmless.
 
 > **Note**
-> After a bulk Retry the toast says how many were queued. If you refresh immediately and see no change, that is expected — the re-push happens on the next retry sweep, up to about a minute later.
+> After a bulk Retry the toast says how many were queued. If you refresh immediately and see no change, that is expected — the re-push happens on the next retry sweep, up to about five minutes later.
 
 The toast also reports how many rows were skipped (a row not found, or no longer in `error` + `retryable` state when the action ran).
 

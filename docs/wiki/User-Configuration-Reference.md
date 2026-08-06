@@ -82,13 +82,18 @@ These are stored on the integration row and edited in the admin Settings UI, not
 | `stock_location_id` | string | — | Which Medusa stock location this warehouse serves. Immutable. Assigning it runs location setup automatically. |
 | `enabled` | boolean | `true` | Master switch. Disabled integrations are skipped by all jobs. |
 | `stock_sync_enabled` | boolean | `true` | Whether the stock-sync job runs for this integration. |
-| `stock_sync_interval` | string (ms) or blank | blank → inherits `defaultStockSyncInterval` | How often stock is pulled from Ongoing. |
-| `status_poll_interval` | string (ms) or blank | blank → inherits `defaultStatusPollInterval` | How often order status is polled from Ongoing. |
+| `stock_sync_interval` | string (ms) or blank | blank → inherits `defaultStockSyncInterval` (10 min) | Shortest time between stock syncs. A value that is not a positive whole number is ignored and the default is used. |
+| `status_poll_interval` | string (ms) or blank | blank → inherits `defaultStatusPollInterval` (1 min) | Shortest time between order-status polls. A value that is not a positive whole number is ignored and the default is used. |
 | `stock_reconcile_mode` | `sellable_plus_reserved` \| `precise` \| `onhand` | `sellable_plus_reserved` | How Ongoing quantities map to Medusa stock. See below. |
 | `edit_sync_rules` | JSON object or null | null (edits blocked) | Which order edits re-push at which Ongoing statuses. See below. |
 | `shipped_status_codes` | number array or null | null → canonical 425/450/451 | Ongoing statuses that mean "shipped" (create the Medusa shipment). Empty/null derives the canonical defaults. |
 | `delivered_status_codes` | number array or null | null → canonical 500 | Ongoing statuses that mean "delivered / picked up" (pickup collection). Empty/null derives the canonical default. |
-| `cancellable_status_codes` | number array or null | null | Ongoing statuses at which a cancel may be sent. |
+| `cancellable_status_codes` | number array or null | null → **no cancel is allowed** | Ongoing statuses at which a cancel may be sent. Unlike the two lists above there is no canonical fallback: while this is empty, a cancel on an order whose status is known is refused and flagged on the order widget. A cancel is still attempted when the status is unknown. |
+
+> **Note**
+> Both jobs tick every 15 minutes, so an interval below `900000` ms only means "on every tick" — it cannot poll faster than the schedule. Raise an interval to poll a quiet warehouse less often.
+
+Each of these fields carries the same explanation inline in **Settings → Ongoing Warehouse**, so the form can be filled in without this page open. The copy lives in `src/admin/routes/settings/ongoing/integration-form-fields.tsx`; keep the two in sync when a default or behavior changes.
 
 ## Stock reconcile modes
 
@@ -106,8 +111,8 @@ All three also write `incoming_quantity` from Ongoing's `toReceiveNumberOfItems`
 
 ```json
 {
-  "address_contact": [220, 230],
-  "line_items": [220]
+  "address_contact": [200, 300],
+  "line_items": [200]
 }
 ```
 

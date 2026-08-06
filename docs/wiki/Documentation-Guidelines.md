@@ -36,6 +36,7 @@ This page defines the standard every page in this wiki follows. Read it before a
 
 - Any PR that changes plugin options, provider methods, module models, route paths, workflows/jobs/subscribers behavior, or install/build commands must update the affected wiki page(s) in the same PR. The change isn't done until the doc matches it.
 - Prefer one authoritative page plus links over duplicating an explanation; if you repeat yourself across pages, extract and link.
+- The admin form's field help text is documentation too. It is authored in `src/admin/routes/settings/ongoing/integration-form-fields.tsx` and must be changed in the same PR as [[User Configuration Reference]] whenever a default, unit, or behavior changes — the two are read side by side by operators.
 - A stale doc is worse than no doc — trim or delete pages that no longer reflect reality rather than letting them rot.
 - Describe current behavior only. Never reference internal milestones ("added in Milestone 2") or future plans in user-facing pages.
 
