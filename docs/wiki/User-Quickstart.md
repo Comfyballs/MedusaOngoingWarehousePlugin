@@ -11,7 +11,7 @@ You need:
 ## 1. Install
 
 ```bash
-yarn add MedusaOngoingWarehousePlugin
+yarn add @comfyballs/medusa-plugin-ongoing-warehouse
 ```
 
 ## 2. Register the plugin and the fulfillment provider
@@ -23,7 +23,7 @@ Both registrations matter — the second is easy to forget, and without it you c
 module.exports = defineConfig({
   plugins: [
     {
-      resolve: "MedusaOngoingWarehousePlugin",
+      resolve: "@comfyballs/medusa-plugin-ongoing-warehouse",
       options: {
         integrations: [
           {
@@ -44,7 +44,7 @@ module.exports = defineConfig({
       options: {
         providers: [
           {
-            resolve: "MedusaOngoingWarehousePlugin/providers/ongoing-fulfillment",
+            resolve: "@comfyballs/medusa-plugin-ongoing-warehouse/providers/ongoing-fulfillment",
             id: "ongoing",
             options: {},
           },

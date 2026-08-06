@@ -4,9 +4,9 @@ This page tells you how to set up a development environment, run the quality gat
 
 You need:
 
-- **Node 20 or 22** via a version manager such as `nvm`. Node **>= 20** is required (`engines.node`), but **Node 26 breaks `yarn lint` and `yarn build`** — it removed `SlowBuffer`. See [[Dev Gotchas]] for the full story and the shim. Pin a working version:
+- **Node 20, 22, or 24** via a version manager such as `nvm`. Node **>= 20** is required (`engines.node`), but **Node 26 breaks `yarn lint` and `yarn build`** — it removed `SlowBuffer`. See [[Dev Gotchas]] for the full story and the shim. Pin a working version:
   ```bash
-  nvm install 22 && nvm use 22
+  nvm install 24 && nvm use 24
   ```
 - **Yarn 4.6.0** — the repo declares `packageManager: "yarn@4.6.0"`, so Corepack will select it automatically. Enable Corepack if you have not:
   ```bash

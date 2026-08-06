@@ -1,7 +1,4 @@
-This page explains the plugin's three test suites — the fast unit suite, the Postgres-backed Medusa integration suite, and the live Ongoing API harness — how to run each, the environment they need, and how to write tests that match the existing conventions. For the toolchain around them, see [[Dev Contributing]]; for the Node-version and shim traps, see [[Dev Gotchas]].
-
-> **Note**
-> `CLAUDE.md` claims "no test setup wired up yet". That is stale. The repo has both `yarn test` and `yarn test:live`, two jest configs, and a large body of `*.test.ts` files under `src/**/__tests__/`.
+This page explains the plugin's three automated test suites — the fast unit suite, the Postgres-backed Medusa integration suite, and the live Ongoing API harness — how to run each, the environment they need, and how to write tests that match the existing conventions. For the toolchain around them, see [[Dev Contributing]]; for the Node-version and shim traps, see [[Dev Gotchas]]. To exercise the plugin by hand inside a real consuming app, see [[Dev Local App Testing]].
 
 ## Three suites
 
@@ -10,8 +7,10 @@ The plugin follows a three-layer strategy: fast unit tests (mock everything), Me
 | Command | Config | Layer | What it runs |
 |---|---|---|---|
 | `yarn test` | `jest.config.js` | L1 unit | Every `**/__tests__/**/*.test.ts` under `src/`, **excluding** `*.live.test.ts`. No external services. |
-| `yarn test:integration` | `jest.config.integration.js` | L2 Medusa | `integration-tests/**/*.spec.ts` — boots the `ongoing` module against a **real Postgres**; Ongoing never contacted. |
+| `yarn test:integration` | `jest.config.integration.js` | L2 Medusa | `integration-tests/**/*.spec.ts` — boots the `ongoing` module, and a full in-process app, against a **real Postgres**; Ongoing never contacted. |
 | `yarn test:live` | `jest.integration.config.js` | L3 live | `**/__tests__/**/*.live.test.ts`, against the **real** Ongoing API. |
+
+Manual testing in an installed app sits outside this table — it needs a consuming Medusa app rather than a jest config, and it is the only way to cover packaging resolution, admin bundling, and the operator flow. See [[Dev Local App Testing]].
 
 > **Note**
 > The two integration configs have deliberately similar but distinct names: `jest.config.integration.js` (L2, Postgres) vs `jest.integration.config.js` (L3, live Ongoing). The `.config.integration` one is the Medusa/Postgres harness; the `.integration.config` one is the live Ongoing harness.
@@ -35,6 +34,11 @@ Current specs:
 - `integration-tests/ongoing-module.spec.ts` — boot smoke (module registers, migrates, resolves; loader ran).
 - `integration-tests/push-order-to-ongoing.spec.ts` — drives the real `pushOrderToOngoing` workflow (real order-mapper + real SKU resolver) and asserts the real `OngoingOrderSync` row transitions `pending → sent`, plus the error-row-on-failure path.
 - `integration-tests/fulfillment-provider.spec.ts` — the fulfillment provider's `createFulfillment` / `cancelFulfillment` end-to-end into the real module + workflows.
+- `integration-tests/subscribers.spec.ts` — the order-canceled, order-edit-confirmed, and order-updated subscribers against real rows.
+- `integration-tests/shipment-status.spec.ts` — the webhook receiver and status interpretation.
+- `integration-tests/stock-sync.spec.ts` — inventory reconciliation, delta and full sweep.
+- `integration-tests/sync-lock.spec.ts` — the stock-sync lock that keeps concurrent runs from overlapping.
+- `integration-tests/full-app.spec.ts` — the fidelity harness: boots a **full in-process Medusa app** via `medusaIntegrationTestRunner` against the fixture config in `integration-tests/full-app-fixture/`, so Medusa core drives `createFulfillment` through the real `@medusajs/medusa/fulfillment` module and `query.graph` resolves real cross-module links. This is the layer that catches module-isolation and link-alias defects the module container cannot.
 - `integration-tests/_shared/l2.ts` — shared harness: fake plugin options, a fake `query.graph` (the core Order/Product modules are absent from a module container, so cross-module reads are faked), and a `createMedusaContainer()` that registers the **real** module service alongside those fakes so the real workflow orchestrator runs.
 
 **How Ongoing HTTP is stubbed:** with [`nock`](https://github.com/nock/nock). `OngoingClient`'s default transport is Node's `https` module, which nock intercepts; Postgres uses raw sockets via `pg` and is unaffected. Specs `nock(ONGOING_BASE_URL).put("/orders")...` etc. and `nock.cleanAll()` in `afterEach`.
@@ -45,10 +49,10 @@ Current specs:
 - Same `buffer-equal-constant-time` shim as the other configs.
 - Seed rows **per test** in a `beforeEach` (the runner resets the DB and re-inits the module each test); the `service` handed to `testSuite` is a live proxy, valid only after that per-test init.
 
-**Requires a running Postgres and Node 20/22.** The `test:integration` script sets `NODE_OPTIONS=--experimental-vm-modules` (the module loader uses dynamic `import()`), and Node 26 breaks the mikro-orm/migration path (see [[Dev Gotchas]]) — run under Node 20 or 22 (`nvm use 22`). The runner reads connection details from env and creates/drops its own throwaway temp database (via `pg-god`, a devDependency); it never writes to an existing app database:
+**Requires a running Postgres and Node 20, 22, or 24.** The `test:integration` script sets `NODE_OPTIONS=--experimental-vm-modules` (the module loader uses dynamic `import()`), and Node 26 breaks the mikro-orm/migration path (see [[Dev Gotchas]]). The runner reads connection details from env and creates/drops its own throwaway temp database (via `pg-god`, a devDependency); it never writes to an existing app database:
 
 ```bash
-nvm use 22
+nvm use 24
 export DB_HOST=127.0.0.1      # default (setup-env.ts) 127.0.0.1
 export DB_PORT=5432           # default 5432
 export DB_USERNAME=postgres   # a role that may CREATE/DROP DATABASE
@@ -58,11 +62,11 @@ yarn test:integration
 
 The `DB_USERNAME` role must be allowed to create and drop databases. Nothing here needs Ongoing credentials. No local Postgres? Any standard local Postgres works — e.g. the docker Postgres from a sibling Medusa app (`docker compose up -d` in that app, then point `DB_*` at it).
 
-**Deferred to full-app fidelity (bead wh5.9):** real cross-module `query.graph` link resolution and registering the provider under the real `@medusajs/medusa/fulfillment` module (Medusa core driving `createFulfillment`) need a full consuming-app boot, not a module container — tracked separately and verified against a consuming app.
+**What L2 still cannot reach:** the full-app harness boots from a fixture config that registers this plugin's module and provider by **source path**, so it proves the runtime wiring but not the packaging. Whether an installed package resolves through its `exports` map, and whether the admin extensions survive a consuming app's admin build, are only answerable in a real app — see [[Dev Local App Testing]].
 
 ### Live harness (`yarn test:live`)
 
-The Layer 1 live integration harness exercises the real Ongoing API to catch conformance drift the unit suite cannot (it mocks the transport). It currently lives at `src/lib/ongoing/__tests__/client.live.test.ts`.
+The Layer 3 live integration harness exercises the real Ongoing API to catch conformance drift the unit suite cannot (it mocks the transport). It currently lives at `src/lib/ongoing/__tests__/client.live.test.ts`.
 
 - `setupFiles: ["<rootDir>/jest.integration.setup.js"]` loads `.env.integration` (git-ignored) into `process.env` **before** any test module runs.
 - `testTimeout: 60_000` — a single order round-trip can wait on Ongoing's sequential per-goods-owner write processing.
@@ -109,6 +113,7 @@ Run the suite you affected before committing; run `yarn test:live` against a san
 
 ## Related pages
 
+- [[Dev Local App Testing]]
 - [[Dev Contributing]]
 - [[Dev Gotchas]]
 - [[Dev Architecture]]

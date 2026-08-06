@@ -11,7 +11,7 @@ This page walks you through a recommended setup: install the plugin, register it
 Add the plugin to your Medusa app:
 
 ```bash
-yarn add MedusaOngoingWarehousePlugin
+yarn add @comfyballs/medusa-plugin-ongoing-warehouse
 ```
 
 The published artifact is the plugin's build output (`.medusa/server`). If you install from a local checkout instead of a registry, run `yarn build` in the plugin repo first, or use `yarn dev` for a yalc-linked watch build.
@@ -28,7 +28,7 @@ Two registrations are required, and the second is easy to miss:
 module.exports = defineConfig({
   plugins: [
     {
-      resolve: "MedusaOngoingWarehousePlugin",
+      resolve: "@comfyballs/medusa-plugin-ongoing-warehouse",
       options: {
         integrations: [
           {
@@ -50,7 +50,7 @@ module.exports = defineConfig({
       options: {
         providers: [
           {
-            resolve: "MedusaOngoingWarehousePlugin/providers/ongoing-fulfillment",
+            resolve: "@comfyballs/medusa-plugin-ongoing-warehouse/providers/ongoing-fulfillment",
             id: "ongoing",
             options: {},
           },
@@ -61,7 +61,7 @@ module.exports = defineConfig({
 })
 ```
 
-The provider is registered through the plugin's `providers/*` export path — `MedusaOngoingWarehousePlugin/providers/ongoing-fulfillment` — which resolves to the compiled provider `index.js`.
+The provider is registered through the plugin's `providers/*` export path — `@comfyballs/medusa-plugin-ongoing-warehouse/providers/ongoing-fulfillment` — which resolves to the compiled provider `index.js`.
 
 > **Warning**
 > Do not rename the provider `id` (`"ongoing"`) once shipping options exist. Medusa derives the runtime provider id as `fp_ongoing_<config-id>` and shipping-option provider ids as `ongoing_<optionId>` (for example `ongoing_ongoing-standard`). Renaming it orphans existing shipping options and requires a migration.
