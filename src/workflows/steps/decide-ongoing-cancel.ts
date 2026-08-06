@@ -24,6 +24,8 @@ export type CancelDecision = {
   orderSyncId?: string
   ongoingOrderId?: number
   credentialKey?: string
+  // The goods owner to scope the cancel client to (bead 9y2.9).
+  goodsOwnerId?: number
   // Operator-facing explanation, set only when reason is "status_not_cancellable".
   refusedReason?: string
 }
@@ -117,6 +119,7 @@ export const decideOngoingCancelHandler = async (
       orderSyncId: sync.id,
       ongoingOrderId: sync.ongoing_order_id,
       credentialKey: integration?.credential_key,
+      goodsOwnerId: integration?.goods_owner_id,
     })
 }
 

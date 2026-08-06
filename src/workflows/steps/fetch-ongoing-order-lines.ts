@@ -7,6 +7,8 @@ import type { OngoingOrderLineDetail } from "../../lib/ongoing/types"
 export type FetchOngoingOrderLinesInput = {
   ongoing_order_id: number
   credential_key: string
+  // The goods owner the client must be scoped to (bead 9y2.9).
+  goods_owner_id: number
 }
 
 export type FetchOngoingOrderLinesOutput = {
@@ -20,7 +22,7 @@ export async function fetchOngoingOrderLinesHandler(
   { container }: { container: MedusaContainer }
 ): Promise<FetchOngoingOrderLinesOutput> {
   const service = container.resolve(ONGOING_MODULE) as OngoingModuleService
-  const client = service.getClient(input.credential_key)
+  const client = service.getClient(input.credential_key, input.goods_owner_id)
 
   const detail = await client.getOrder(input.ongoing_order_id)
 

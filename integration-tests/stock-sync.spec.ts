@@ -12,6 +12,7 @@ import {
   CREDENTIAL_KEY,
   ONGOING_BASE_URL,
   buildContainer,
+  GOODS_OWNER_ID
 } from "./_shared/l2"
 
 // Layer 2 — wh5.6: ongoingStockSyncJob end-to-end inside a real DB-backed module
@@ -105,6 +106,7 @@ moduleIntegrationTestRunner<OngoingModuleService>({
         const seededCursor = new Date(Date.now() - 5 * 60 * 1000).toISOString()
         const integration = await service.createOngoingIntegrations({
           credential_key: CREDENTIAL_KEY,
+          goods_owner_id: GOODS_OWNER_ID,
           stock_location_id: STOCK_LOCATION_ID,
           enabled: true,
           stock_reconcile_mode: "sellable_plus_reserved",
@@ -184,6 +186,7 @@ moduleIntegrationTestRunner<OngoingModuleService>({
       it("reconciles inventory in onhand mode using numberOfItems (ignores reserved/allocated)", async () => {
         await service.createOngoingIntegrations({
           credential_key: CREDENTIAL_KEY,
+          goods_owner_id: GOODS_OWNER_ID,
           stock_location_id: STOCK_LOCATION_ID,
           enabled: true,
           stock_reconcile_mode: "onhand",
@@ -242,6 +245,7 @@ moduleIntegrationTestRunner<OngoingModuleService>({
       it("reconciles inventory in precise mode using only reservations tied to a real 'sent' OngoingOrderSync row", async () => {
         const integration = await service.createOngoingIntegrations({
           credential_key: CREDENTIAL_KEY,
+          goods_owner_id: GOODS_OWNER_ID,
           stock_location_id: STOCK_LOCATION_ID,
           enabled: true,
           stock_reconcile_mode: "precise",
@@ -321,6 +325,7 @@ moduleIntegrationTestRunner<OngoingModuleService>({
         const freshCursor = new Date(Date.now() - 5 * 60 * 1000).toISOString()
         const integration = await service.createOngoingIntegrations({
           credential_key: CREDENTIAL_KEY,
+          goods_owner_id: GOODS_OWNER_ID,
           stock_location_id: STOCK_LOCATION_ID,
           enabled: true,
           stock_reconcile_mode: "sellable_plus_reserved",
@@ -363,6 +368,7 @@ moduleIntegrationTestRunner<OngoingModuleService>({
         const seededCursor = new Date(Date.now() - 5 * 60 * 1000).toISOString()
         const integration = await service.createOngoingIntegrations({
           credential_key: CREDENTIAL_KEY,
+          goods_owner_id: GOODS_OWNER_ID,
           stock_location_id: STOCK_LOCATION_ID,
           enabled: true,
           stock_reconcile_mode: "sellable_plus_reserved",

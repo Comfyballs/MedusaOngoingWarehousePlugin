@@ -38,6 +38,22 @@
           "enumItems": [],
           "mappedType": "text"
         },
+        "goods_owner_id": {
+          "name": "goods_owner_id",
+          "type": "integer",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "integer"
+        },
         "enabled": {
           "name": "enabled",
           "type": "boolean",
@@ -414,15 +430,6 @@
       "name": "ongoing_integration",
       "schema": "public",
       "indexes": [
-        {
-          "keyName": "IDX_ongoing_integration_credential_key_unique",
-          "columnNames": [],
-          "composite": false,
-          "constraint": false,
-          "primary": false,
-          "unique": false,
-          "expression": "CREATE UNIQUE INDEX IF NOT EXISTS \"IDX_ongoing_integration_credential_key_unique\" ON \"ongoing_integration\" (\"credential_key\") WHERE deleted_at IS NULL"
-        },
         {
           "keyName": "IDX_ongoing_integration_stock_location_id_unique",
           "columnNames": [],

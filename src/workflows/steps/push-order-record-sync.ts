@@ -110,7 +110,7 @@ export async function pushOrderRecordSyncHandler(
     }
     // getClient() is inside the try so a misconfigured credential_key is also
     // recorded as an error row (it never leaves the sync stuck in "pending").
-    const client = service.getClient(input.credential_key)
+    const client = service.getClient(input.credential_key, input.goods_owner_id)
     // Step 1 of Ongoing's webshop flow: ensure the order's SKUs exist as articles
     // BEFORE the order PUT (R7). Runs inside the try so an article-sync failure is
     // classified/recorded/retried by the same ledger as a putOrder failure.

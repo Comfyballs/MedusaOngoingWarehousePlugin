@@ -1,7 +1,7 @@
 import { MedusaError } from "@medusajs/framework/utils"
 import type { OngoingCredentials, OngoingPluginOptions } from "../../lib/ongoing/types"
 
-const REQUIRED: (keyof OngoingCredentials)[] = ["key", "baseUrl", "username", "password", "goodsOwnerId"]
+const REQUIRED: (keyof OngoingCredentials)[] = ["key", "baseUrl", "username", "password"]
 
 export function validateOngoingOptions(options: unknown): OngoingPluginOptions {
   const opts = options as Partial<OngoingPluginOptions> | undefined

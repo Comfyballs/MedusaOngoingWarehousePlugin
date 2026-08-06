@@ -1,9 +1,11 @@
 import { MedusaError } from "@medusajs/framework/utils"
 import { STOCK_RECONCILE_MODES, StockReconcileMode } from "../../../../../lib/ongoing/types"
 
-// credential_key and stock_location_id are deliberately NOT modeled here even
-// if present in the request body — they are immutable after creation (see
-// "Design decisions" #3 in the #40 plan). Any such keys in the body are never
+// credential_key, goods_owner_id and stock_location_id are deliberately NOT modeled
+// here even if present in the request body — they are immutable after creation (see
+// "Design decisions" #3 in the #40 plan). Re-pointing a live integration at a
+// different goods owner would orphan every sync row already written against the old
+// one, so changing warehouse means creating a new integration (bead 9y2.9). Any such keys in the body are never
 // read into the returned object, so they can never reach the update workflow.
 export type UpdateIntegrationInput = {
   enabled?: boolean

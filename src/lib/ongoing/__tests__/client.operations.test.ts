@@ -7,7 +7,6 @@ const creds: OngoingCredentials = {
   baseUrl: "https://api.example.test/api/v1",
   username: "u",
   password: "p",
-  goodsOwnerId: 7,
 }
 
 const json = (body: unknown) =>
@@ -41,7 +40,7 @@ describe("OngoingClient operations", () => {
       .fn()
       .mockResolvedValueOnce(json(page1))
       .mockResolvedValueOnce(json(page2))
-    const client = new OngoingClient(creds, { fetchImpl })
+    const client = new OngoingClient(creds, { goodsOwnerId: 7, fetchImpl })
 
     const rows = await client.getInventory()
 
@@ -66,7 +65,7 @@ describe("OngoingClient operations", () => {
 
   it("sends articleNumbers as repeated keys (explode:true), not a CSV, when article numbers are given (bead dtw)", async () => {
     const fetchImpl = jest.fn().mockResolvedValue(json([]))
-    const client = new OngoingClient(creds, { fetchImpl })
+    const client = new OngoingClient(creds, { goodsOwnerId: 7, fetchImpl })
 
     await client.getInventory(["SKU-1", "SKU-2"])
 
@@ -79,7 +78,7 @@ describe("OngoingClient operations", () => {
 
   it("appends stockInfoChangedFrom for a delta sync (bead sw8)", async () => {
     const fetchImpl = jest.fn().mockResolvedValue(json([]))
-    const client = new OngoingClient(creds, { fetchImpl })
+    const client = new OngoingClient(creds, { goodsOwnerId: 7, fetchImpl })
 
     await client.getInventory(undefined, "2026-07-15T00:00:00.000Z")
 
@@ -89,7 +88,7 @@ describe("OngoingClient operations", () => {
 
   it("omits stockInfoChangedFrom for a full sweep (bead sw8)", async () => {
     const fetchImpl = jest.fn().mockResolvedValue(json([]))
-    const client = new OngoingClient(creds, { fetchImpl })
+    const client = new OngoingClient(creds, { goodsOwnerId: 7, fetchImpl })
 
     await client.getInventory()
 
@@ -105,7 +104,7 @@ describe("OngoingClient operations", () => {
         ],
       })
     )
-    const client = new OngoingClient(creds, { fetchImpl })
+    const client = new OngoingClient(creds, { goodsOwnerId: 7, fetchImpl })
     const statuses = await client.getOrderStatuses()
     expect(statuses).toEqual([
       { number: 200, text: "Open" },
@@ -115,7 +114,7 @@ describe("OngoingClient operations", () => {
 
   it("upserts an order and returns the ongoing id from the flat response", async () => {
     const fetchImpl = jest.fn().mockResolvedValue(json({ orderId: 999, message: "Order created" }))
-    const client = new OngoingClient(creds, { fetchImpl })
+    const client = new OngoingClient(creds, { goodsOwnerId: 7, fetchImpl })
     const result = await client.putOrder({
       orderNumber: "1001-abc",
       goodsOwnerId: 7,
@@ -130,7 +129,7 @@ describe("OngoingClient operations", () => {
 
   it("throws a retryable OngoingApiError when the 2xx response omits orderId", async () => {
     const fetchImpl = jest.fn().mockResolvedValue(json({ message: "Order queued" }))
-    const client = new OngoingClient(creds, { fetchImpl })
+    const client = new OngoingClient(creds, { goodsOwnerId: 7, fetchImpl })
 
     await expect(
       client.putOrder({
@@ -144,7 +143,7 @@ describe("OngoingClient operations", () => {
 
   it("throws a retryable OngoingApiError when the 2xx response has orderId: null", async () => {
     const fetchImpl = jest.fn().mockResolvedValue(json({ orderId: null, message: "Order queued" }))
-    const client = new OngoingClient(creds, { fetchImpl })
+    const client = new OngoingClient(creds, { goodsOwnerId: 7, fetchImpl })
 
     await expect(
       client.putOrder({
@@ -158,7 +157,7 @@ describe("OngoingClient operations", () => {
 
   it("upserts an article via PUT /articles and returns the articleSystemId", async () => {
     const fetchImpl = jest.fn().mockResolvedValue(json({ articleSystemId: 555, message: "ok" }))
-    const client = new OngoingClient(creds, { fetchImpl })
+    const client = new OngoingClient(creds, { goodsOwnerId: 7, fetchImpl })
     const result = await client.putArticle({
       goodsOwnerId: 7,
       articleNumber: "SKU-1",
@@ -177,7 +176,7 @@ describe("OngoingClient operations", () => {
 
   it("putArticle resolves (undefined id) on a 2xx that omits articleSystemId", async () => {
     const fetchImpl = jest.fn().mockResolvedValue(json({ message: "upserted" }))
-    const client = new OngoingClient(creds, { fetchImpl })
+    const client = new OngoingClient(creds, { goodsOwnerId: 7, fetchImpl })
     await expect(
       client.putArticle({ goodsOwnerId: 7, articleNumber: "SKU-1", articleName: "Tee" })
     ).resolves.toEqual({ articleSystemId: undefined })

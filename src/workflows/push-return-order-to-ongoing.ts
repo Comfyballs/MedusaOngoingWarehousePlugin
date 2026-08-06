@@ -40,6 +40,7 @@ export const pushReturnOrderToOngoing = createWorkflow(
       transform({ origin, ctx }, (d) => ({
         ongoing_order_id: d.origin.ongoing_order_id,
         credential_key: d.ctx.credential_key,
+        goods_owner_id: d.ctx.goods_owner_id,
       }))
     )
 
@@ -58,6 +59,7 @@ export const pushReturnOrderToOngoing = createWorkflow(
       transform({ queried, origin, ctx, mapped }, (d) => ({
         model: d.mapped.model,
         return_order_number: d.mapped.return_order_number,
+        goods_owner_id: d.ctx.goods_owner_id,
         credential_key: d.ctx.credential_key,
         integration_id: d.ctx.integration_id,
         medusa_order_id: d.origin.medusa_order_id,

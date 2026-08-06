@@ -7,6 +7,7 @@ export type StockReconcileMode = "sellable_plus_reserved" | "precise" | "onhand"
 export type OngoingIntegration = {
   id: string
   credential_key: string
+  goods_owner_id: number
   enabled: boolean
   stock_location_id: string
   stock_sync_enabled: boolean
@@ -21,6 +22,8 @@ export type OngoingIntegration = {
 
 export type FormState = {
   credential_key: string
+  // Kept as a string so the input can be empty while typing; parsed on submit.
+  goods_owner_id: string
   stock_location_id: string
   enabled: boolean
   stock_sync_enabled: boolean
@@ -35,6 +38,7 @@ export type FormState = {
 
 export const EMPTY_FORM: FormState = {
   credential_key: "",
+  goods_owner_id: "",
   stock_location_id: "",
   enabled: true,
   stock_sync_enabled: true,
@@ -50,6 +54,7 @@ export const EMPTY_FORM: FormState = {
 export function toFormState(integration: OngoingIntegration): FormState {
   return {
     credential_key: integration.credential_key,
+    goods_owner_id: String(integration.goods_owner_id ?? ""),
     stock_location_id: integration.stock_location_id,
     enabled: integration.enabled,
     stock_sync_enabled: integration.stock_sync_enabled,
@@ -90,7 +95,11 @@ type Props = {
   stockLocationsData?: { stock_locations: { id: string; name: string }[] }
   stockLocationsLoading?: boolean
   stockLocationsError?: boolean
-  testConnection: UseMutationResult<TestConnectionResult, Error, string>
+  testConnection: UseMutationResult<
+    TestConnectionResult,
+    Error,
+    { credential_key: string; goods_owner_id: number }
+  >
   testResult: string | null
   error: string | null
   // Disables every editable field while a create/update mutation is in flight, so
@@ -168,6 +177,27 @@ export function IntegrationFormFields({
             </Select.Content>
           </Select>
         )}
+      </div>
+
+      <div className="flex flex-col gap-y-2">
+        <Label htmlFor="ongoing-goods-owner-id">Goods owner id</Label>
+        <Input
+          id="ongoing-goods-owner-id"
+          type="number"
+          inputMode="numeric"
+          min={1}
+          placeholder="e.g. 362"
+          value={form.goods_owner_id}
+          // Immutable after creation, like the credential key and stock location:
+          // re-pointing a live integration at another warehouse would orphan every
+          // sync row already written against the old goods owner.
+          disabled={isEdit || disabled}
+          onChange={(e) => setForm({ ...form, goods_owner_id: e.target.value })}
+        />
+        <Text size="small" className="text-ui-fg-subtle">
+          The Ongoing goods owner this warehouse maps to. One Ongoing account can serve
+          several goods owners; each needs its own integration and its own stock location.
+        </Text>
         {!isEdit && credentialKeysError && (
           <Text size="small" className="text-ui-fg-error">
             Failed to load credential keys. Check the plugin configuration and retry.
@@ -322,9 +352,19 @@ export function IntegrationFormFields({
         <Button
           size="small"
           variant="secondary"
-          disabled={disabled || !form.credential_key || testConnection.isPending}
+          disabled={
+            disabled ||
+            !form.credential_key ||
+            !form.goods_owner_id ||
+            testConnection.isPending
+          }
           isLoading={testConnection.isPending}
-          onClick={() => testConnection.mutate(form.credential_key)}
+          onClick={() =>
+            testConnection.mutate({
+              credential_key: form.credential_key,
+              goods_owner_id: Number(form.goods_owner_id),
+            })
+          }
         >
           Test connection
         </Button>

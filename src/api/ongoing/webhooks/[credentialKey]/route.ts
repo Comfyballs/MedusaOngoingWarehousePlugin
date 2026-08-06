@@ -60,6 +60,7 @@ export async function POST(
     getCredentials: (key: string) => OngoingCredentials
     listOngoingIntegrations: (filter: {
       credential_key: string
+      goods_owner_id: number
     }) => Promise<
       Array<{
         id: string
@@ -108,12 +109,12 @@ export async function POST(
     return
   }
 
-  // --- Auth (defense in depth): goodsOwnerId must match -> uniform 401 ---
-  if (payload.goodsOwnerId !== credentials.goodsOwnerId) {
-    logger.warn(`[ongoing] webhook: rejected request (auth)`)
-    res.sendStatus(401)
-    return
-  }
+  // The goods owner is no longer a credential, so there is no config value to compare
+  // against here (bead 9y2.9). The payload's goodsOwnerId instead SELECTS which of this
+  // credential key's integrations the push is for, below. A payload naming a goods owner
+  // with no integration row falls through to the "no integration bound" branch and is
+  // acked without acting — the webhookSecret checked above remains the actual auth, and
+  // an unmatched goods owner now changes no state rather than being rejected outright.
 
   // --- Status gate: in-band (shipped) statuses run the shipment-sync seam;
   // every other status refreshes latest_status_code so edit/cancel gating is
@@ -132,6 +133,7 @@ export async function POST(
   try {
     const [integration] = await ongoing.listOngoingIntegrations({
       credential_key: credentialKey,
+      goods_owner_id: payload.goodsOwnerId,
     })
 
     if (!integration) {

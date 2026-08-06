@@ -35,6 +35,7 @@ const makeRes = () => {
 
 const validBody = () => ({
   credential_key: "wh-1",
+  goods_owner_id: 42,
   stock_location_id: "sloc_1",
 })
 
@@ -136,6 +137,7 @@ describe("POST /admin/ongoing/integrations", () => {
     expect(run).toHaveBeenCalledWith({
       input: expect.objectContaining({
         credential_key: "wh-1",
+        goods_owner_id: 42,
         stock_location_id: "sloc_1",
         enabled: true,
         stock_sync_enabled: true,

@@ -7,7 +7,6 @@ const creds: OngoingCredentials = {
   baseUrl: "https://api.example.test/api/v1",
   username: "u",
   password: "p",
-  goodsOwnerId: 7,
 }
 
 const json = (status: number, body: unknown) =>
@@ -21,7 +20,7 @@ describe("OngoingClient.cancelOrder", () => {
     const fetchImpl = jest
       .fn()
       .mockResolvedValue(json(200, { orderId: 999, message: "Cancelled" }))
-    const client = new OngoingClient(creds, { fetchImpl })
+    const client = new OngoingClient(creds, { goodsOwnerId: 7, fetchImpl })
 
     const result = await client.cancelOrder(999)
 
@@ -40,7 +39,7 @@ describe("OngoingClient.cancelOrder", () => {
       .mockImplementation(() =>
         Promise.resolve(json(400, { message: "Order already cancelled" }))
       )
-    const client = new OngoingClient(creds, { fetchImpl })
+    const client = new OngoingClient(creds, { goodsOwnerId: 7, fetchImpl })
 
     await expect(client.cancelOrder(999)).rejects.toBeInstanceOf(OngoingApiError)
     await expect(client.cancelOrder(999)).rejects.toMatchObject({

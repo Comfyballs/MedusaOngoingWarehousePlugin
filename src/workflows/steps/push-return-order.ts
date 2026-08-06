@@ -13,6 +13,8 @@ export type PushReturnOrderInput = {
   model: PostReturnOrderModel
   return_order_number: string
   credential_key: string
+  // The goods owner the client must be scoped to (bead 9y2.9).
+  goods_owner_id: number
   integration_id: string
   medusa_order_id: string
   medusa_return_fulfillment_id: string
@@ -56,7 +58,7 @@ export async function pushReturnOrderHandler(
 
   let ongoingReturnOrderId: number
   try {
-    const client = service.getClient(input.credential_key)
+    const client = service.getClient(input.credential_key, input.goods_owner_id)
     const res = await client.putReturnOrder(input.model)
     ongoingReturnOrderId = res.ongoingReturnOrderId
   } catch (err) {

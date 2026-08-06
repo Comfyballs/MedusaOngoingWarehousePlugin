@@ -7,7 +7,6 @@ const creds: OngoingCredentials = {
   baseUrl: "https://api.example.test/api/v1",
   username: "u",
   password: "p",
-  goodsOwnerId: 7,
 }
 
 const json = (body: unknown) =>
@@ -19,7 +18,7 @@ const json = (body: unknown) =>
 describe("client REST-edge validation (#114-a)", () => {
   it("throws terminal OngoingApiError when an inventory row lacks articleNumber", async () => {
     const fetchImpl = jest.fn().mockResolvedValue(json([{ articleSystemId: 1, inventoryInfo: {} }]))
-    const client = new OngoingClient(creds, { fetchImpl })
+    const client = new OngoingClient(creds, { goodsOwnerId: 7, fetchImpl })
 
     await expect(client.getInventory()).rejects.toMatchObject({
       name: "OngoingApiError",
@@ -32,7 +31,7 @@ describe("client REST-edge validation (#114-a)", () => {
     const fetchImpl = jest.fn().mockResolvedValue(
       json([{ articleNumber: 42, articleSystemId: 1, inventoryInfo: {} }])
     )
-    const client = new OngoingClient(creds, { fetchImpl })
+    const client = new OngoingClient(creds, { goodsOwnerId: 7, fetchImpl })
 
     await expect(client.getInventory()).rejects.toBeInstanceOf(OngoingApiError)
   })
@@ -41,7 +40,7 @@ describe("client REST-edge validation (#114-a)", () => {
     const fetchImpl = jest.fn().mockResolvedValue(
       json([{ articleNumber: "SKU-1", articleSystemId: 1 }])
     )
-    const client = new OngoingClient(creds, { fetchImpl })
+    const client = new OngoingClient(creds, { goodsOwnerId: 7, fetchImpl })
 
     const rows = await client.getInventory()
     expect(rows).toEqual([
@@ -58,7 +57,7 @@ describe("client REST-edge validation (#114-a)", () => {
 
   it("throws terminal OngoingApiError when a tracked order lacks orderInfo", async () => {
     const fetchImpl = jest.fn().mockResolvedValue(json([{ parcels: [] }]))
-    const client = new OngoingClient(creds, { fetchImpl })
+    const client = new OngoingClient(creds, { goodsOwnerId: 7, fetchImpl })
 
     await expect(client.getOrdersByStatus(200, 400)).rejects.toMatchObject({
       name: "OngoingApiError",
@@ -79,7 +78,7 @@ describe("client REST-edge validation (#114-a)", () => {
         },
       ])
     )
-    const client = new OngoingClient(creds, { fetchImpl })
+    const client = new OngoingClient(creds, { goodsOwnerId: 7, fetchImpl })
 
     await expect(client.getOrdersByStatus(200, 400)).rejects.toBeInstanceOf(OngoingApiError)
   })
@@ -96,7 +95,7 @@ describe("client REST-edge validation (#114-a)", () => {
         },
       ])
     )
-    const client = new OngoingClient(creds, { fetchImpl })
+    const client = new OngoingClient(creds, { goodsOwnerId: 7, fetchImpl })
 
     const orders = await client.getOrdersByStatus(200, 400)
     expect(orders).toEqual([

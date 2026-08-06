@@ -6,6 +6,9 @@ import OngoingIntegration from "../src/modules/ongoing/models/integration"
 import OngoingOrderSync from "../src/modules/ongoing/models/order-sync"
 import { FAKE_OPTIONS, CREDENTIAL_KEY } from "./_shared/l2"
 
+// Ongoing goods owner for the fixture integration (bead 9y2.9 made it required).
+const GOODS_OWNER_ID = 7
+
 // Layer 2 — bead m82: acquireSyncLock's CAS (`manager.nativeUpdate` with a WHERE clause
 // matching the timestamptz lock column to its previously-observed value) is entirely
 // mocked in the unit suite (src/modules/ongoing/__tests__/service.test.ts) — the mock
@@ -47,6 +50,7 @@ moduleIntegrationTestRunner<OngoingModuleService>({
       beforeEach(async () => {
         const created = await service.createOngoingIntegrations({
           credential_key: CREDENTIAL_KEY,
+          goods_owner_id: GOODS_OWNER_ID,
           stock_location_id: LOCATION_ID,
           enabled: true,
         })

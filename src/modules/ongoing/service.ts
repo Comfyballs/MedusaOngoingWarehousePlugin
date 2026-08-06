@@ -83,16 +83,22 @@ class OngoingModuleService extends MedusaService({
   // Pure synchronous factory/cache (constructs a client from in-memory config, then
   // reuses it) — see getCredentials above for why this is intentionally not async. The
   // shared client means one Throttle governs all concurrent calls to a given goods owner.
+  // Cached per (credential_key, goods_owner_id), not per credential key: one Ongoing
+  // account can serve several goods owners (bead 9y2.9), and a client is bound to one
+  // of them. This also scopes the Throttle per goods owner, which is what Ongoing's
+  // parallel-requests guidance actually asks for.
   // eslint-disable-next-line @medusajs/service-methods-must-be-async
-  getClient(credentialKey: string): OngoingClient {
-    const cached = this.clients_.get(credentialKey)
+  getClient(credentialKey: string, goodsOwnerId: number): OngoingClient {
+    const cacheKey = `${credentialKey}:${goodsOwnerId}`
+    const cached = this.clients_.get(cacheKey)
     if (cached) {
       return cached
     }
     const client = new OngoingClient(this.getCredentials(credentialKey), {
+      goodsOwnerId,
       concurrency: this.options_.rateLimitConcurrency ?? 1,
     })
-    this.clients_.set(credentialKey, client)
+    this.clients_.set(cacheKey, client)
     return client
   }
 

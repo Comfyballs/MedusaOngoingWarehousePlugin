@@ -56,12 +56,12 @@ export function CreateIntegrationModal({ open, onClose }: Props) {
   })
 
   const testConnection = useMutation({
-    mutationFn: (credential_key: string) =>
+    mutationFn: (vars: { credential_key: string; goods_owner_id: number }) =>
       sdk.client.fetch<{
         success: boolean
         statuses?: { number: number; text: string }[]
         error?: string
-      }>("/admin/ongoing/test-connection", { method: "POST", body: { credential_key } }),
+      }>("/admin/ongoing/test-connection", { method: "POST", body: vars }),
     onSuccess: (result) => {
       if (result.success) {
         setTestResult(`Connected — ${result.statuses?.length ?? 0} order statuses available`)
@@ -106,6 +106,13 @@ export function CreateIntegrationModal({ open, onClose }: Props) {
       setError("Select a stock location before saving.")
       return
     }
+    // The goods owner identifies WHICH warehouse under the selected Ongoing account
+    // this integration serves, and is immutable after creation (bead 9y2.9).
+    const goodsOwnerId = Number(form.goods_owner_id)
+    if (!Number.isInteger(goodsOwnerId) || goodsOwnerId <= 0) {
+      setError("Enter the Ongoing goods owner id (a positive whole number).")
+      return
+    }
 
     let edit_sync_rules: Record<string, unknown> | null
     try {
@@ -117,6 +124,7 @@ export function CreateIntegrationModal({ open, onClose }: Props) {
 
     createMutation.mutate({
       credential_key: form.credential_key,
+      goods_owner_id: goodsOwnerId,
       stock_location_id: form.stock_location_id,
       enabled: form.enabled,
       stock_sync_enabled: form.stock_sync_enabled,

@@ -25,6 +25,9 @@ import nock from "nock"
 import { ONGOING_MODULE } from "../src/modules/ongoing"
 import type OngoingModuleService from "../src/modules/ongoing/service"
 
+// Ongoing goods owner for the fixture integration (bead 9y2.9 made it required).
+const GOODS_OWNER_ID = 7
+
 // Layer 2 — wh5.8 / wh5.9: the ONE piece the plugin-local moduleIntegrationTestRunner
 // specs cannot exercise — a module container has no core Order/Fulfillment/StockLocation
 // modules and no real @medusajs/medusa/fulfillment provider registration. This spec
@@ -99,6 +102,7 @@ medusaIntegrationTestRunner({
         })
         const integration = await ongoingService.createOngoingIntegrations({
           credential_key: "test-wh",
+          goods_owner_id: GOODS_OWNER_ID,
           stock_location_id: location.id,
           enabled: true,
         })
@@ -193,12 +197,19 @@ medusaIntegrationTestRunner({
         // --- reverse: stock_location -> ongoing_integration ---
         const { data: locationWithIntegration } = await query.graph({
           entity: "stock_location",
-          fields: ["id", "ongoing_integration.id", "ongoing_integration.credential_key"],
+          fields: [
+            "id",
+            "ongoing_integration.id",
+            "ongoing_integration.credential_key",
+            // bead 9y2.9 — proves the goods owner round-trips through a real link join.
+            "ongoing_integration.goods_owner_id",
+          ],
           filters: { id: location.id },
         })
         expect(locationWithIntegration[0].ongoing_integration).toMatchObject({
           id: integration.id,
           credential_key: "test-wh",
+          goods_owner_id: GOODS_OWNER_ID,
         })
       })
 
@@ -219,6 +230,7 @@ medusaIntegrationTestRunner({
         })
         const integration = await ongoingService.createOngoingIntegrations({
           credential_key: "test-607",
+          goods_owner_id: GOODS_OWNER_ID,
           stock_location_id: location.id,
           enabled: true,
         })
@@ -478,6 +490,7 @@ medusaIntegrationTestRunner({
           })
           await ongoingService.createOngoingIntegrations({
             credential_key: "test-wh",
+          goods_owner_id: GOODS_OWNER_ID,
             stock_location_id: location.id,
             enabled: true,
           })

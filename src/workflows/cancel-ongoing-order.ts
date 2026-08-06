@@ -24,6 +24,7 @@ export const cancelOngoingOrderWorkflow = createWorkflow(
       const cancelInput = transform({ decision }, (data) => ({
         ongoingOrderId: data.decision.ongoingOrderId as number,
         credentialKey: data.decision.credentialKey as string,
+        goodsOwnerId: data.decision.goodsOwnerId as number,
       }))
 
       cancelOngoingOrderStep(cancelInput)
