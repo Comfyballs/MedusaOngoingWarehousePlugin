@@ -1,6 +1,6 @@
 import { defineWidgetConfig } from "@medusajs/admin-sdk"
 import type { DetailWidgetProps, AdminOrder } from "@medusajs/framework/types"
-import { Badge, Button, Container, Text, toast } from "@medusajs/ui"
+import { Badge, Button, Container, Text, Tooltip, toast } from "@medusajs/ui"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { sdk } from "../lib/sdk"
 import { QueryStateView, useOngoingQuery } from "../lib/use-ongoing-query"
@@ -94,16 +94,31 @@ function RepushButton({ orderId, sync }: { orderId: string; sync: OngoingOrderSy
   const disabled = !fulfillmentId || terminalState || mutation.isPending
   const label = sync.sync_state === "error" ? "Retry" : "Re-push"
 
+  // Say what the button does and, when it is greyed out, why — otherwise it reads as
+  // broken (bead 4ng). Ongoing keys orders on the order number we send, so a re-push
+  // updates the existing Ongoing order instead of creating a duplicate.
+  const tooltip = !fulfillmentId
+    ? "This sync row has no Medusa fulfillment, so there is nothing to push."
+    : terminalState
+      ? `Ongoing has already ${sync.sync_state} this order — re-pushing is blocked.`
+      : "Pushes this order to Ongoing again, right now. Ongoing updates the existing order with the same order number rather than creating a duplicate."
+
   return (
-    <Button
-      size="small"
-      variant="secondary"
-      disabled={disabled}
-      isLoading={mutation.isPending}
-      onClick={() => fulfillmentId && mutation.mutate(fulfillmentId)}
-    >
-      {label}
-    </Button>
+    <Tooltip content={tooltip}>
+      {/* A disabled Button fires no pointer events, so the tooltip needs a wrapper
+          that still receives hover — this is exactly when the explanation matters. */}
+      <span className="inline-flex">
+        <Button
+          size="small"
+          variant="secondary"
+          disabled={disabled}
+          isLoading={mutation.isPending}
+          onClick={() => fulfillmentId && mutation.mutate(fulfillmentId)}
+        >
+          {label}
+        </Button>
+      </span>
+    </Tooltip>
   )
 }
 

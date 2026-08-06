@@ -9,6 +9,10 @@ export interface StatusCodePickerOption {
 
 export interface StatusCodePickerProps {
   label: string
+  // What checking a code in THIS list actually causes. Passed in rather than mapped
+  // from `label` so the three call sites keep their copy next to the field they
+  // configure (bead 4ng).
+  description?: string
   statuses: StatusCodePickerOption[]
   selected: number[]
   onChange: (next: number[]) => void
@@ -17,6 +21,7 @@ export interface StatusCodePickerProps {
 
 export const StatusCodePicker = ({
   label,
+  description,
   statuses,
   selected,
   onChange,
@@ -37,6 +42,11 @@ export const StatusCodePicker = ({
       <Label size="small" weight="plus">
         {label}
       </Label>
+      {description && (
+        <Text size="small" className="text-ui-fg-subtle">
+          {description}
+        </Text>
+      )}
       {options.length === 0 ? (
         <Text size="small" className="text-ui-fg-subtle">
           Run &quot;Test connection&quot; to load statuses from Ongoing.

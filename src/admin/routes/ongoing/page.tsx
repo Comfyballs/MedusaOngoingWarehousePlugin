@@ -110,6 +110,21 @@ const SUMMARY_BADGE_COLOR: Record<
   cancelled: "purple",
 }
 
+// What each ledger state means for the operator — a state name alone does not say
+// whether it is actionable or self-healing (bead 4ng). Shown on the summary tiles.
+const SYNC_STATE_DESCRIPTION: Record<keyof OngoingSyncStateSummary, string> = {
+  error:
+    "The last push or sync failed. Retryable rows are re-pushed automatically by the retry job; terminal rows need the underlying problem fixed and a manual re-push.",
+  pending:
+    "The push has started but Ongoing has not confirmed the order yet. A row that stays here means the push never completed.",
+  sent: "Accepted by Ongoing and waiting for the warehouse to pick and ship it.",
+  shipped:
+    "Ongoing reported the order as shipped; the Medusa shipment and any tracking numbers are recorded.",
+  delivered:
+    "Collected or delivered — the end of the lifecycle, typically a pickup-point collection.",
+  cancelled: "The order was cancelled in Ongoing. No further syncing happens for it.",
+}
+
 const HEALTH_BADGE_COLOR: Record<OngoingIntegrationHealth, "green" | "orange" | "grey"> = {
   healthy: "green",
   stale: "orange",
@@ -221,28 +236,28 @@ function SyncStateSummaryStrip({
       ) : (
         SUMMARY_STATE_ORDER.map((state) => {
           const isSelected = selectedState === state
+          const action = isSelected
+            ? "Click to clear the filter and show the default actionable states."
+            : "Click to filter the syncs table to this state."
           return (
-            <button
-              key={state}
-              type="button"
-              onClick={() => onSelectState(isSelected ? null : state)}
-              aria-pressed={isSelected}
-              title={
-                isSelected
-                  ? `Clear filter — show the default actionable states`
-                  : `Filter the syncs table to ${state}`
-              }
-              className={clx(
-                "flex items-center gap-x-2 rounded-md px-2 py-1 transition-fg outline-none",
-                "hover:bg-ui-bg-base-hover focus-visible:shadow-borders-focus",
-                isSelected && "bg-ui-bg-base-pressed"
-              )}
-            >
-              <Badge color={SUMMARY_BADGE_COLOR[state]}>{state}</Badge>
-              <Text size="small" weight="plus">
-                {summary[state]}
-              </Text>
-            </button>
+            <Tooltip key={state} content={`${SYNC_STATE_DESCRIPTION[state]} ${action}`}>
+              <button
+                type="button"
+                onClick={() => onSelectState(isSelected ? null : state)}
+                aria-pressed={isSelected}
+                aria-label={`${summary[state]} ${state} syncs. ${action}`}
+                className={clx(
+                  "flex items-center gap-x-2 rounded-md px-2 py-1 transition-fg outline-none",
+                  "hover:bg-ui-bg-base-hover focus-visible:shadow-borders-focus",
+                  isSelected && "bg-ui-bg-base-pressed"
+                )}
+              >
+                <Badge color={SUMMARY_BADGE_COLOR[state]}>{state}</Badge>
+                <Text size="small" weight="plus">
+                  {summary[state]}
+                </Text>
+              </button>
+            </Tooltip>
           )
         })
       )}
@@ -388,10 +403,17 @@ function OngoingSyncsTable() {
         onSelectState={handleSelectState}
       />
       <Container className="divide-y p-0">
-        <div className="flex items-center justify-between px-6 py-4">
-          <Heading level="h2">
-            {selectedState ? `Syncs — ${selectedState}` : "Failed & pending syncs"}
-          </Heading>
+        <div className="flex items-start justify-between px-6 py-4">
+          <div className="flex flex-col gap-y-1">
+            <Heading level="h2">
+              {selectedState ? `Syncs — ${selectedState}` : "Failed & pending syncs"}
+            </Heading>
+            <Text size="small" className="text-ui-fg-subtle">
+              Only rows in <code>error</code> with a retryable error class can be selected.
+              Retrying clears their backoff so the retry job re-pushes them on its next
+              sweep — within about five minutes, not instantly. Repeating it is harmless.
+            </Text>
+          </div>
           {selectedState ? (
             <Button
               size="small"
