@@ -101,6 +101,7 @@ export const cleanupOngoingLocationWorkflow = createWorkflow(
 
     // (2) which of our shipping options are still referenced by a live fulfillment?
     const referencedOptionIds = when(
+      "cleanup-has-created-shipping-options",
       { hasCreatedOptions },
       (data) => data.hasCreatedOptions
     ).then(() => {
@@ -119,6 +120,7 @@ export const cleanupOngoingLocationWorkflow = createWorkflow(
 
     // (3) current contents of our service zone (to decide emptiness)
     const serviceZoneState = when(
+      "cleanup-has-created-service-zone",
       { hasServiceZone },
       (data) => data.hasServiceZone
     ).then(() => {
@@ -144,6 +146,7 @@ export const cleanupOngoingLocationWorkflow = createWorkflow(
 
     // (4) current contents of our fulfillment set (to decide emptiness)
     const fulfillmentSetState = when(
+      "cleanup-has-created-fulfillment-set",
       { hasFulfillmentSet },
       (data) => data.hasFulfillmentSet
     ).then(() => {
@@ -185,6 +188,7 @@ export const cleanupOngoingLocationWorkflow = createWorkflow(
 
     // (6) dismiss the stock_location <-> integration link (when a location is bound)
     const dismissedLink = when(
+      "cleanup-integration-has-stock-location",
       { integration },
       (data) => !!data.integration.stock_location_id
     ).then(() => {
@@ -204,19 +208,31 @@ export const cleanupOngoingLocationWorkflow = createWorkflow(
     })
 
     // (7) delete artifacts per the plan — each guarded on a non-empty target list
-    when({ plan }, (data) => data.plan.shipping_option_ids_to_delete.length > 0).then(() => {
+    when(
+      "cleanup-plan-has-shipping-options-to-delete",
+      { plan },
+      (data) => data.plan.shipping_option_ids_to_delete.length > 0
+    ).then(() => {
       deleteShippingOptionsStep(
         transform({ plan }, (data) => data.plan.shipping_option_ids_to_delete)
       )
     })
 
-    when({ plan }, (data) => data.plan.service_zone_ids_to_delete.length > 0).then(() => {
+    when(
+      "cleanup-plan-has-service-zones-to-delete",
+      { plan },
+      (data) => data.plan.service_zone_ids_to_delete.length > 0
+    ).then(() => {
       deleteServiceZonesStep(
         transform({ plan }, (data) => data.plan.service_zone_ids_to_delete)
       )
     })
 
-    when({ plan }, (data) => data.plan.fulfillment_set_ids_to_delete.length > 0).then(() => {
+    when(
+      "cleanup-plan-has-fulfillment-sets-to-delete",
+      { plan },
+      (data) => data.plan.fulfillment_set_ids_to_delete.length > 0
+    ).then(() => {
       deleteFulfillmentSetsStep(
         transform({ plan }, (data) => data.plan.fulfillment_set_ids_to_delete)
       )

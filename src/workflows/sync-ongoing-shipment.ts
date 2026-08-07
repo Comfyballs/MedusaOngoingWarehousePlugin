@@ -33,7 +33,7 @@ export const syncOngoingShipmentWorkflow = createWorkflow(
       }))
     )
 
-    when(decision, (d: ShipmentDecision) => !d.skip).then(() => {
+    when("shipment-not-skipped", decision, (d: ShipmentDecision) => !d.skip).then(() => {
       const applyInput = transform({ decision, input }, (data) => ({
         order_sync_id: data.decision.order_sync_id as string,
         medusa_order_id: data.decision.medusa_order_id as string,
