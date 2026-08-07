@@ -83,6 +83,35 @@ describe("POST /admin/ongoing/integrations/:id", () => {
     expect(updateOngoingIntegrationWorkflow).not.toHaveBeenCalled()
   })
 
+  // bead atq: a non-numeric interval used to be accepted, stored, and then silently
+  // ignored at read time — now rejected at the route so a saved value that does
+  // nothing can no longer happen.
+  it.each([
+    ["stock_sync_interval", "abc"],
+    ["status_poll_interval", "0"],
+  ])("rejects a non-numeric/non-positive %s (%p) without running the workflow", async (field, badValue) => {
+    const service = makeService({})
+    const res = makeRes()
+
+    await expect(
+      POST(makeReq("integ_1", { [field]: badValue }, service), res)
+    ).rejects.toThrow(MedusaError)
+    expect(updateOngoingIntegrationWorkflow).not.toHaveBeenCalled()
+  })
+
+  it("still accepts an explicit null interval", async () => {
+    const run = jest.fn().mockResolvedValue({ result: { id: "integ_1" } })
+    updateOngoingIntegrationWorkflow.mockReturnValue({ run } as any)
+    const service = makeService({})
+    const res = makeRes()
+
+    await POST(makeReq("integ_1", { stock_sync_interval: null }, service), res)
+
+    expect(run).toHaveBeenCalledWith({
+      input: { id: "integ_1", stock_sync_interval: null },
+    })
+  })
+
   it("runs the workflow with only the allowed fields", async () => {
     const updated = { id: "integ_1", enabled: false }
     const run = jest.fn().mockResolvedValue({ result: updated })

@@ -82,8 +82,8 @@ These are stored on the integration row and edited in the admin Settings UI, not
 | `stock_location_id` | string | — | Which Medusa stock location this warehouse serves. Immutable. Assigning it runs location setup automatically. |
 | `enabled` | boolean | `true` | Master switch. Disabled integrations are skipped by all jobs. |
 | `stock_sync_enabled` | boolean | `true` | Whether the stock-sync job runs for this integration. |
-| `stock_sync_interval` | string (ms) or blank | blank → inherits `defaultStockSyncInterval` (10 min) | Shortest time between stock syncs. A value that is not a positive whole number is ignored and the default is used. |
-| `status_poll_interval` | string (ms) or blank | blank → inherits `defaultStatusPollInterval` (1 min) | Shortest time between order-status polls. A value that is not a positive whole number is ignored and the default is used. |
+| `stock_sync_interval` | string (ms) or blank | blank → inherits `defaultStockSyncInterval` (10 min) | Shortest time between stock syncs. |
+| `status_poll_interval` | string (ms) or blank | blank → inherits `defaultStatusPollInterval` (1 min) | Shortest time between order-status polls. |
 | `stock_reconcile_mode` | `sellable_plus_reserved` \| `precise` \| `onhand` | `sellable_plus_reserved` | How Ongoing quantities map to Medusa stock. See below. |
 | `edit_sync_rules` | JSON object or null | null (edits blocked) | Which order edits re-push at which Ongoing statuses. See below. |
 | `shipped_status_codes` | number array or null | null → canonical 425/450/451 | Ongoing statuses that mean "shipped" (create the Medusa shipment). Empty/null derives the canonical defaults. |
@@ -93,21 +93,24 @@ These are stored on the integration row and edited in the admin Settings UI, not
 > **Note**
 > Both jobs tick every 15 minutes, so an interval below `900000` ms only means "on every tick" — it cannot poll faster than the schedule. Raise an interval to poll a quiet warehouse less often.
 
+> **Note**
+> `stock_sync_interval` and `status_poll_interval` are validated: a value that isn't a positive whole number of milliseconds is **rejected** — by the admin form on blur, and by the create/update routes (`POST /admin/ongoing/integrations`, `POST /admin/ongoing/integrations/:id`) with a `MedusaError` of type `INVALID_DATA` — so a broken value can no longer be saved. This matches `validateIntervalOption`'s boot-time check for the plugin-options defaults (bead atq); blank is still valid and means "inherit the default".
+
 Each of these fields carries the same explanation inline in **Settings → Ongoing Warehouse**, so the form can be filled in without this page open. The copy lives in `src/admin/routes/settings/ongoing/integration-form-fields.tsx`; keep the two in sync when a default or behavior changes.
 
 ## Stock reconcile modes
 
-`stock_reconcile_mode` controls how an Ongoing quantity becomes a Medusa `stocked_quantity`:
+`stock_reconcile_mode` controls how an Ongoing quantity becomes a Medusa `stocked_quantity`. Formulas are shown for reference, but each mode's admin description (and the summary below) leads with when to pick it — see `reconcileInventoryLevelsHandler` in `src/workflows/steps/reconcile-inventory-levels.ts` for the implementation these are verified against.
 
-- **`sellable_plus_reserved`** (default) — reconstructs Medusa's `stocked = sellable + reserved` invariant so Medusa's own reservations are not double-deducted. The computed value is `max(0, sellable + min(medusa_reserved, allocated))`.
-- **`precise`** — like the default, but scopes reservations to orders already synced to Ongoing: `max(0, sellable + reserved_scoped_to_synced_orders)`.
-- **`onhand`** — uses Ongoing's on-hand quantity directly: `max(0, numberOfItems)`.
+- **`sellable_plus_reserved`** (default) — Ongoing's sellable count already excludes stock Ongoing has allocated to orders it knows about, so this mode adds Medusa's own reservations back on top (capped at what Ongoing shows as allocated) to rebuild Medusa's `stocked = sellable + reserved` invariant: `max(0, sellable + min(medusa_reserved, allocated))`. It assumes every Medusa reservation corresponds to an order Ongoing also holds stock for. Use it for the common setup, where orders are pushed to Ongoing promptly.
+- **`precise`** — same idea as the default, but instead of capping Medusa's total reservations at Ongoing's aggregate allocated count, it looks up exactly which reservations belong to orders whose sync row is already marked sent to Ongoing, and adds back only those: `max(0, sellable + reserved_scoped_to_synced_orders)` (one extra query per stock sync). Use it instead of the default when orders can sit unpushed in Medusa for a while, so a reservation for an order Ongoing hasn't seen yet is never added back too early.
+- **`onhand`** — writes Ongoing's raw on-hand quantity straight through and ignores Medusa's own reservations entirely: `max(0, numberOfItems)`. Only safe when Medusa holds no reservations of its own — if it does, those reserved units still show as sellable in Medusa (this mode never accounts for them), and open orders can oversell. Use it only where Ongoing is the sole source of truth for what's reservable.
 
 All three also write `incoming_quantity` from Ongoing's `toReceiveNumberOfItems`.
 
 ## `edit_sync_rules` structure
 
-`edit_sync_rules` gates which order edits are re-pushed to Ongoing, per edit category, for the order's current Ongoing status. It is a raw JSON object with two arrays of status codes:
+`edit_sync_rules` gates which order edits are re-pushed to Ongoing, per edit category, for the order's current Ongoing status. It is a raw JSON object mapping each category to an array of status codes — `Record<string, number[]>`:
 
 ```json
 {
@@ -120,6 +123,9 @@ All three also write `incoming_quantity` from Ongoing's `toReceiveNumberOfItems`
 - `line_items` — status codes at which line-item and shipping-line edits may re-push.
 
 An edit re-pushes only when the order's current Ongoing status code is listed under its category. If the category is absent or empty, edits of that category are blocked.
+
+> **Note**
+> The admin form validates this JSON on blur, not only on Save: besides `JSON.parse` succeeding, each category's value must actually be an array of numbers — valid-JSON-wrong-schema (a string or a single number instead of an array) is the more common mistake than malformed JSON (bead atq).
 
 > **Warning**
 > If `edit_sync_rules` is null or empty (the default right after creating an integration), **every order edit is blocked** with reason `no_edit_rules`. Configure this before you rely on edit syncing. See [[User How It Works]] for the edit flow and [[User Troubleshooting]] for clearing a blocked edit.

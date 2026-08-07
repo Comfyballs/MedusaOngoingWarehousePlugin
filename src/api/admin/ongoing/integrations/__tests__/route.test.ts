@@ -109,6 +109,38 @@ describe("POST /admin/ongoing/integrations", () => {
     expect(createOngoingIntegrationWorkflow).not.toHaveBeenCalled()
   })
 
+  // bead atq: a non-numeric interval used to be accepted, stored, and then silently
+  // ignored at read time — now rejected at the route so a saved value that does
+  // nothing can no longer happen.
+  it.each([
+    ["stock_sync_interval", "abc"],
+    ["stock_sync_interval", "0"],
+    ["status_poll_interval", "-5"],
+    ["status_poll_interval", ""],
+  ])("rejects a non-numeric/non-positive %s (%p) without running the workflow", async (field, badValue) => {
+    const service = makeService({})
+    const res = makeRes()
+
+    await expect(
+      POST(makeReq({ ...validBody(), [field]: badValue }, service), res)
+    ).rejects.toThrow(MedusaError)
+    expect(createOngoingIntegrationWorkflow).not.toHaveBeenCalled()
+  })
+
+  it("still accepts a valid numeric interval string", async () => {
+    const run = jest.fn().mockResolvedValue({ result: { id: "integ_1" } })
+    createOngoingIntegrationWorkflow.mockReturnValue({ run } as any)
+    const service = makeService({})
+    const res = makeRes()
+
+    await POST(makeReq({ ...validBody(), stock_sync_interval: "900000" }, service), res)
+
+    expect(run).toHaveBeenCalledWith({
+      input: expect.objectContaining({ stock_sync_interval: "900000" }),
+    })
+    expect(res.status).toHaveBeenCalledWith(201)
+  })
+
   it("still accepts an explicit null interval (on2 strictness only rejects wrong TYPES)", async () => {
     const run = jest.fn().mockResolvedValue({ result: { id: "integ_1" } })
     createOngoingIntegrationWorkflow.mockReturnValue({ run } as any)

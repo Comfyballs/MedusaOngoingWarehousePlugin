@@ -1,5 +1,6 @@
 import { MedusaError } from "@medusajs/framework/utils"
 import { STOCK_RECONCILE_MODES, StockReconcileMode } from "../../../../lib/ongoing/types"
+import { validateIntervalString } from "./interval-validation"
 
 export type CreateIntegrationInput = {
   credential_key: string
@@ -88,19 +89,20 @@ export function validateCreateIntegrationInput(body: unknown): CreateIntegration
   if (b.stock_sync_enabled !== undefined && typeof b.stock_sync_enabled !== "boolean") {
     invalid("stock_sync_enabled must be a boolean")
   }
-  if (
-    b.stock_sync_interval !== undefined &&
-    b.stock_sync_interval !== null &&
-    typeof b.stock_sync_interval !== "string"
-  ) {
-    invalid("stock_sync_interval must be a string or null")
+  if (b.stock_sync_interval !== undefined && b.stock_sync_interval !== null) {
+    if (typeof b.stock_sync_interval !== "string") {
+      invalid("stock_sync_interval must be a string or null")
+    }
+    // bead atq: a non-numeric value used to be accepted, stored, and then silently
+    // ignored at read time (resolveIntervalMs falls back to the default) — reject it
+    // here so a saved value that does nothing can no longer happen.
+    validateIntervalString(b.stock_sync_interval as string, "stock_sync_interval")
   }
-  if (
-    b.status_poll_interval !== undefined &&
-    b.status_poll_interval !== null &&
-    typeof b.status_poll_interval !== "string"
-  ) {
-    invalid("status_poll_interval must be a string or null")
+  if (b.status_poll_interval !== undefined && b.status_poll_interval !== null) {
+    if (typeof b.status_poll_interval !== "string") {
+      invalid("status_poll_interval must be a string or null")
+    }
+    validateIntervalString(b.status_poll_interval as string, "status_poll_interval")
   }
 
   return {
