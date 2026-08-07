@@ -82,7 +82,11 @@ export const setupOngoingLocationWorkflow = createWorkflow(
 
     // (2) create the fulfillment set only when the decision says so
     //     ("create" mode forces this even if a set already exists)
-    const created = when({ shouldCreate }, (data) => data.shouldCreate).then(() => {
+    const created = when(
+      "setup-should-create-fulfillment-set",
+      { shouldCreate },
+      (data) => data.shouldCreate
+    ).then(() => {
       createLocationFulfillmentSetWorkflow.runAsStep({
         input: transform({ input }, (data) => ({
           location_id: data.input.stock_location_id,

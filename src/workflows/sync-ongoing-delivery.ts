@@ -40,7 +40,11 @@ export const syncOngoingDeliveryWorkflow = createWorkflow(
 
     // Backfill: reached "delivered" but never recorded a shipment. Create it, then
     // mark the row shipped so shipped_at is set before we stamp delivered_at.
-    when(decision, (d: DeliveryDecision) => !d.skip && d.needs_shipment).then(() => {
+    when(
+      "delivery-needs-shipment-backfill",
+      decision,
+      (d: DeliveryDecision) => !d.skip && d.needs_shipment
+    ).then(() => {
       const applyInput = transform({ decision, input }, (data) => ({
         order_sync_id: data.decision.order_sync_id as string,
         medusa_order_id: data.decision.medusa_order_id as string,
@@ -66,7 +70,7 @@ export const syncOngoingDeliveryWorkflow = createWorkflow(
 
     // Record the delivery for every non-skipped row (whether just backfilled above
     // or already shipped on a prior 450).
-    when(decision, (d: DeliveryDecision) => !d.skip).then(() => {
+    when("delivery-not-skipped", decision, (d: DeliveryDecision) => !d.skip).then(() => {
       const markDeliveredInput = transform({ decision, input }, (data) => ({
         order_sync_id: data.decision.order_sync_id as string,
         status_code: data.input.status_code,

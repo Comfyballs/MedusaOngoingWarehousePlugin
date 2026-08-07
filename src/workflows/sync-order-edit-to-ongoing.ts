@@ -15,7 +15,7 @@ const syncOrderEditToOngoing = createWorkflow(
 
     // Only run the upsert when the gate allows it. when() replaces the
     // forbidden inline conditional in workflow composition.
-    const upsert = when(decision, (d) => d.allowed).then(() => {
+    const upsert = when("order-edit-sync-allowed", decision, (d) => d.allowed).then(() => {
       return upsertOngoingOrderEditStep(decision)
     })
 

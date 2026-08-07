@@ -20,7 +20,7 @@ export const cancelOngoingOrderWorkflow = createWorkflow(
   function (input: CancelOngoingOrderInput) {
     const decision = decideOngoingCancelStep(input)
 
-    when(decision, (d: CancelDecision) => d.shouldCancel).then(() => {
+    when("cancel-should-cancel", decision, (d: CancelDecision) => d.shouldCancel).then(() => {
       const cancelInput = transform({ decision }, (data) => ({
         ongoingOrderId: data.decision.ongoingOrderId as number,
         credentialKey: data.decision.credentialKey as string,
@@ -38,7 +38,11 @@ export const cancelOngoingOrderWorkflow = createWorkflow(
 
     // ei4 fallout (eer): Ongoing refused the cancel (status not cancellable) but
     // Medusa already committed its own cancel. Flag the divergence for operators.
-    when(decision, (d: CancelDecision) => d.reason === "status_not_cancellable").then(
+    when(
+      "cancel-refused-status-not-cancellable",
+      decision,
+      (d: CancelDecision) => d.reason === "status_not_cancellable"
+    ).then(
       () => {
         const refusedInput = transform({ decision }, (data) => ({
           order_sync_id: data.decision.orderSyncId as string,
