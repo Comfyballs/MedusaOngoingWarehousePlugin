@@ -306,6 +306,69 @@ describe("reconcileInventoryLevelsStep — skip scenarios", () => {
     expect(res.output).toEqual({ written: 0, skipped: 1 })
   })
 
+  // bead MedusaOngoingWarehousePlugin-bkh: renaming a variant SKU leaves the inventory
+  // item on the old SKU forever (Medusa copies SKU onto the inventory item only once,
+  // at variant-creation time — no propagation on rename). An unmatched Ongoing SKU that
+  // DOES match a product_variant is diagnostic proof of that orphan, and must get a
+  // specific, actionable warning instead of the generic "matched 0" message.
+  it("reports a rename-orphan warning when an unmatched SKU matches a product variant", async () => {
+    const { container, inventoryService, logger, query } = makeContainer({ items: [] })
+    query.graph.mockResolvedValueOnce({ data: [{ id: "variant_1", sku: "SKU-A" }] })
+
+    const res = await reconcileInventoryLevelsHandler(
+      { rows: [makeRow()], ...BASE_A },
+      { container } as any
+    )
+
+    expect(inventoryService.updateInventoryLevels).not.toHaveBeenCalled()
+    expect(query.graph).toHaveBeenCalledWith({
+      entity: "product_variant",
+      fields: ["id", "sku"],
+      filters: { sku: ["SKU-A"] },
+    })
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('SKU "SKU-A" matches a Medusa product variant')
+    )
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining("does not propagate a variant SKU rename")
+    )
+    expect(res.output).toEqual({ written: 0, skipped: 1 })
+  })
+
+  it("keeps the generic warning when an unmatched SKU matches no variant either", async () => {
+    const { container, inventoryService, logger, query } = makeContainer({ items: [] })
+    query.graph.mockResolvedValueOnce({ data: [] })
+
+    const res = await reconcileInventoryLevelsHandler(
+      { rows: [makeRow()], ...BASE_A },
+      { container } as any
+    )
+
+    expect(inventoryService.updateInventoryLevels).not.toHaveBeenCalled()
+    expect(query.graph).toHaveBeenCalledWith({
+      entity: "product_variant",
+      fields: ["id", "sku"],
+      filters: { sku: ["SKU-A"] },
+    })
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining("matched 0 Medusa inventory items")
+    )
+    expect(logger.warn).not.toHaveBeenCalledWith(
+      expect.stringContaining("matches a Medusa product variant")
+    )
+    expect(res.output).toEqual({ written: 0, skipped: 1 })
+  })
+
+  it("does not query variants when every SKU already matched an inventory item", async () => {
+    const { container, query } = makeContainer({})
+    const res = await reconcileInventoryLevelsHandler(
+      { rows: [makeRow()], ...BASE_A },
+      { container } as any
+    )
+    expect(query.graph).not.toHaveBeenCalled()
+    expect(res.output).toEqual({ written: 1, skipped: 0 })
+  })
+
   it("correctly mixes written and skipped across multiple rows", async () => {
     const { container, inventoryService } = makeContainer({
       items: [

@@ -25,6 +25,7 @@ Most problems show up as a sync row's state and error class on the order widget 
 | A shipping option won't save with a way-of-delivery error | Malformed `way_of_delivery` / `transporter` on the option's `data` | n/a | Fix the shape (see [[User Configuration Reference]]). This is caught at save time, never at push time. |
 | A cancel doesn't take; fulfillment stays active | Order's Ongoing status is not in `cancellable_status_codes` | n/a | Expected — Ongoing is still shipping. This prevents Medusa and Ongoing disagreeing. Cancel is refused deliberately. |
 | Push errors "unexpected_body_shape" | A proxy or misconfigured endpoint returned non-JSON on a 200 | terminal | Check `baseUrl` points at the real Ongoing API, not an HTML error page or proxy. |
+| Stock sync log says a SKU "matches a Medusa product variant, but no inventory item has that SKU" | The variant's SKU was renamed after the variant was created. Medusa copies a variant's SKU onto its inventory item only once, at creation, and never propagates a later rename | n/a | Correct the inventory item's SKU (via a stock-sync/inventory tool, or by recreating the variant's inventory link) so it matches the variant's current SKU again. See [[Dev Gotchas]] for the root cause. |
 
 ## Edit-blocked state and how to clear it
 
