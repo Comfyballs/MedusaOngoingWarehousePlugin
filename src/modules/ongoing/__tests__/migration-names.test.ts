@@ -45,7 +45,17 @@ describe("ongoing module migrations", () => {
       return time.endsWith("0000") || time.endsWith("3000")
     })
 
-    expect(offenders).toEqual([])
+    if (offenders.length > 0) {
+      throw new Error(
+        `Round-timestamp migration name(s) found: ${offenders.join(", ")}. ` +
+          `Migrations are recorded in one mikro_orm_migrations table shared by ` +
+          `every module in the consuming app, keyed by bare name — a round ` +
+          `HH:00:00/HH:30:00 stamp is exactly the kind another module is likely ` +
+          `to have already used, and MikroORM silently SKIPS a name it has ` +
+          `already seen (see MedusaOngoingWarehousePlugin-cb3). Do not hand-stamp ` +
+          `migration timestamps — run \`npx medusa plugin:db:generate\` instead.`
+      )
+    }
   })
 
   it("declares a class whose name matches its filename", () => {
@@ -58,6 +68,15 @@ describe("ongoing module migrations", () => {
 
   it("has no duplicate migration names", () => {
     const names = migrationFiles()
-    expect(new Set(names).size).toBe(names.length)
+    if (new Set(names).size !== names.length) {
+      throw new Error(
+        `Duplicate migration name(s) found among: ${names.join(", ")}. ` +
+          `The mikro_orm_migrations ledger is shared app-wide and keyed by bare ` +
+          `name (see MedusaOngoingWarehousePlugin-cb3) — a duplicate here means ` +
+          `one of the two migrations will be silently skipped. Use ` +
+          `\`npx medusa plugin:db:generate\` to produce unique, real-clock names ` +
+          `instead of hand-authoring timestamps.`
+      )
+    }
   })
 })

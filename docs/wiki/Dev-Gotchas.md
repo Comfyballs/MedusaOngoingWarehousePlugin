@@ -83,6 +83,8 @@ npx medusa plugin:db:generate
 
 Commit the generated migration and the updated `.snapshot-medusa-ongoing.json`. The consuming app runs `npx medusa db:migrate`. See the database prerequisites above.
 
+**Never hand-author a migration timestamp.** Medusa records every module's migrations in one `mikro_orm_migrations` table shared by the whole consuming app, keyed by the bare migration name — there's no per-module namespace. A hand-picked round timestamp (`HH0000`/`HH3000`) is exactly the kind another module is likely to have already used; MikroORM treats a name match as "already run" and **silently skips** the migration, with no error until a later write hits the missing column (`MedusaOngoingWarehousePlugin-cb3`). Always generate names with `npx medusa plugin:db:generate`, which stamps the real clock at second precision. [`src/modules/ongoing/__tests__/migration-names.test.ts`](https://github.com/Comfyballs/MedusaOngoingWarehousePlugin/blob/main/src/modules/ongoing/__tests__/migration-names.test.ts) enforces this — it fails the build on a round timestamp, a duplicate name, or a class/filename mismatch.
+
 ## Ongoing rate limits and parallel requests
 
 Ongoing rate-limits concurrent calls and recommends serializing requests per goods owner. The client's `Throttle` defaults to concurrency **1**, and `getClient` caches one client (one throttle) per credential key so all process-wide calls to one goods owner are serialized. When writing batch syncs, do not fan out parallel calls to the same warehouse — let the throttle serialize them. See the Ongoing [parallel-requests](https://developer.ongoingwarehouse.com/parallel-requests) note and [[Dev Architecture]].
