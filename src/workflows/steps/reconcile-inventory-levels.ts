@@ -93,6 +93,30 @@ export async function reconcileInventoryLevelsHandler(
     }
   }
 
+  // --- Detect SKU-rename orphans (bead bkh) for whatever is left unmatched, in ONE
+  // batched query -- costs nothing on the normal (fully matched) path. Medusa copies a
+  // variant's SKU onto its inventory item only ONCE, at variant-creation time, with no
+  // propagation on a later rename -- so a renamed variant's inventory item is stuck on
+  // the OLD sku forever, and Ongoing's article (which follows the NEW sku, per
+  // resolveArticleNumber) can never match it again. If an unmatched Ongoing SKU turns
+  // out to match a product_variant, that is diagnostic proof of exactly this orphan,
+  // and the warning below says so instead of the generic "matched 0" message. ---
+  const unmatchedSkus = skus.filter((sku) => (itemsBySku.get(sku) ?? []).length === 0)
+  const renamedVariantSkus = new Set<string>()
+  if (unmatchedSkus.length > 0) {
+    const query = container.resolve<RemoteQueryFunction>(ContainerRegistrationKeys.QUERY)
+    const { data: variants } = await query.graph({
+      entity: "product_variant",
+      fields: ["id", "sku"],
+      filters: { sku: unmatchedSkus },
+    })
+    for (const variant of variants as Array<{ id: string; sku: string | null }>) {
+      if (variant.sku) {
+        renamedVariantSkus.add(variant.sku)
+      }
+    }
+  }
+
   // --- Batch 2: prefetch every level at this location for the matched items in
   // ONE query → O(1) lookup by inventory_item_id (no per-row listInventoryLevels). ---
   const itemIds = items.map((i) => i.id)
@@ -161,9 +185,18 @@ export async function reconcileInventoryLevelsHandler(
   for (const row of rows) {
     const matched = itemsBySku.get(row.articleNumber) ?? []
     if (matched.length === 0) {
-      logger.warn(
-        `[ongoing] inventory-sync: SKU "${row.articleNumber}" matched 0 Medusa inventory items — skipping`
-      )
+      if (renamedVariantSkus.has(row.articleNumber)) {
+        logger.warn(
+          `[ongoing] inventory-sync: SKU "${row.articleNumber}" matches a Medusa product variant, ` +
+            `but no inventory item has that SKU. Medusa does not propagate a variant SKU rename to ` +
+            `its linked inventory item, so this is likely a rename orphan — stock for this SKU will ` +
+            `not update until the inventory item's SKU is corrected to match the variant — skipping`
+        )
+      } else {
+        logger.warn(
+          `[ongoing] inventory-sync: SKU "${row.articleNumber}" matched 0 Medusa inventory items — skipping`
+        )
+      }
       skipped++
       continue
     }

@@ -93,6 +93,35 @@ Ongoing rate-limits concurrent calls and recommends serializing requests per goo
 
 In `retry-failed-syncs.ts`, an `error/retryable` row whose `medusa_fulfillment_id` is null cannot be re-pushed (the push workflow requires a fulfillment id), so the job dead-letters it on first sight: `error_class` flips to `terminal` via the same CAS guard as the normal path, `retry_count` is left unchanged (no attempt is spent), a warning is logged, and `ongoing.sync.order_dead_lettered` is emitted with `medusa_fulfillment_id: null`. No production code path writes a null fulfillment id — such rows only arise from historical data or manual DB edits. (Before bead `dpa` was fixed, these rows were warned-and-skipped every tick forever with no escape path.)
 
+## A variant SKU rename silently orphans inbound stock sync
+
+Medusa copies a variant's SKU onto its linked inventory item exactly **once**, at
+variant-creation time (`@medusajs/core-flows` `create-product-variants.js`:
+`sku: variantInput.sku`). `update-product-variants.js` never propagates a later SKU
+edit to the inventory item — it only reacts to `manage_inventory` toggling. So renaming
+a variant's SKU in the admin leaves the variant and its inventory item permanently
+disagreeing about the SKU.
+
+That divergence splits this plugin's two Ongoing-facing paths, because they each read
+the SKU from a different entity:
+
+- **Outbound** (`resolveArticleNumber`, `src/lib/ongoing/resolve-article-number.ts`)
+  reads `product_variant.sku` — pushes the **new** SKU to Ongoing as `articleNumber`.
+- **Inbound** (`reconcileInventoryLevelsStep`,
+  `src/workflows/steps/reconcile-inventory-levels.ts`) matches Ongoing rows via
+  `listInventoryItems({ sku })` — still the **old** inventory-item SKU.
+
+The renamed article's stock permanently stops syncing: the Ongoing row matches 0
+Medusa inventory items every tick, forever, until the inventory item's SKU is fixed.
+`reconcileInventoryLevelsStep` detects this case (bead
+`MedusaOngoingWarehousePlugin-bkh`): on the unmatched path only, it does one batched
+`product_variant` lookup by the still-unmatched SKUs and logs a specific "rename
+orphan" warning (naming the SKU, and explaining Medusa's lack of propagation) instead
+of the generic "matched 0 inventory items" warning, whenever a variant with that SKU
+does exist. There is no automatic repair — an operator has to correct the inventory
+item's SKU (or the module's stock-sync outcome must be read from logs; a dashboard
+surface for this is tracked separately, bead `MedusaOngoingWarehousePlugin-hhw.3`).
+
 ## graphify graph is stale
 
 `graphify-out/GRAPH_REPORT.md` was generated on 2026-06-23 from the pre-integration scaffold (6 nodes) and does not reflect the current codebase. `CLAUDE.md` still tells agents to consult it and to run `graphify update .` after code changes. Until someone regenerates it (bead `de5`), do not trust the graph for architecture questions — use [[Dev Architecture]]. If you modify code in a session, running `graphify update .` keeps the graph current (AST-only, no API cost) per the repo rule.
