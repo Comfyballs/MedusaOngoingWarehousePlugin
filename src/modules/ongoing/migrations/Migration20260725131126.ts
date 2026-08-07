@@ -1,6 +1,6 @@
 import { Migration } from "@medusajs/framework/mikro-orm/migrations";
 
-export class Migration20260725130000 extends Migration {
+export class Migration20260725131126 extends Migration {
 
   override async up(): Promise<void> {
     this.addSql(`alter table if exists "ongoing_order_sync" add column if not exists "sync_kind" text check ("sync_kind" in ('order', 'return')) not null default 'order';`);
