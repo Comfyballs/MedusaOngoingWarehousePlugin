@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { FocusModal, Button, toast } from "@medusajs/ui"
 import { sdk } from "../../../lib/sdk"
 import { parseEditSyncRulesJson } from "./utils/parse-codes"
+import { isValidIntervalString } from "./utils/validate-interval"
 import { EMPTY_FORM, IntegrationFormFields, type FormState } from "./integration-form-fields"
 
 type Props = {
@@ -114,6 +115,18 @@ export function CreateIntegrationModal({ open, onClose }: Props) {
       return
     }
 
+    // bead atq: a non-numeric interval used to be accepted, stored, and then
+    // silently ignored at read time (resolveIntervalMs falls back to the
+    // default) — block the save here instead of letting it through unnoticed.
+    if (form.stock_sync_interval && !isValidIntervalString(form.stock_sync_interval)) {
+      setError("Stock sync interval must be a positive whole number of milliseconds.")
+      return
+    }
+    if (form.status_poll_interval && !isValidIntervalString(form.status_poll_interval)) {
+      setError("Status poll interval must be a positive whole number of milliseconds.")
+      return
+    }
+
     let edit_sync_rules: Record<string, unknown> | null
     try {
       edit_sync_rules = parseEditSyncRulesJson(form.edit_sync_rules_json)
@@ -160,6 +173,9 @@ export function CreateIntegrationModal({ open, onClose }: Props) {
               testResult={testResult}
               error={error}
               disabled={createMutation.isPending}
+              // bead dox: full-screen FocusModal has room for input-left/description-right;
+              // EditIntegrationDrawer's narrow side panel leaves this unset (stacked).
+              twoColumn
             />
           </FocusModal.Body>
           <FocusModal.Footer>

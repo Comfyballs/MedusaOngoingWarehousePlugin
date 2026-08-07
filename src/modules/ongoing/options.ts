@@ -67,7 +67,10 @@ export function validateOngoingOptions(options: unknown): OngoingPluginOptions {
   return opts as OngoingPluginOptions
 }
 
-function validateIntervalOption(value: string | undefined, name: string): void {
+// Exported so the admin integration routes validate a DB-stored interval with exactly
+// the same rule this applies to the plugin-options defaults at boot (bead atq) — the two
+// paths must never disagree on what counts as a valid interval.
+export function validateIntervalOption(value: string | undefined, name: string): void {
   if (value === undefined) {
     return
   }

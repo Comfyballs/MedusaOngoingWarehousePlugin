@@ -1,5 +1,6 @@
 import { MedusaError } from "@medusajs/framework/utils"
 import { STOCK_RECONCILE_MODES, StockReconcileMode } from "../../../../../lib/ongoing/types"
+import { validateIntervalString } from "../interval-validation"
 
 // credential_key, goods_owner_id and stock_location_id are deliberately NOT modeled
 // here even if present in the request body — they are immutable after creation (see
@@ -43,11 +44,20 @@ export function validateUpdateIntegrationInput(body: unknown): UpdateIntegration
     if (b.stock_sync_interval !== null && typeof b.stock_sync_interval !== "string") {
       invalid("stock_sync_interval must be a string or null")
     }
+    // bead atq: a non-numeric value used to be accepted, stored, and then silently
+    // ignored at read time (resolveIntervalMs falls back to the default) — reject it
+    // here so a saved value that does nothing can no longer happen.
+    if (b.stock_sync_interval !== null) {
+      validateIntervalString(b.stock_sync_interval as string, "stock_sync_interval")
+    }
     result.stock_sync_interval = b.stock_sync_interval as string | null
   }
   if (b.status_poll_interval !== undefined) {
     if (b.status_poll_interval !== null && typeof b.status_poll_interval !== "string") {
       invalid("status_poll_interval must be a string or null")
+    }
+    if (b.status_poll_interval !== null) {
+      validateIntervalString(b.status_poll_interval as string, "status_poll_interval")
     }
     result.status_poll_interval = b.status_poll_interval as string | null
   }
