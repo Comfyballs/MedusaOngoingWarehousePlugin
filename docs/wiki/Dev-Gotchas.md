@@ -12,6 +12,8 @@ The repo works around this in two places, but the fix is not total:
 > **Caution**
 > The mock and yarn patch cover the test path; the yarn patch may also cover build and lint, but that was not re-verified live. Keep running lint and build under Node 20/22 rather than relying on the patch.
 
+The same applies to a **consuming app** you link this plugin into: a dev server started under Node 26 can boot and still fail to bundle the plugin's admin extensions, which reads as "my admin change did not arrive". Check the Node version of the process serving the port you are browsing, not just the one in your shell — see [[Dev Local App Testing]].
+
 ## `npx tsc` reports fake success in this sandbox
 
 `npx tsc` can exit 0 without actually type-checking here. Use the local binary for a real type-check, especially for `src/admin`:

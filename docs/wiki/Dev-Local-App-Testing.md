@@ -113,6 +113,53 @@ For the full operator walkthrough behind those last rows, see [[User Verificatio
 
 With `yarn dev` running in this repo, a save rebuilds and re-publishes to the store, and the consuming app picks the change up on its next restart. Restart the app after changes to migrations, module registration, or plugin options — those are read once at boot.
 
+## Updating an app that is already linked
+
+Publishing on its own does not reach the app. `npx medusa plugin:publish` calls yalc **without** `--push`: it refreshes the local store and stops there. Only a push writes into a linked app, which is what `yarn dev`'s watch mode passes for you. For a one-shot update:
+
+```bash
+yarn build
+node_modules/.bin/yalc publish --push --no-scripts
+```
+
+The order is publish → push → install → restart. Running the app's install *before* the push just re-links the old copy.
+
+### pnpm keeps a second copy
+
+In a pnpm app — a workspace especially — the push alone leaves the app on the previous build. pnpm installs `file:` dependencies through its virtual store: the app's `node_modules/<pkg>` resolves into `node_modules/.pnpm/<pkg>@file+…/`, and a workspace root holds its own link to the same store entry. `yalc push` overwrites the plain directory it finds under the app's `node_modules` and never touches the store copy, so the two disagree — and pnpm, finding a directory it did not create, moves its own copy aside into `node_modules/.ignored/`. Re-run the install from the package that depends on the plugin:
+
+```bash
+cd <app>/apps/backend
+pnpm install
+```
+
+That re-syncs every copy from `.yalc/`. The leftover under `node_modules/.ignored/` stays stale, which is harmless — nothing resolves through it.
+
+### Verify the app has the new build
+
+The version does not change between local builds, so it proves nothing. Grep for a string from the change you just made:
+
+```bash
+grep -rl "<a phrase you just added>" \
+  <app>/apps/backend/node_modules/@comfyballs/medusa-plugin-ongoing-warehouse/.medusa/server
+```
+
+No hits means the app is still on the old build. Before restarting anything, find every copy and check them all — resolution may reach a different one than you think:
+
+```bash
+find <app> -maxdepth 6 -name "medusa-plugin-ongoing-warehouse" -not -path "*/.yalc/*"
+```
+
+### Restart the right server, on the right Node
+
+Plugin code and admin extensions are both read at boot, and `medusa develop` does not watch `node_modules` — a save in this repo never hot-reloads the app. Restarting a *different* dev session than the one you are browsing is an easy way to conclude the update failed when it did not, so check which process holds the port:
+
+```bash
+lsof -nP -iTCP -sTCP:LISTEN | grep node
+```
+
+The consuming app's dev server must also run on a supported Node version. Node 26 breaks Medusa's build tooling (see [[Dev Gotchas]]), and a dev server launched under it can fail to bundle plugin admin extensions while otherwise appearing to boot.
+
 ## Check a registry install before calling it done
 
 The yalc flow links a directory, which can mask a broken `files` or `exports` field. Once, before you consider the install verified, confirm the real tarball is correct:
