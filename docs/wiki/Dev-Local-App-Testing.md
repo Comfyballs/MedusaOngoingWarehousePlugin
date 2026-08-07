@@ -126,14 +126,17 @@ The order is publish → push → install → restart. Running the app's install
 
 ### pnpm keeps a second copy
 
-In a pnpm app — a workspace especially — the push alone leaves the app on the previous build. pnpm installs `file:` dependencies through its virtual store: the app's `node_modules/<pkg>` resolves into `node_modules/.pnpm/<pkg>@file+…/`, and a workspace root holds its own link to the same store entry. `yalc push` overwrites the plain directory it finds under the app's `node_modules` and never touches the store copy, so the two disagree — and pnpm, finding a directory it did not create, moves its own copy aside into `node_modules/.ignored/`. Re-run the install from the package that depends on the plugin:
+In a pnpm app — a workspace especially — the push alone leaves the app on the previous build. pnpm installs `file:` dependencies through its virtual store: the app's `node_modules/<pkg>` resolves into `node_modules/.pnpm/<pkg>@file+…/`, and a workspace root holds its own link to the same store entry. `yalc push` overwrites the plain directory it finds under the app's `node_modules` and never touches the store copy, so the two disagree — and pnpm, finding a directory it did not create, moves its own copy aside into `node_modules/.ignored/`. Re-run the app's install to re-sync every copy from `.yalc/`:
 
 ```bash
-cd <app>/apps/backend
+cd <app>            # the WORKSPACE ROOT, not apps/<package>
 pnpm install
 ```
 
-That re-syncs every copy from `.yalc/`. The leftover under `node_modules/.ignored/` stays stale, which is harmless — nothing resolves through it.
+> **Warning**
+> Run that install from the **workspace root**, never from inside `apps/<package>`. pnpm reads `.npmrc` from the current directory, and a project-level `.npmrc` can change the layout of the *entire* workspace: `medusa-b2b-prototype/apps/backend/.npmrc` sets `node-linker=hoisted`, so installing from there materialises a second physical copy of every package as real directories at the workspace root, on top of the existing `.pnpm` symlink graph. Medusa then loads `@medusajs/core-flows` twice and the app dies at boot with `Workflow with id "create-payment-sessions" and step definition already exists` — the duplicate-instance failure the single-copy check in Step 2 exists to prevent. Recovering means deleting the workspace-root `node_modules` and reinstalling from the root.
+
+The leftover under `node_modules/.ignored/` stays stale, which is harmless — nothing resolves through it.
 
 ### Verify the app has the new build
 
