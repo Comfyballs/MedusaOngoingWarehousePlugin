@@ -35,8 +35,9 @@
     "medusa-v2"
   ],
   "scripts": {
-    "build": "medusa plugin:build",
+    "build": "medusa plugin:build && node scripts/stamp-build-info.mjs",
     "dev": "medusa plugin:develop",
+    "push:local": "node scripts/push-to-local-app.mjs",
     "lint": "medusa lint",
     "test": "jest",
     "test:cov": "jest --coverage",

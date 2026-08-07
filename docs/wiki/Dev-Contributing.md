@@ -1,4 +1,4 @@
-This page tells you how to set up a development environment, run the quality gates, and get a change merged. It covers the toolchain, the day-to-day commands, branch and commit conventions, the required Medusa-aware review, and how work is tracked. For the runtime design, see [[Dev Architecture]]; for the traps that will bite you, read [[Dev Gotchas]] before your first build.
+This page tells you how to set up a development environment, run the quality gates, and get a change merged. It covers the toolchain, the day-to-day commands, branch and commit conventions, the required Medusa-aware review, and how work is tracked. For the runtime design, see [[Dev Architecture]]; for the traps that will bite you, read [[Dev Gotchas]] before your first build. To see a change running inside a real Medusa app rather than a jest config, see [[Dev Local App Testing]].
 
 ## Development environment
 
@@ -23,11 +23,14 @@ yarn install
 
 | Command | What it runs | When |
 |---|---|---|
-| `yarn build` | `medusa plugin:build` — compiles `src/` to `.medusa/server` (the published artifact) | Before merge; to reproduce the shipped output |
+| `yarn build` | `medusa plugin:build`, then stamps `.medusa/server` with a build id (UTC timestamp + short git sha + dirty flag) — see [[Dev Local App Testing]] | Before merge; to reproduce the shipped output |
 | `yarn dev` | `medusa plugin:develop` — watch mode, publishes locally via yalc to a linked Medusa app | Iterating against a consuming app |
+| `yarn push:local` | `scripts/push-to-local-app.mjs` — builds, publishes, and pushes into every (or one named) yalc-linked local app, and verifies the update actually landed | Updating an already-linked app; see [[Dev Local App Testing]] |
 | `yarn lint` | `medusa lint` (ESLint flat config, `@medusajs/eslint-plugin` recommended) | Before every commit |
 | `yarn test` | `jest` — the unit suite (excludes `*.live.test.ts`) | Before every commit |
 | `yarn test:live` | `jest --config jest.integration.config.js` — the live Ongoing API harness | When you touch the Ongoing client; needs sandbox creds |
+
+The stamped build id is logged at boot next to `[ongoing] validated N warehouse integration(s)`, so a bug report can quote exactly which build a linked app is running.
 
 When you change a `src/modules/*` data model, regenerate migrations from this plugin directory:
 
@@ -91,6 +94,7 @@ The reviewer runs `yarn lint`, `yarn build`, and the test suite, and confirms th
 
 - [[Dev Architecture]]
 - [[Dev Testing]]
+- [[Dev Local App Testing]]
 - [[Dev Gotchas]]
 - [[Dev Beads]]
 - [[Dev Medusa Rules]]

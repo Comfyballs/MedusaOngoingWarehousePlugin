@@ -115,7 +115,21 @@ With `yarn dev` running in this repo, a save rebuilds and re-publishes to the st
 
 ## Updating an app that is already linked
 
-Publishing on its own does not reach the app. `npx medusa plugin:publish` calls yalc **without** `--push`: it refreshes the local store and stops there. Only a push writes into a linked app, which is what `yarn dev`'s watch mode passes for you. For a one-shot update:
+Publishing on its own does not reach the app. `npx medusa plugin:publish` calls yalc **without** `--push`: it refreshes the local store and stops there, so a plain `yarn build` + `plugin:publish` looks like it worked while the app keeps running the old build. In a pnpm app the trap compounds: pnpm resolves a `file:` dependency through its virtual store, `yalc push` only overwrites the plain directory copy, and up to four stale copies can end up on disk with only one of them fresh.
+
+Use `yarn push:local` — it runs the whole update and proves it landed:
+
+```bash
+yarn push:local                 # push to every app `yalc installations show` knows about
+yarn push:local <app-path>      # push to one app only
+yarn push:local -- --dry-run    # print every mutating command instead of running it
+```
+
+It builds (stamping a build id — see [[Dev Contributing]]), publishes and pushes via yalc, detects each target app's package manager and workspace layout and runs the right install from the right directory, prunes the stale pnpm/`.ignored` copies described below plus the app's admin/Vite build caches (so the admin bundle rebuilds from the new code instead of a cached one), and then asserts every reachable copy of the plugin under the app carries the build id it just published — failing loudly with the exact paths if any copy is still stale. Run it with `--dry-run` first to see the plan before it touches anything.
+
+The rest of this section explains what the command does by hand, for when you need to run a step in isolation or understand why it exists.
+
+### Publish, then push
 
 ```bash
 yarn build
@@ -134,20 +148,19 @@ pnpm install
 ```
 
 > **Warning**
-> Run that install from the **workspace root**, never from inside `apps/<package>`. pnpm reads `.npmrc` from the current directory, and a project-level `.npmrc` can change the layout of the *entire* workspace: `medusa-b2b-prototype/apps/backend/.npmrc` sets `node-linker=hoisted`, so installing from there materialises a second physical copy of every package as real directories at the workspace root, on top of the existing `.pnpm` symlink graph. Medusa then loads `@medusajs/core-flows` twice and the app dies at boot with `Workflow with id "create-payment-sessions" and step definition already exists` — the duplicate-instance failure the single-copy check in Step 2 exists to prevent. Recovering means deleting the workspace-root `node_modules` and reinstalling from the root.
+> Run that install from the **workspace root**, never from inside `apps/<package>`. pnpm reads `.npmrc` from the current directory, and a project-level `.npmrc` can change the layout of the *entire* workspace: `medusa-b2b-prototype/apps/backend/.npmrc` sets `node-linker=hoisted`, so installing from there materialises a second physical copy of every package as real directories at the workspace root, on top of the existing `.pnpm` symlink graph. Medusa then loads `@medusajs/core-flows` twice and the app dies at boot with `Workflow with id "create-payment-sessions" and step definition already exists` — the duplicate-instance failure the single-copy check in Step 2 exists to prevent. Recovering means deleting the workspace-root `node_modules` and reinstalling from the root. `yarn push:local` always installs at the workspace root for exactly this reason.
 
-The leftover under `node_modules/.ignored/` stays stale, which is harmless — nothing resolves through it.
+The leftover under `node_modules/.ignored/` stays stale, which is harmless — nothing resolves through it — but `yarn push:local` removes it anyway so it can't be mistaken for a fresh copy.
 
 ### Verify the app has the new build
 
-The version does not change between local builds, so it proves nothing. Grep for a string from the change you just made:
+Every `yarn build` stamps a build id (UTC timestamp + short git sha + dirty flag) into the compiled output, logged at boot next to `[ongoing] validated N warehouse integration(s)` — see [[Dev Contributing]]. `yarn push:local` compares that id against every reachable copy under the app automatically. To check by hand, read the id out of the compiled file directly:
 
 ```bash
-grep -rl "<a phrase you just added>" \
-  <app>/apps/backend/node_modules/@comfyballs/medusa-plugin-ongoing-warehouse/.medusa/server
+grep '"id"' <app>/apps/backend/node_modules/@comfyballs/medusa-plugin-ongoing-warehouse/.medusa/server/src/modules/ongoing/build-info.js
 ```
 
-No hits means the app is still on the old build. Before restarting anything, find every copy and check them all — resolution may reach a different one than you think:
+An id older than the one `yarn build` just printed means the app is still on the old build. Before restarting anything, find every copy and check them all — resolution may reach a different one than you think:
 
 ```bash
 find <app> -maxdepth 6 -name "medusa-plugin-ongoing-warehouse" -not -path "*/.yalc/*"
@@ -155,7 +168,7 @@ find <app> -maxdepth 6 -name "medusa-plugin-ongoing-warehouse" -not -path "*/.ya
 
 ### Restart the right server, on the right Node
 
-Plugin code and admin extensions are both read at boot, and `medusa develop` does not watch `node_modules` — a save in this repo never hot-reloads the app. Restarting a *different* dev session than the one you are browsing is an easy way to conclude the update failed when it did not, so check which process holds the port:
+Plugin code and admin extensions are both read at boot, and `medusa develop` does not watch `node_modules` — a save in this repo never hot-reloads the app. Restarting a *different* dev session than the one you are browsing is an easy way to conclude the update failed when it did not, so check which process holds the port (`yarn push:local` prints this for you):
 
 ```bash
 lsof -nP -iTCP -sTCP:LISTEN | grep node
